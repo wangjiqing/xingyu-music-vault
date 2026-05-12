@@ -17,8 +17,10 @@ import java.time.LocalDateTime;
 public class Track extends PanacheEntityBase {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(columnDefinition = "integer")
     public Long id;
 
+    @Column(nullable = false)
     public String title;
 
     @Column(name = "normalized_title")

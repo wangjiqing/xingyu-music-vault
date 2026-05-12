@@ -1,6 +1,15 @@
 # Xingyu Music Vault Backend
 
-Phase 0 Quarkus backend skeleton for Xingyu Music Vault / 星语音库.
+## v0.1 当前能力
+
+后端 v0.1 已实现以下功能：
+
+- **Track CRUD**：曲目的创建、查询、更新、删除
+- **Health API**：服务健康检查
+- **Bearer Token 鉴权**：所有 `/api/*` 接口（除 `/api/health` 外）需要 Authorization header
+- **SQLite + Flyway**：数据库自动迁移
+
+**本阶段不包含**：音乐扫描、歌词抓取、封面刮削、歌手/专辑管理、登录系统、权限系统。
 
 ## Requirements
 
@@ -12,14 +21,26 @@ Phase 0 Quarkus backend skeleton for Xingyu Music Vault / 星语音库.
 
 ```bash
 cd backend
-mkdir -p /tmp/xingyu-music-vault-data
+mvn quarkus:dev
+```
+
+In dev mode the SQLite database is stored at `backend/data/music-vault.db`, and Flyway runs automatically at startup. The service listens on `http://localhost:8080`.
+
+You can override paths with environment variables when needed:
+
+```bash
 MUSIC_VAULT_DB_PATH=/tmp/xingyu-music-vault-data/music-vault.db \
 MUSIC_VAULT_DATA_DIR=/tmp/xingyu-music-vault-data \
 MUSIC_VAULT_API_TOKEN=change-me \
 mvn quarkus:dev
 ```
 
-The service listens on `http://localhost:8080`.
+## Test
+
+```bash
+cd backend
+mvn test
+```
 
 ## Build
 
@@ -68,6 +89,49 @@ curl -i -X POST http://localhost:8080/api/scan-jobs \
 ```
 
 This only creates a `pending` scan job. Phase 0 does not scan music files, call ffprobe, write metadata, or modify local music files.
+
+## Track CRUD
+
+All `/api/tracks` routes require `Authorization: Bearer change-me` by default.
+
+Create a track:
+
+```bash
+curl -i -X POST http://localhost:8080/api/tracks \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"First Song"}'
+```
+
+List tracks:
+
+```bash
+curl -i http://localhost:8080/api/tracks \
+  -H 'Authorization: Bearer change-me'
+```
+
+Get one track:
+
+```bash
+curl -i http://localhost:8080/api/tracks/1 \
+  -H 'Authorization: Bearer change-me'
+```
+
+Update a track:
+
+```bash
+curl -i -X PUT http://localhost:8080/api/tracks/1 \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Updated Song","metadataStatus":"matched"}'
+```
+
+Delete a track:
+
+```bash
+curl -i -X DELETE http://localhost:8080/api/tracks/1 \
+  -H 'Authorization: Bearer change-me'
+```
 
 ## Configuration
 

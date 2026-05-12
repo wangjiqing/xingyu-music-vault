@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 public class ScanJob extends PanacheEntityBase {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(columnDefinition = "integer")
     public Long id;
 
     @Column(name = "job_type", nullable = false)
