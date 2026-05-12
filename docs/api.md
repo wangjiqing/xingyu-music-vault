@@ -5,7 +5,7 @@
 - **前缀**: `/api`
 - **鉴权**: `Authorization: Bearer <token>`
 - **响应格式**: JSON
-- **错误格式**: `{ "error": "..." }`
+- **错误格式**: `{ "error": "...", "message": "..." }`
 
 `/api/health` 为公开接口。其他已实现的 `/api/*` 接口需要 Bearer Token。
 
@@ -22,6 +22,124 @@
 | Method | Path | 说明 |
 |--------|------|------|
 | GET | `/api/tracks` | 曲目列表 |
+| GET | `/api/tracks/{id}` | 曲目详情 |
+| POST | `/api/tracks` | 创建曲目 |
+| PUT | `/api/tracks/{id}` | 更新曲目 |
+| DELETE | `/api/tracks/{id}` | 删除曲目 |
+
+#### 创建曲目
+
+请求：
+
+```http
+POST /api/tracks
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "First Song"
+}
+```
+
+响应：
+
+```json
+{
+  "id": 1,
+  "title": "First Song",
+  "normalizedTitle": "first song",
+  "metadataStatus": "pending",
+  "lyricsStatus": "pending",
+  "artworkStatus": "pending",
+  "createdAt": "2026-05-12T14:20:00",
+  "updatedAt": "2026-05-12T14:20:00"
+}
+```
+
+`title` 必填，去除首尾空白后不能为空。`metadataStatus`、`lyricsStatus`、`artworkStatus` 可选，允许值为 `pending`、`matched`、`missing`、`ignored`，默认 `pending`。
+
+#### 查询曲目列表
+
+```http
+GET /api/tracks
+Authorization: Bearer change-me
+```
+
+```json
+[
+  {
+    "id": 1,
+    "title": "First Song",
+    "normalizedTitle": "first song",
+    "metadataStatus": "pending",
+    "lyricsStatus": "pending",
+    "artworkStatus": "pending",
+    "createdAt": "2026-05-12T14:20:00",
+    "updatedAt": "2026-05-12T14:20:00"
+  }
+]
+```
+
+#### 查询、更新、删除单个曲目
+
+```http
+GET /api/tracks/1
+Authorization: Bearer change-me
+```
+
+```http
+PUT /api/tracks/1
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Updated Song",
+  "metadataStatus": "matched"
+}
+```
+
+```http
+DELETE /api/tracks/1
+Authorization: Bearer change-me
+```
+
+删除成功返回 `204 No Content`。
+
+#### 错误响应
+
+```http
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "error": "Bad Request",
+  "message": "title is required"
+}
+```
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+
+{
+  "error": "Unauthorized",
+  "message": "Invalid or missing token"
+}
+```
+
+```http
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  "error": "Not Found",
+  "message": "Track not found"
+}
+```
 
 ### 扫描任务
 
@@ -38,7 +156,6 @@
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/tracks/{id}` | 曲目详情 |
 | POST | `/api/tracks/match` | 发起曲目匹配 |
 
 ### 歌手

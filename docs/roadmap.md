@@ -1,14 +1,17 @@
 # 开发路线图
 
-## v0.1 — 后端骨架与扫描任务
+## v0.1 — 后端骨架与 Track CRUD
 
-> 阶段目标：搭建 Quarkus 项目骨架，实现扫描任务调度框架。
+> 阶段目标：搭建 Quarkus 项目骨架，实现 Track CRUD、扫描任务调度框架。
 
 - [x] Quarkus 项目初始化
 - [x] SQLite 数据库集成
 - [x] REST API 骨架（含健康检查）
-- [x] 扫描任务实体与 CRUD
-- [x] 基础鉴权机制（Bearer Token）
+- [x] Bearer Token 鉴权
+- [x] Track CRUD（创建/查询/更新/删除）
+- [x] 扫描任务实体与 CRUD（仅 pending 状态，不含实际扫描）
+
+**本阶段不包含**：音乐文件扫描、元数据提取、歌词抓取、封面刮削、歌手/专辑管理。
 
 ## v0.2 — 音乐库扫描
 

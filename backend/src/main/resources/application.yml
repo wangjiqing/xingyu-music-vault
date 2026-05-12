@@ -38,3 +38,17 @@ music-vault:
     config-dir: config
     music-dirs: music
     db-path: data/music-vault.db
+
+"%test":
+  quarkus:
+    datasource:
+      jdbc:
+        url: jdbc:sqlite:target/test-music-vault.db
+    flyway:
+      clean-at-start: true
+      clean-disabled: false
+  music-vault:
+    data-dir: target/test-data
+    config-dir: target/test-config
+    music-dirs: target/test-music
+    db-path: target/test-music-vault.db

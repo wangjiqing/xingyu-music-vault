@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.auth;
 
+import com.xingyu.musicvault.common.ErrorResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -30,7 +31,7 @@ public class ApiTokenFilter implements ContainerRequestFilter {
         String expected = BEARER_PREFIX + config.apiToken();
         if (!expected.equals(authorization)) {
             requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED)
-                    .entity(new ErrorResponse("unauthorized"))
+                    .entity(new ErrorResponse("unauthorized", "Missing or invalid bearer token"))
                     .build());
         }
     }
@@ -39,8 +40,5 @@ public class ApiTokenFilter implements ContainerRequestFilter {
         return "api/health".equals(path)
                 || path.startsWith("q/")
                 || "q".equals(path);
-    }
-
-    public record ErrorResponse(String error) {
     }
 }
