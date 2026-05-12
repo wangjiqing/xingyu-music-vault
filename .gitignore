@@ -1,0 +1,66 @@
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+.mvn/wrapper/maven-wrapper.jar
+
+# Gradle
+.gradle/
+build/
+
+# Node / Vue
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.project
+.classpath
+.settings/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Data & Logs
+/data/
+logs/
+*.db
+*.db-journal
+*.sqlite
+
+# Config (local secrets)
+config/application.properties
+config/application.yaml
+.env
+.env.local
+
+# Docker
+.docker/
+
+# Misc
+*.log
+*.tmp
+*.bak
+*.orig
+
+# AI agent local settings
+
+.claude/settings.local.json
+
+
+# AI agent local settings
+
+.claude/
+

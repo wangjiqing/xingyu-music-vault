@@ -1,0 +1,40 @@
+quarkus:
+  http:
+    host: 0.0.0.0
+    port: 8080
+  datasource:
+    db-kind: sqlite
+    jdbc:
+      url: jdbc:sqlite:${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
+  hibernate-orm:
+    database:
+      generation: none
+    dialect: org.hibernate.community.dialect.SQLiteDialect
+  flyway:
+    migrate-at-start: true
+  swagger-ui:
+    always-include: true
+  smallrye-openapi:
+    info-title: Xingyu Music Vault API
+    info-version: 0.1.0
+    info-description: Self-hosted music metadata management API.
+
+music-vault:
+  data-dir: ${MUSIC_VAULT_DATA_DIR:/app/data}
+  config-dir: ${MUSIC_VAULT_CONFIG_DIR:/app/config}
+  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/music}
+  db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
+  api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
+  ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
+  ffmpeg-path: ${MUSIC_VAULT_FFMPEG_PATH:/usr/bin/ffmpeg}
+
+"%dev":
+  quarkus:
+    datasource:
+      jdbc:
+        url: jdbc:sqlite:data/music-vault.db
+  music-vault:
+    data-dir: data
+    config-dir: config
+    music-dirs: music
+    db-path: data/music-vault.db

@@ -1,0 +1,28 @@
+version: "3.8"
+
+services:
+  music-vault:
+    image: xingyu-music-vault:latest
+    container_name: music-vault
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - /path/to/music:/music:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - QUARKUS_HTTP_HOST=0.0.0.0
+      - MUSIC_VAULT_DATA_DIR=/app/data
+      - MUSIC_VAULT_CONFIG_DIR=/app/config
+      - MUSIC_VAULT_MUSIC_DIRS=/music
+      - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
+      - MUSIC_VAULT_API_TOKEN=change-me
+      - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
+      - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

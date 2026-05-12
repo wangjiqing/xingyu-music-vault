@@ -1,0 +1,10 @@
+data/*
+config/*
+music/*
+!data/.gitkeep
+!config/.gitkeep
+!music/.gitkeep
+
+*.db
+*.db-shm
+*.db-wal
