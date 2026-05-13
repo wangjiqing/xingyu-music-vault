@@ -22,7 +22,7 @@ public class ApiTokenFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
-        String path = requestContext.getUriInfo().getPath();
+        String path = normalizePath(requestContext.getUriInfo().getPath());
         if (isPublicPath(path) || !path.startsWith("api/")) {
             return;
         }
@@ -40,5 +40,12 @@ public class ApiTokenFilter implements ContainerRequestFilter {
         return "api/health".equals(path)
                 || path.startsWith("q/")
                 || "q".equals(path);
+    }
+
+    private String normalizePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        return path.startsWith("/") ? path.substring(1) : path;
     }
 }

@@ -11,6 +11,7 @@ import {
   Setting,
   Expand,
   Fold,
+  FolderOpened,
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -30,6 +31,7 @@ const menuItems = [
   { path: '/artwork', title: '封面管理', icon: Picture },
   { path: '/review', title: '待处理队列', icon: List },
   { path: '/scan-jobs', title: '扫描任务', icon: VideoPlay },
+  { path: '/track-files', title: '音乐文件', icon: FolderOpened },
   { path: '/settings', title: '系统设置', icon: Setting },
 ]
 

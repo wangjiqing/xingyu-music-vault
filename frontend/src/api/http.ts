@@ -9,7 +9,7 @@ const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('apiToken')
+  const token = localStorage.getItem('music_vault_api_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -20,7 +20,7 @@ http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('apiToken')
+      localStorage.removeItem('music_vault_api_token')
     }
     return Promise.reject(error)
   },
