@@ -30,14 +30,29 @@ mvn quarkus:dev
 
 In dev mode the SQLite database is stored at `backend/data/music-vault.db`, and Flyway runs automatically at startup. The service listens on `http://localhost:8080`.
 
+The dev profile allows scanning under this local music root by default:
+
+```text
+/Users/wangjiqing/Project/Musics
+```
+
+For local testing, create scan jobs with directories inside that root, for example `/Users/wangjiqing/Project/Musics/Music`. Production and Docker Compose defaults still use `/music`, and any environment can override the allowed scan roots with `MUSIC_VAULT_MUSIC_DIRS`.
+
 You can override paths with environment variables when needed:
 
 ```bash
 MUSIC_VAULT_DB_PATH=/tmp/xingyu-music-vault-data/music-vault.db \
 MUSIC_VAULT_DATA_DIR=/tmp/xingyu-music-vault-data \
+MUSIC_VAULT_MUSIC_DIRS=/path/to/music \
 MUSIC_VAULT_API_TOKEN=change-me \
 mvn quarkus:dev
 ```
+
+## Logging
+
+HTTP access logging is enabled and includes the request line, status, and duration. Project business logs use `INFO` by default and `DEBUG` for `com.xingyu.musicvault` in dev mode.
+
+Scan logs include job creation, run requests, allowed roots, resolved scan directories, path validation failures, scan summaries, and scan failures with stack traces. File-level scan details are logged at `DEBUG` to keep normal logs readable. Authorization headers, API tokens, passwords, and secrets are not logged.
 
 ## Test
 
@@ -89,7 +104,7 @@ All `/api/*` routes except `/api/health` require a bearer token. The default tok
 curl -i -X POST http://localhost:8080/api/scan-jobs \
   -H 'Authorization: Bearer change-me' \
   -H 'Content-Type: application/json' \
-  -d '{"jobType":"library_scan","musicDirs":["/music"]}'
+  -d '{"jobType":"library_scan","musicDirs":["/Users/wangjiqing/Project/Musics/Music"]}'
 ```
 
 This only creates a `pending` scan job. Run it explicitly:
@@ -130,7 +145,6 @@ curl -i 'http://localhost:8080/api/track-files?ext=flac&keyword=live' \
 
 ```bash
 cd backend
-mkdir -p music        # 放置测试音频文件
 mvn quarkus:dev
 ```
 
@@ -146,7 +160,7 @@ curl -i http://localhost:8080/api/health
 curl -i -X POST http://localhost:8080/api/scan-jobs \
   -H 'Authorization: Bearer change-me' \
   -H 'Content-Type: application/json' \
-  -d '{"jobType":"library_scan","musicDirs":["music"]}'
+  -d '{"jobType":"library_scan","musicDirs":["/Users/wangjiqing/Project/Musics/Music"]}'
 ```
 
 ### 4. 执行扫描
@@ -275,7 +289,9 @@ mvn package
 docker build -t xingyu-music-vault-backend .
 docker run --rm -p 8080:8080 \
   -e MUSIC_VAULT_DB_PATH=/app/data/music-vault.db \
+  -e MUSIC_VAULT_MUSIC_DIRS=/music \
   -e MUSIC_VAULT_API_TOKEN=change-me \
   -v "$PWD/data:/app/data" \
+  -v "/path/to/music:/music:ro" \
   xingyu-music-vault-backend
 ```

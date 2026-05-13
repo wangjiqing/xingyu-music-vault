@@ -13,6 +13,7 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
+import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Locale;
@@ -21,6 +22,8 @@ import java.util.Map;
 @Path("/api/track-files")
 @Produces(MediaType.APPLICATION_JSON)
 public class TrackFileResource {
+    private static final Logger LOG = Logger.getLogger(TrackFileResource.class);
+
     @GET
     public PageResponse<TrackFileResponse> list(
             @QueryParam("page") Integer page,
@@ -38,6 +41,15 @@ public class TrackFileResource {
         List<TrackFileResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
                 .map(TrackFileResponse::from)
                 .toList();
+        LOG.debugf(
+                "List track files: page=%d size=%d ext=%s keyword=%s returned=%d total=%d",
+                pageValue,
+                sizeValue,
+                normalizedExt,
+                normalizedKeyword,
+                items.size(),
+                total
+        );
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
 

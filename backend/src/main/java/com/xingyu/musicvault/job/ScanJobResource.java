@@ -21,6 +21,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
 import java.util.List;
 import java.util.Set;
@@ -28,6 +29,7 @@ import java.util.Set;
 @Path("/api/scan-jobs")
 @Produces(MediaType.APPLICATION_JSON)
 public class ScanJobResource {
+    private static final Logger LOG = Logger.getLogger(ScanJobResource.class);
     private static final Set<String> ALLOWED_STATUSES = Set.of("pending", "running", "completed", "failed");
 
     @Inject
@@ -53,6 +55,14 @@ public class ScanJobResource {
         List<ScanJobResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
                 .map(ScanJobResponse::from)
                 .toList();
+        LOG.debugf(
+                "List scan jobs: page=%d size=%d status=%s returned=%d total=%d",
+                pageValue,
+                sizeValue,
+                normalizedStatus,
+                items.size(),
+                total
+        );
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
 
@@ -71,12 +81,19 @@ public class ScanJobResource {
         scanJob.status = "pending";
         scanJob.musicDirs = resolveMusicDirs(request);
         scanJob.persist();
+        LOG.infof("Created scan job: id=%d jobType=%s musicDirs=%s", scanJob.id, scanJob.jobType, scanJob.musicDirs);
         return Response.status(Response.Status.CREATED).entity(ScanJobResponse.from(scanJob)).build();
     }
 
     @POST
     @Path("/{id}/run")
     public ScanJobResponse run(@PathParam("id") Long id) {
+        ScanJob scanJob = findScanJob(id);
+        if ("running".equals(scanJob.status) || "completed".equals(scanJob.status)) {
+            LOG.infof("Reject scan job run request: id=%d status=%s", scanJob.id, scanJob.status);
+        } else {
+            LOG.infof("Run scan job request accepted for service execution: id=%d status=%s", scanJob.id, scanJob.status);
+        }
         return ScanJobResponse.from(libraryScanService.run(id));
     }
 
