@@ -52,6 +52,12 @@ const router = createRouter({
           meta: { title: '扫描任务' },
         },
         {
+          path: 'track-files',
+          name: 'TrackFiles',
+          component: () => import('../views/TrackFilesView.vue'),
+          meta: { title: '音乐文件' },
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: () => import('../views/Settings.vue'),

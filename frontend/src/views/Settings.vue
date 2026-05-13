@@ -6,7 +6,7 @@ const token = ref('')
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '（默认空，使用 Vite 代理）'
 
 onMounted(() => {
-  token.value = localStorage.getItem('apiToken') || ''
+  token.value = localStorage.getItem('music_vault_api_token') || ''
 })
 
 function saveToken() {
@@ -14,12 +14,12 @@ function saveToken() {
     ElMessage.warning('请输入 API Token')
     return
   }
-  localStorage.setItem('apiToken', token.value.trim())
+  localStorage.setItem('music_vault_api_token', token.value.trim())
   ElMessage.success('API Token 已保存')
 }
 
 function clearToken() {
-  localStorage.removeItem('apiToken')
+  localStorage.removeItem('music_vault_api_token')
   token.value = ''
   ElMessage.success('API Token 已清除')
 }
