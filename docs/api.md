@@ -116,7 +116,7 @@ HTTP/1.1 400 Bad Request
 Content-Type: application/json
 
 {
-  "error": "Bad Request",
+  "error": "bad_request",
   "message": "title is required"
 }
 ```
@@ -126,8 +126,8 @@ HTTP/1.1 401 Unauthorized
 Content-Type: application/json
 
 {
-  "error": "Unauthorized",
-  "message": "Invalid or missing token"
+  "error": "unauthorized",
+  "message": "Missing or invalid bearer token"
 }
 ```
 
@@ -136,7 +136,7 @@ HTTP/1.1 404 Not Found
 Content-Type: application/json
 
 {
-  "error": "Not Found",
+  "error": "not_found",
   "message": "Track not found"
 }
 ```
@@ -147,6 +147,84 @@ Content-Type: application/json
 |--------|------|------|
 | GET | `/api/scan-jobs` | 扫描任务列表 |
 | POST | `/api/scan-jobs` | 创建 pending 状态扫描任务 |
+| GET | `/api/scan-jobs/{id}` | 扫描任务详情 |
+| POST | `/api/scan-jobs/{id}/run` | 执行扫描任务 |
+
+v0.2 扫描只做本地文件发现和 `track_files` 记录。它不会提取音频内嵌元数据，不会抓歌词，不会抓封面，不会访问 MusicBrainz、LRCLIB 或其他外部网络服务，也不会做音频指纹。
+
+#### 创建扫描任务
+
+```http
+POST /api/scan-jobs
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "jobType": "library_scan",
+  "musicDirs": ["/music"]
+}
+```
+
+响应：
+
+```json
+{
+  "id": 1,
+  "jobType": "library_scan",
+  "status": "pending",
+  "musicDirs": ["/music"],
+  "totalFiles": 0,
+  "scannedFiles": 0,
+  "newFiles": 0,
+  "updatedFiles": 0,
+  "skippedFiles": 0,
+  "errorFiles": 0,
+  "errorMessage": null,
+  "startedAt": null,
+  "finishedAt": null,
+  "createdAt": "2026-05-13T07:30:00",
+  "updatedAt": "2026-05-13T07:30:00"
+}
+```
+
+`POST /api/scan-jobs` 只创建任务，不立即扫描。未传 `musicDirs` 时使用 `MUSIC_VAULT_MUSIC_DIRS` 配置。
+
+#### 执行扫描任务
+
+```http
+POST /api/scan-jobs/1/run
+Authorization: Bearer change-me
+```
+
+扫描支持扩展名：`mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`opus`。重复扫描相同 `file_path` 会更新 `file_size`、`last_modified_at`、`scan_job_id` 与 `updated_at`，不会重复插入。
+
+### 音频文件记录
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/track-files` | 文件记录列表 |
+| GET | `/api/track-files?ext=flac` | 按扩展名过滤 |
+| GET | `/api/track-files/{id}` | 文件记录详情 |
+
+响应示例：
+
+```json
+[
+  {
+    "id": 1,
+    "trackId": null,
+    "filePath": "/music/a.flac",
+    "fileName": "a.flac",
+    "fileExt": "flac",
+    "fileSize": 123456,
+    "lastModifiedAt": "2026-05-13T07:31:00",
+    "scanJobId": 1,
+    "createdAt": "2026-05-13T07:31:00",
+    "updatedAt": "2026-05-13T07:31:00"
+  }
+]
 
 ## 规划中接口
 
@@ -185,12 +263,6 @@ Content-Type: application/json
 |--------|------|------|
 | GET | `/api/tracks/{id}/artwork` | 获取曲目封面 |
 | POST | `/api/tracks/{id}/artwork` | 上传/更新封面 |
-
-### 扫描任务
-
-| Method | Path | 说明 |
-|--------|------|------|
-| GET | `/api/scan-jobs/{id}` | 扫描任务详情 |
 
 ### 审核
 

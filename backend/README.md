@@ -1,15 +1,16 @@
 # Xingyu Music Vault Backend
 
-## v0.1 当前能力
+## v0.2 当前能力
 
-后端 v0.1 已实现以下功能：
+后端 v0.2 已实现以下功能：
 
 - **Track CRUD**：曲目的创建、查询、更新、删除
+- **本地音乐库扫描**：创建扫描任务后递归扫描本地目录，记录音频文件到 `track_files`
 - **Health API**：服务健康检查
 - **Bearer Token 鉴权**：所有 `/api/*` 接口（除 `/api/health` 外）需要 Authorization header
 - **SQLite + Flyway**：数据库自动迁移
 
-**本阶段不包含**：音乐扫描、歌词抓取、封面刮削、歌手/专辑管理、登录系统、权限系统。
+**本阶段不包含**：音频内嵌元数据提取、歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理、登录系统、复杂权限系统。
 
 ## Requirements
 
@@ -49,7 +50,7 @@ cd backend
 mvn package
 ```
 
-This builds a JVM-mode Quarkus app under `target/quarkus-app`. Native Image is intentionally not configured for Phase 0.
+This builds a JVM-mode Quarkus app under `target/quarkus-app`.
 
 ## Swagger UI
 
@@ -88,7 +89,89 @@ curl -i -X POST http://localhost:8080/api/scan-jobs \
   -d '{"jobType":"library_scan","musicDirs":["/music"]}'
 ```
 
-This only creates a `pending` scan job. Phase 0 does not scan music files, call ffprobe, write metadata, or modify local music files.
+This only creates a `pending` scan job. Run it explicitly:
+
+```bash
+curl -i -X POST http://localhost:8080/api/scan-jobs/1/run \
+  -H 'Authorization: Bearer change-me'
+```
+
+The scanner records local files with extensions `mp3`, `flac`, `wav`, `m4a`, `aac`, `ogg`, and `opus` into `track_files`. Re-running a scan updates existing rows by `file_path` instead of inserting duplicates. v0.2 does not call ffprobe, extract embedded tags, fetch lyrics, fetch cover art, perform network matching, or modify local music files.
+
+List scanned files:
+
+```bash
+curl -i http://localhost:8080/api/track-files \
+  -H 'Authorization: Bearer change-me'
+```
+
+Filter by extension:
+
+```bash
+curl -i 'http://localhost:8080/api/track-files?ext=flac' \
+  -H 'Authorization: Bearer change-me'
+```
+
+## 本地验证流程
+
+### 1. 启动服务
+
+```bash
+cd backend
+mkdir -p music        # 放置测试音频文件
+mvn quarkus:dev
+```
+
+### 2. 健康检查
+
+```bash
+curl -i http://localhost:8080/api/health
+```
+
+### 3. 创建扫描任务
+
+```bash
+curl -i -X POST http://localhost:8080/api/scan-jobs \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"jobType":"library_scan","musicDirs":["music"]}'
+```
+
+### 4. 执行扫描
+
+```bash
+curl -i -X POST http://localhost:8080/api/scan-jobs/1/run \
+  -H 'Authorization: Bearer change-me'
+```
+
+### 5. 查看扫描结果
+
+扫描任务列表：
+```bash
+curl http://localhost:8080/api/scan-jobs \
+  -H 'Authorization: Bearer change-me'
+```
+
+文件记录列表：
+```bash
+curl http://localhost:8080/api/track-files \
+  -H 'Authorization: Bearer change-me'
+```
+
+按扩展名过滤：
+```bash
+curl 'http://localhost:8080/api/track-files?ext=flac' \
+  -H 'Authorization: Bearer change-me'
+```
+
+### 扫描任务状态
+
+| status | 说明 |
+|--------|------|
+| `pending` | 任务已创建，等待执行 |
+| `running` | 扫描进行中 |
+| `completed` | 扫描完成 |
+| `failed` | 扫描失败（目录不存在、IO错误等） |
 
 ## Track CRUD
 
