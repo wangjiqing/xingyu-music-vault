@@ -1,8 +1,18 @@
 # Xingyu Music Vault Backend
 
-## v0.2.1 当前能力
+## v0.3 当前能力
 
-后端 v0.2.1 在 v0.2 基础上增强了扫描稳定性与前端体验：
+后端 v0.3 在 v0.2.1 基础上完成了本地音乐扫描与入库闭环：
+
+- **POST /api/music/scan**：异步接受扫描请求，后台执行扫描，返回 `202 Accepted` 与 `scanJobId`
+- **GET /api/music**：音乐分页列表，基于 `track_files` + `tracks` 联合视图
+- **GET /api/music/{id}**：音乐详情
+- **文件名元数据兜底**：`Artist - Title.flac` 格式自动解析为 `artist`/`title`，其余字段为 `null`
+- **重复扫描跳过**：文件大小和修改时间均未变化时跳过（1秒容差）
+- **隐藏文件跳过**：`Files.walk` 中跳过以 `.` 开头的路径节点
+- **默认扫描目录**：`/Users/wangjiqing/Project/Musics`（`music.scan.default-path` 配置）
+
+**本阶段不包含**：ffprobe 音频内嵌元数据提取、歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理页面、用户登录系统。
 
 - **Track CRUD**：曲目的创建、查询、更新、删除
 - **本地音乐库扫描**：创建扫描任务后递归扫描本地目录，记录音频文件到 `track_files`
@@ -138,6 +148,70 @@ curl -i 'http://localhost:8080/api/track-files?ext=flac&keyword=live' \
 ```
 
 `POST /api/scan-jobs/{id}/run` only runs `pending` and `failed` jobs. `running` and `completed` jobs return `409` with `{ "error": "conflict", "message": "..." }`.
+
+## Music Scan API (v0.3)
+
+`POST /api/music/scan` 是 v0.3 新增的快捷扫描入口，等价于「创建 ScanJob + 立即执行」，返回 `202 Accepted` 后台异步执行：
+
+```bash
+# 使用默认目录扫描（/Users/wangjiqing/Project/Musics）
+curl -i -X POST http://localhost:8080/api/music/scan \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# 指定目录扫描
+curl -i -X POST http://localhost:8080/api/music/scan \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/Users/wangjiqing/Project/Musics"}'
+```
+
+响应：
+
+```json
+{
+  "accepted": true,
+  "scanJobId": 2,
+  "message": "Scan accepted"
+}
+```
+
+查询音乐列表（分页，按入库时间倒序）：
+
+```bash
+curl 'http://localhost:8080/api/music?page=0&size=20' \
+  -H 'Authorization: Bearer change-me'
+```
+
+查询单条音乐详情：
+
+```bash
+curl 'http://localhost:8080/api/music/1' \
+  -H 'Authorization: Bearer change-me'
+```
+
+响应示例：
+
+```json
+{
+  "id": 1,
+  "title": "晴天",
+  "artist": "周杰伦",
+  "album": null,
+  "albumArtist": "周杰伦",
+  "duration": null,
+  "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+  "fileName": "周杰伦 - 晴天.flac",
+  "fileExtension": "flac",
+  "fileSize": 12345678,
+  "lastModifiedTime": "2026-05-14T06:40:00",
+  "createdAt": "2026-05-14T06:40:00",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+`page` 从 0 开始，默认 `size=20`，最大 `size=100`。
 
 ## 本地验证流程
 

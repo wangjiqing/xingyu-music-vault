@@ -3,6 +3,7 @@ package com.xingyu.musicvault.scan;
 import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
+import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -16,6 +17,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -241,6 +243,12 @@ public class LibraryScanService {
     private void scanFile(ScanJob scanJob, Path path, List<String> messages) {
         scanJob.totalFiles++;
 
+        if (isHidden(path)) {
+            scanJob.skippedFiles++;
+            LOG.debugf("Skipping hidden file: jobId=%d path=%s", scanJob.id, path);
+            return;
+        }
+
         String fileName = path.getFileName().toString();
         String ext = extensionOf(fileName);
         if (!AUDIO_EXTENSIONS.contains(ext)) {
@@ -256,7 +264,14 @@ public class LibraryScanService {
         }
 
         try {
-            upsertTrackFile(scanJob, path, fileName, ext);
+            UpsertResult result = upsertTrackFile(scanJob, path, fileName, ext);
+            if (result == UpsertResult.INSERTED) {
+                scanJob.newFiles++;
+            } else if (result == UpsertResult.UPDATED) {
+                scanJob.updatedFiles++;
+            } else {
+                scanJob.skippedFiles++;
+            }
             scanJob.scannedFiles++;
         } catch (IOException exception) {
             scanJob.errorFiles++;
@@ -265,29 +280,81 @@ public class LibraryScanService {
         }
     }
 
-    private void upsertTrackFile(ScanJob scanJob, Path path, String fileName, String ext) throws IOException {
+    private UpsertResult upsertTrackFile(ScanJob scanJob, Path path, String fileName, String ext) throws IOException {
         String filePath = path.toAbsolutePath().normalize().toString();
         TrackFile trackFile = TrackFile.find("filePath", filePath).firstResult();
+        long fileSize = Files.size(path);
+        LocalDateTime lastModifiedAt = toLocalDateTime(Files.getLastModifiedTime(path).toInstant());
         boolean isNew = trackFile == null;
         if (isNew) {
             trackFile = new TrackFile();
             trackFile.filePath = filePath;
+        } else if (trackFile.fileSize == fileSize && sameTime(trackFile.lastModifiedAt, lastModifiedAt)) {
+            LOG.debugf("Skipping unchanged track file: jobId=%d path=%s", scanJob.id, filePath);
+            return UpsertResult.SKIPPED;
         }
 
         trackFile.fileName = fileName;
         trackFile.fileExt = ext;
-        trackFile.fileSize = Files.size(path);
-        trackFile.lastModifiedAt = toLocalDateTime(Files.getLastModifiedTime(path).toInstant());
+        trackFile.fileSize = fileSize;
+        trackFile.lastModifiedAt = lastModifiedAt;
         trackFile.scanJobId = scanJob.id;
+        trackFile.trackId = upsertTrack(trackFile.trackId, fileName).id;
 
         if (isNew) {
             trackFile.persist();
-            scanJob.newFiles++;
             LOG.debugf("Inserted track file: jobId=%d path=%s ext=%s size=%d", scanJob.id, filePath, ext, trackFile.fileSize);
+            return UpsertResult.INSERTED;
         } else {
-            scanJob.updatedFiles++;
             LOG.debugf("Updated track file: jobId=%d path=%s ext=%s size=%d", scanJob.id, filePath, ext, trackFile.fileSize);
+            return UpsertResult.UPDATED;
         }
+    }
+
+    private Track upsertTrack(Long trackId, String fileName) {
+        ParsedMetadata metadata = parseMetadata(fileName);
+        Track track = trackId == null ? null : Track.findById(trackId);
+        if (track == null) {
+            track = new Track();
+        }
+
+        track.title = metadata.title();
+        track.normalizedTitle = normalizeTitle(metadata.title());
+        track.artist = metadata.artist();
+        track.album = metadata.album();
+        track.albumArtist = metadata.albumArtist();
+        track.duration = metadata.duration();
+
+        if (!track.isPersistent()) {
+            track.persist();
+        }
+        return track;
+    }
+
+    private ParsedMetadata parseMetadata(String fileName) {
+        String baseName = stripExtension(fileName).trim();
+        if (baseName.isEmpty()) {
+            return new ParsedMetadata("Untitled", "Unknown", null, null, null);
+        }
+
+        String[] parts = baseName.split("\\s+-\\s+", 2);
+        if (parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank()) {
+            String artist = parts[0].trim();
+            return new ParsedMetadata(parts[1].trim(), artist, null, artist, null);
+        }
+        return new ParsedMetadata(baseName, "Unknown", null, null, null);
+    }
+
+    private String stripExtension(String fileName) {
+        int dotIndex = fileName.lastIndexOf('.');
+        if (dotIndex <= 0) {
+            return fileName;
+        }
+        return fileName.substring(0, dotIndex);
+    }
+
+    private String normalizeTitle(String title) {
+        return title.trim().toLowerCase(Locale.ROOT);
     }
 
     private String extensionOf(String fileName) {
@@ -298,7 +365,39 @@ public class LibraryScanService {
         return fileName.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
     }
 
+    private boolean isHidden(Path path) {
+        for (Path segment : path) {
+            if (segment.toString().startsWith(".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean sameTime(LocalDateTime left, LocalDateTime right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        return Math.abs(Duration.between(left, right).toMillis()) < 1000;
+    }
+
     private LocalDateTime toLocalDateTime(Instant instant) {
         return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+    }
+
+    // TODO: v0.4+ can mark database rows missing when source files are deleted from disk.
+    private enum UpsertResult {
+        INSERTED,
+        UPDATED,
+        SKIPPED
+    }
+
+    private record ParsedMetadata(
+            String title,
+            String artist,
+            String album,
+            String albumArtist,
+            Long duration
+    ) {
     }
 }

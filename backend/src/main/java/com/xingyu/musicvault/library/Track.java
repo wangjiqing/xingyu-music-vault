@@ -26,6 +26,18 @@ public class Track extends PanacheEntityBase {
     @Column(name = "normalized_title")
     public String normalizedTitle;
 
+    @Column
+    public String artist;
+
+    @Column
+    public String album;
+
+    @Column(name = "album_artist")
+    public String albumArtist;
+
+    @Column
+    public Long duration;
+
     @Column(name = "metadata_status", nullable = false)
     public String metadataStatus = "pending";
 
