@@ -2,6 +2,7 @@ package com.xingyu.musicvault.scan;
 
 import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.job.ScanJob;
+import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -33,6 +34,7 @@ class LibraryScanServiceTest {
         Files.createDirectories(ALLOWED_MUSIC_ROOT);
         musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "service-test-");
         TrackFile.deleteAll();
+        Track.deleteAll();
         ScanJob.deleteAll();
     }
 
@@ -56,16 +58,42 @@ class LibraryScanServiceTest {
         assertNotNull(scanJob.startedAt);
         assertNotNull(scanJob.finishedAt);
         assertEquals(2, TrackFile.count());
+        assertEquals(2, Track.count());
     }
 
     @Test
-    void repeatedScanUpdatesExistingTrackFiles() throws IOException {
+    void repeatedScanSkipsUnchangedTrackFiles() throws IOException {
         Path file = musicDir.resolve("a.flac");
         Files.writeString(file, "first");
 
         Long firstJobId = createScanJob(musicDir);
         libraryScanService.run(firstJobId);
 
+        Long secondJobId = createScanJob(musicDir);
+        ScanJob secondJob = libraryScanService.run(secondJobId);
+
+        assertEquals("completed", secondJob.status);
+        assertEquals(1, secondJob.totalFiles);
+        assertEquals(1, secondJob.scannedFiles);
+        assertEquals(0, secondJob.newFiles);
+        assertEquals(0, secondJob.updatedFiles);
+        assertEquals(1, secondJob.skippedFiles);
+        assertEquals(1, TrackFile.count());
+
+        TrackFile trackFile = TrackFile.find("fileName", "a.flac").firstResult();
+        assertNotNull(trackFile);
+        assertEquals(firstJobId, trackFile.scanJobId);
+    }
+
+    @Test
+    void repeatedScanUpdatesChangedTrackFiles() throws IOException, InterruptedException {
+        Path file = musicDir.resolve("a.flac");
+        Files.writeString(file, "first");
+
+        Long firstJobId = createScanJob(musicDir);
+        libraryScanService.run(firstJobId);
+
+        Thread.sleep(5);
         Files.writeString(file, "updated content");
 
         Long secondJobId = createScanJob(musicDir);
@@ -82,6 +110,25 @@ class LibraryScanServiceTest {
         assertNotNull(trackFile);
         assertEquals(secondJobId, trackFile.scanJobId);
         assertEquals(Files.size(file), trackFile.fileSize);
+    }
+
+    @Test
+    void parsesFallbackMetadataFromFileName() throws IOException {
+        Files.writeString(musicDir.resolve("周杰伦 - 晴天.flac"), "music");
+
+        Long scanJobId = createScanJob(musicDir);
+        libraryScanService.run(scanJobId);
+
+        TrackFile trackFile = TrackFile.find("fileName", "周杰伦 - 晴天.flac").firstResult();
+        assertNotNull(trackFile);
+
+        Track track = Track.findById(trackFile.trackId);
+        assertNotNull(track);
+        assertEquals("晴天", track.title);
+        assertEquals("周杰伦", track.artist);
+        assertEquals("周杰伦", track.albumArtist);
+        assertNull(track.album);
+        assertNull(track.duration);
     }
 
     @Test

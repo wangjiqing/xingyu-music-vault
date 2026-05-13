@@ -1,6 +1,7 @@
 package com.xingyu.musicvault.job;
 
 import com.xingyu.musicvault.library.TrackFile;
+import com.xingyu.musicvault.library.Track;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import jakarta.transaction.Transactional;
@@ -29,6 +30,7 @@ class ScanJobResourceTest {
         Files.createDirectories(ALLOWED_MUSIC_ROOT);
         musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "resource-test-");
         TrackFile.deleteAll();
+        Track.deleteAll();
         ScanJob.deleteAll();
     }
 

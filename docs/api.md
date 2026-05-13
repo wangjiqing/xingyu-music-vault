@@ -50,6 +50,10 @@ Content-Type: application/json
   "id": 1,
   "title": "First Song",
   "normalizedTitle": "first song",
+  "artist": null,
+  "album": null,
+  "albumArtist": null,
+  "duration": null,
   "metadataStatus": "pending",
   "lyricsStatus": "pending",
   "artworkStatus": "pending",
@@ -73,6 +77,10 @@ Authorization: Bearer change-me
     "id": 1,
     "title": "First Song",
     "normalizedTitle": "first song",
+    "artist": null,
+    "album": null,
+    "albumArtist": null,
+    "duration": null,
     "metadataStatus": "pending",
     "lyricsStatus": "pending",
     "artworkStatus": "pending",
@@ -236,7 +244,7 @@ POST /api/scan-jobs/1/run
 Authorization: Bearer change-me
 ```
 
-扫描支持扩展名：`mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`opus`。重复扫描相同 `file_path` 会更新 `file_size`、`last_modified_at`、`scan_job_id` 与 `updated_at`，不会重复插入。只有 `pending` 和 `failed` 任务可以执行；`running` 或 `completed` 任务再次执行会返回 `409`：
+扫描支持扩展名：`mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`opus`。重复扫描相同 `file_path` 不会重复插入；当 `file_size` 和 `last_modified_at` 未变化时会跳过，变化时会更新 `file_size`、`last_modified_at`、`scan_job_id`、兜底元数据与 `updated_at`。只有 `pending` 和 `failed` 任务可以执行；`running` 或 `completed` 任务再次执行会返回 `409`：
 
 ```json
 {
@@ -246,6 +254,99 @@ Authorization: Bearer change-me
 ```
 
 扫描目录必须位于配置允许的 `MUSIC_VAULT_MUSIC_DIRS` 范围内，并会经过真实路径归一化校验。路径穿越、非允许目录、根目录类危险路径、目录不存在、不可读或不是目录都会使任务进入 `failed`，并记录 `errorMessage`。
+
+### 音乐库
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `/Users/wangjiqing/Project/Musics` |
+| GET | `/api/music?page=0&size=20` | 音乐分页列表 |
+| GET | `/api/music/{id}` | 音乐详情 |
+
+`POST /api/music/scan` 可传空对象使用默认目录，也可传入 `path` 覆盖本次扫描目录：
+
+```http
+POST /api/music/scan
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics"
+}
+```
+
+响应为 `202 Accepted`，扫描在后台执行。客户端可用返回的 `scanJobId` 轮询 `GET /api/scan-jobs/{id}` 获取 `status`、统计数量和失败原因。
+
+```json
+{
+  "accepted": true,
+  "scanJobId": 1,
+  "message": "Scan accepted"
+}
+```
+
+扫描会递归读取目录，跳过隐藏文件和非音乐文件。当前 v0.3 不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。
+
+查询列表：
+
+```http
+GET /api/music?page=0&size=20
+Authorization: Bearer change-me
+```
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "晴天",
+      "artist": "周杰伦",
+      "album": null,
+      "albumArtist": "周杰伦",
+      "duration": null,
+      "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+      "fileName": "周杰伦 - 晴天.flac",
+      "fileExtension": "flac",
+      "fileSize": 123456,
+      "lastModifiedTime": "2026-05-14T06:40:00",
+      "createdAt": "2026-05-14T06:40:00",
+      "updatedAt": "2026-05-14T06:40:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
+
+查询详情：
+
+```http
+GET /api/music/1
+Authorization: Bearer change-me
+```
+
+不存在时返回 `404`。扫描目录不存在、不可读或不在允许根目录下时，后台扫描任务会进入 `failed`，失败原因写入 `/api/scan-jobs/{id}` 的 `errorMessage`。
+
+#### curl 验证
+
+```bash
+curl -X POST http://localhost:8080/api/music/scan \
+  -H "Authorization: Bearer change-me" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+curl "http://localhost:8080/api/music?page=0&size=20" \
+  -H "Authorization: Bearer change-me"
+
+curl "http://localhost:8080/api/music/1" \
+  -H "Authorization: Bearer change-me"
+
+curl "http://localhost:8080/api/scan-jobs/1" \
+  -H "Authorization: Bearer change-me"
+```
 
 ### 音频文件记录
 
@@ -332,7 +433,7 @@ Authorization: Bearer change-me
 
 ## 分页与过滤
 
-`GET /api/scan-jobs` 和 `GET /api/track-files` 返回统一分页结构：
+`GET /api/music`、`GET /api/scan-jobs` 和 `GET /api/track-files` 返回统一分页结构：
 
 ```json
 {

@@ -30,11 +30,15 @@ quarkus:
 music-vault:
   data-dir: ${MUSIC_VAULT_DATA_DIR:/app/data}
   config-dir: ${MUSIC_VAULT_CONFIG_DIR:/app/config}
-  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/music}
+  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/Users/wangjiqing/Project/Musics}
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
   ffmpeg-path: ${MUSIC_VAULT_FFMPEG_PATH:/usr/bin/ffmpeg}
+
+music:
+  scan:
+    default-path: ${MUSIC_SCAN_DEFAULT_PATH:/Users/wangjiqing/Project/Musics}
 
 "%dev":
   quarkus:
