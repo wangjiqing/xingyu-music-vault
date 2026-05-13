@@ -1,20 +1,35 @@
 import http from './http'
+import type { PageResponse, PageQuery } from './types'
 
 export interface ScanJob {
   id: number
-  name: string
-  path: string
+  jobType: string
+  musicDirs: string[]
   status: string
+  totalFiles: number
+  scannedFiles: number
+  newFiles: number
+  updatedFiles: number
+  skippedFiles: number
+  errorFiles: number
+  errorMessage: string
   createdAt: string
   updatedAt: string
 }
 
-export async function fetchScanJobs(): Promise<ScanJob[]> {
-  const { data } = await http.get('/api/scan-jobs')
+export interface ScanJobQuery extends PageQuery {
+  status?: string
+}
+
+export async function fetchScanJobs(query: ScanJobQuery): Promise<PageResponse<ScanJob>> {
+  const { data } = await http.get('/api/scan-jobs', { params: query })
   return data
 }
 
-export async function createScanJob(job: { name: string; path: string }): Promise<ScanJob> {
+export async function createScanJob(job: {
+  jobType: string
+  musicDirs: string[]
+}): Promise<ScanJob> {
   const { data } = await http.post('/api/scan-jobs', job)
   return data
 }

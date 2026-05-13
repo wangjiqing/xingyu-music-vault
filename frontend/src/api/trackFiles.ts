@@ -1,14 +1,22 @@
 import http from './http'
+import type { PageResponse, PageQuery } from './types'
 
 export interface TrackFile {
   id: number
-  path: string
-  filename: string
-  size: number
-  modifiedAt: string
+  fileName: string
+  fileExt: string
+  fileSize: number
+  filePath: string
+  lastModifiedAt: string
+  scanJobId: number
 }
 
-export async function fetchTrackFiles(): Promise<TrackFile[]> {
-  const { data } = await http.get('/api/track-files')
+export interface TrackFileQuery extends PageQuery {
+  ext?: string
+  keyword?: string
+}
+
+export async function fetchTrackFiles(query: TrackFileQuery): Promise<PageResponse<TrackFile>> {
+  const { data } = await http.get('/api/track-files', { params: query })
   return data
 }
