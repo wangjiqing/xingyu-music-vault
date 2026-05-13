@@ -19,13 +19,15 @@ import static org.hamcrest.Matchers.notNullValue;
 @QuarkusTest
 class ScanJobResourceTest {
     private static final String AUTHORIZATION = "Bearer change-me";
+    private static final Path ALLOWED_MUSIC_ROOT = Path.of("target/test-music");
 
     Path musicDir;
 
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
-        musicDir = Files.createTempDirectory("music-vault-resource-test");
+        Files.createDirectories(ALLOWED_MUSIC_ROOT);
+        musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "resource-test-");
         TrackFile.deleteAll();
         ScanJob.deleteAll();
     }
@@ -85,8 +87,61 @@ class ScanJobResourceTest {
                 .get("/api/scan-jobs")
                 .then()
                 .statusCode(200)
-                .body("$", hasSize(1))
-                .body("[0].id", equalTo(id));
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(id))
+                .body("page", equalTo(0))
+                .body("size", equalTo(20))
+                .body("total", equalTo(1));
+    }
+
+    @Test
+    void listScanJobsSupportsPaginationAndStatusFilter() {
+        Long pendingId = createScanJob("pending");
+        createScanJob("completed");
+        createScanJob("failed");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/scan-jobs?page=0&size=2&status=pending")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(pendingId.intValue()))
+                .body("items[0].status", equalTo("pending"))
+                .body("page", equalTo(0))
+                .body("size", equalTo(2))
+                .body("total", equalTo(1));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/scan-jobs?status=done")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void repeatedRunReturnsConflictForRunningAndCompletedJobs() {
+        Long runningId = createScanJob("running");
+        Long completedId = createScanJob("completed");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/scan-jobs/{id}/run", runningId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/scan-jobs/{id}/run", completedId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
     }
 
     @Test
@@ -108,5 +163,15 @@ class ScanJobResourceTest {
                 .then()
                 .statusCode(404)
                 .body("error", equalTo("not_found"));
+    }
+
+    @Transactional
+    Long createScanJob(String status) {
+        ScanJob scanJob = new ScanJob();
+        scanJob.jobType = "library_scan";
+        scanJob.status = status;
+        scanJob.musicDirs = musicDir.toString();
+        scanJob.persist();
+        return scanJob.id;
     }
 }

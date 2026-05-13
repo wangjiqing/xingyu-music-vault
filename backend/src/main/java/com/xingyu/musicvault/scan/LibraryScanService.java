@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.scan;
 
+import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.TrackFile;
@@ -13,6 +14,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -25,6 +27,12 @@ import java.util.stream.Stream;
 @ApplicationScoped
 public class LibraryScanService {
     private static final Set<String> AUDIO_EXTENSIONS = Set.of("mp3", "flac", "wav", "m4a", "aac", "ogg", "opus");
+    private static final Set<Path> UNSAFE_ROOTS = Set.of(
+            Paths.get("/"),
+            Paths.get("/etc"),
+            Paths.get("/Users"),
+            Paths.get("/home")
+    );
 
     @Inject
     MusicVaultConfig config;
@@ -36,19 +44,20 @@ public class LibraryScanService {
             throw new NotFoundException("Scan job not found");
         }
         if ("running".equals(scanJob.status)) {
-            throw new BadRequestException("Scan job is already running");
+            throw new ConflictException("Scan job is already running");
+        }
+        if ("completed".equals(scanJob.status)) {
+            throw new ConflictException("Completed scan job cannot be run again");
+        }
+        if (!"pending".equals(scanJob.status) && !"failed".equals(scanJob.status)) {
+            throw new BadRequestException("Scan job status must be pending or failed to run");
         }
 
         prepare(scanJob);
         List<String> messages = new ArrayList<>();
 
         try {
-            List<Path> roots = resolveMusicDirs(scanJob).stream()
-                    .map(Path::of)
-                    .toList();
-            if (roots.isEmpty()) {
-                throw new BadRequestException("No music directories configured");
-            }
+            List<Path> roots = resolveValidatedMusicDirs(scanJob);
 
             for (Path root : roots) {
                 scanRoot(scanJob, root, messages);
@@ -89,6 +98,72 @@ public class LibraryScanService {
                     .toList();
         }
         return config.musicDirs();
+    }
+
+    private List<Path> resolveValidatedMusicDirs(ScanJob scanJob) {
+        List<String> requestedDirs = resolveMusicDirs(scanJob);
+        if (requestedDirs.isEmpty()) {
+            throw new IllegalArgumentException("No music directories configured");
+        }
+
+        List<Path> allowedRoots = config.musicDirs().stream()
+                .map(this::toValidatedAllowedRoot)
+                .toList();
+        if (allowedRoots.isEmpty()) {
+            throw new IllegalArgumentException("No allowed music directories configured");
+        }
+
+        List<Path> roots = new ArrayList<>();
+        for (String dir : requestedDirs) {
+            Path requestedPath = Path.of(dir);
+            rejectPathTraversal(requestedPath);
+            Path realPath = toReadableDirectory(requestedPath, "Music directory");
+            rejectUnsafeRoot(realPath);
+            if (allowedRoots.stream().noneMatch(realPath::startsWith)) {
+                throw new IllegalArgumentException("Music directory is outside allowed roots: " + requestedPath);
+            }
+            roots.add(realPath);
+        }
+        return roots;
+    }
+
+    private Path toValidatedAllowedRoot(String dir) {
+        Path path = Path.of(dir);
+        rejectPathTraversal(path);
+        Path realPath = toReadableDirectory(path, "Allowed music directory");
+        rejectUnsafeRoot(realPath);
+        return realPath;
+    }
+
+    private Path toReadableDirectory(Path path, String label) {
+        if (!Files.exists(path)) {
+            throw new IllegalArgumentException(label + " does not exist: " + path);
+        }
+        if (!Files.isDirectory(path)) {
+            throw new IllegalArgumentException(label + " is not a directory: " + path);
+        }
+        if (!Files.isReadable(path)) {
+            throw new IllegalArgumentException(label + " is not readable: " + path);
+        }
+        try {
+            return path.toRealPath();
+        } catch (IOException exception) {
+            throw new IllegalArgumentException(label + " cannot be resolved: " + path);
+        }
+    }
+
+    private void rejectPathTraversal(Path path) {
+        for (Path segment : path) {
+            if ("..".equals(segment.toString())) {
+                throw new IllegalArgumentException("Music directory must not contain path traversal: " + path);
+            }
+        }
+    }
+
+    private void rejectUnsafeRoot(Path path) {
+        if (UNSAFE_ROOTS.contains(path)) {
+            throw new IllegalArgumentException("Music directory is not an allowed scan root: " + path);
+        }
     }
 
     private void scanRoot(ScanJob scanJob, Path root, List<String> messages) {
