@@ -35,7 +35,10 @@ class TrackFileResourceTest {
                 .get("/api/track-files")
                 .then()
                 .statusCode(200)
-                .body("$", hasSize(2));
+                .body("items", hasSize(2))
+                .body("page", equalTo(0))
+                .body("size", equalTo(20))
+                .body("total", equalTo(2));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -54,8 +57,43 @@ class TrackFileResourceTest {
                 .get("/api/track-files?ext=flac")
                 .then()
                 .statusCode(200)
-                .body("$", hasSize(1))
-                .body("[0].id", equalTo(flacId.intValue()));
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(flacId.intValue()));
+    }
+
+    @Test
+    void listTrackFilesSupportsPaginationExtAndKeywordFilters() {
+        createTrackFile("/music/live/Alpha.flac", "Alpha.flac", "flac");
+        createTrackFile("/music/studio/Beta.mp3", "Beta.mp3", "mp3");
+        createTrackFile("/music/live/Gamma.flac", "Gamma.flac", "flac");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/track-files?page=0&size=1&ext=flac")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("page", equalTo(0))
+                .body("size", equalTo(1))
+                .body("total", equalTo(2));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/track-files?keyword=beta")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].fileName", equalTo("Beta.mp3"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/track-files?page=-1")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
     }
 
     @Test

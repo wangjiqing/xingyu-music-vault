@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.scan;
 
+import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.TrackFile;
 import io.quarkus.test.junit.QuarkusTest;
@@ -15,9 +16,12 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @QuarkusTest
 class LibraryScanServiceTest {
+    private static final Path ALLOWED_MUSIC_ROOT = Path.of("target/test-music");
+
     @Inject
     LibraryScanService libraryScanService;
 
@@ -26,7 +30,8 @@ class LibraryScanServiceTest {
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
-        musicDir = Files.createTempDirectory("music-vault-service-test");
+        Files.createDirectories(ALLOWED_MUSIC_ROOT);
+        musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "service-test-");
         TrackFile.deleteAll();
         ScanJob.deleteAll();
     }
@@ -80,19 +85,68 @@ class LibraryScanServiceTest {
     }
 
     @Test
-    void missingDirectoryCompletesWithClearMessage() {
+    void missingDirectoryFailsWithClearMessage() {
         Path missingDir = musicDir.resolve("missing");
 
         Long scanJobId = createScanJob(missingDir);
         ScanJob scanJob = libraryScanService.run(scanJobId);
 
-        assertEquals("completed", scanJob.status);
+        assertEquals("failed", scanJob.status);
         assertEquals(0, scanJob.totalFiles);
         assertEquals(0, scanJob.scannedFiles);
         assertEquals(0, scanJob.newFiles);
-        assertEquals(1, scanJob.skippedFiles);
+        assertEquals(0, scanJob.skippedFiles);
         assertEquals(0, scanJob.errorFiles);
         assertNotNull(scanJob.errorMessage);
+    }
+
+    @Test
+    void failedScanJobCanRunAgain() throws IOException {
+        Path missingDir = musicDir.resolve("missing");
+        Long scanJobId = createScanJob(missingDir);
+        ScanJob failedJob = libraryScanService.run(scanJobId);
+        assertEquals("failed", failedJob.status);
+
+        Files.createDirectories(missingDir);
+        Files.writeString(missingDir.resolve("retry.mp3"), "retry");
+
+        ScanJob rerunJob = libraryScanService.run(scanJobId);
+
+        assertEquals("completed", rerunJob.status);
+        assertEquals(1, rerunJob.totalFiles);
+        assertEquals(1, rerunJob.scannedFiles);
+        assertEquals(1, rerunJob.newFiles);
+        assertNull(rerunJob.errorMessage);
+    }
+
+    @Test
+    void pathTraversalIsRejected() {
+        Path traversal = musicDir.resolve("..").resolve("outside");
+
+        Long scanJobId = createScanJob(traversal);
+        ScanJob scanJob = libraryScanService.run(scanJobId);
+
+        assertEquals("failed", scanJob.status);
+        assertNotNull(scanJob.errorMessage);
+    }
+
+    @Test
+    void directoryOutsideAllowedRootsIsRejected() throws IOException {
+        Path outsideDir = Files.createTempDirectory("music-vault-outside-test");
+
+        Long scanJobId = createScanJob(outsideDir);
+        ScanJob scanJob = libraryScanService.run(scanJobId);
+
+        assertEquals("failed", scanJob.status);
+        assertNotNull(scanJob.errorMessage);
+    }
+
+    @Test
+    void completedScanJobCannotRunAgain() {
+        Long scanJobId = createScanJob(musicDir);
+        libraryScanService.run(scanJobId);
+
+        assertThrows(ConflictException.class, () -> libraryScanService.run(scanJobId));
     }
 
     @Transactional

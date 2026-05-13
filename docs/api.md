@@ -145,7 +145,7 @@ Content-Type: application/json
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/scan-jobs` | 扫描任务列表 |
+| GET | `/api/scan-jobs?page=0&size=20&status=completed` | 扫描任务分页列表，可按状态过滤 |
 | POST | `/api/scan-jobs` | 创建 pending 状态扫描任务 |
 | GET | `/api/scan-jobs/{id}` | 扫描任务详情 |
 | POST | `/api/scan-jobs/{id}/run` | 执行扫描任务 |
@@ -191,6 +191,44 @@ Content-Type: application/json
 
 `POST /api/scan-jobs` 只创建任务，不立即扫描。未传 `musicDirs` 时使用 `MUSIC_VAULT_MUSIC_DIRS` 配置。
 
+#### 查询扫描任务列表
+
+```http
+GET /api/scan-jobs?page=0&size=20&status=completed
+Authorization: Bearer change-me
+```
+
+`status` 可选，允许值：`pending`、`running`、`completed`、`failed`。非法状态返回 `400`。
+
+响应：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "jobType": "library_scan",
+      "status": "completed",
+      "musicDirs": ["/music"],
+      "totalFiles": 3,
+      "scannedFiles": 2,
+      "newFiles": 2,
+      "updatedFiles": 0,
+      "skippedFiles": 1,
+      "errorFiles": 0,
+      "errorMessage": null,
+      "startedAt": "2026-05-13T07:31:00",
+      "finishedAt": "2026-05-13T07:31:01",
+      "createdAt": "2026-05-13T07:30:00",
+      "updatedAt": "2026-05-13T07:31:01"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
+
 #### 执行扫描任务
 
 ```http
@@ -198,33 +236,48 @@ POST /api/scan-jobs/1/run
 Authorization: Bearer change-me
 ```
 
-扫描支持扩展名：`mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`opus`。重复扫描相同 `file_path` 会更新 `file_size`、`last_modified_at`、`scan_job_id` 与 `updated_at`，不会重复插入。
+扫描支持扩展名：`mp3`、`flac`、`wav`、`m4a`、`aac`、`ogg`、`opus`。重复扫描相同 `file_path` 会更新 `file_size`、`last_modified_at`、`scan_job_id` 与 `updated_at`，不会重复插入。只有 `pending` 和 `failed` 任务可以执行；`running` 或 `completed` 任务再次执行会返回 `409`：
+
+```json
+{
+  "error": "conflict",
+  "message": "Completed scan job cannot be run again"
+}
+```
+
+扫描目录必须位于配置允许的 `MUSIC_VAULT_MUSIC_DIRS` 范围内，并会经过真实路径归一化校验。路径穿越、非允许目录、根目录类危险路径、目录不存在、不可读或不是目录都会使任务进入 `failed`，并记录 `errorMessage`。
 
 ### 音频文件记录
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/track-files` | 文件记录列表 |
-| GET | `/api/track-files?ext=flac` | 按扩展名过滤 |
+| GET | `/api/track-files?page=0&size=20` | 文件记录分页列表 |
+| GET | `/api/track-files?ext=flac&keyword=live` | 按扩展名和文件名/路径关键词过滤 |
 | GET | `/api/track-files/{id}` | 文件记录详情 |
 
 响应示例：
 
 ```json
-[
-  {
-    "id": 1,
-    "trackId": null,
-    "filePath": "/music/a.flac",
-    "fileName": "a.flac",
-    "fileExt": "flac",
-    "fileSize": 123456,
-    "lastModifiedAt": "2026-05-13T07:31:00",
-    "scanJobId": 1,
-    "createdAt": "2026-05-13T07:31:00",
-    "updatedAt": "2026-05-13T07:31:00"
-  }
-]
+{
+  "items": [
+    {
+      "id": 1,
+      "trackId": null,
+      "filePath": "/music/a.flac",
+      "fileName": "a.flac",
+      "fileExt": "flac",
+      "fileSize": 123456,
+      "lastModifiedAt": "2026-05-13T07:31:00",
+      "scanJobId": 1,
+      "createdAt": "2026-05-13T07:31:00",
+      "updatedAt": "2026-05-13T07:31:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
 
 ## 规划中接口
 
@@ -279,15 +332,24 @@ Authorization: Bearer change-me
 
 ## 分页与过滤
 
-分页、搜索、排序参数为规划中能力，当前已实现列表接口暂未提供统一分页。
+`GET /api/scan-jobs` 和 `GET /api/track-files` 返回统一分页结构：
+
+```json
+{
+  "items": [],
+  "page": 0,
+  "size": 20,
+  "total": 0
+}
+```
 
 | 参数 | 说明 |
 |------|------|
-| `page` | 页码（从 1 开始，默认 1） |
-| `size` | 每页条数（默认 20，最大 100） |
-| `q` | 关键词搜索 |
-| `sort` | 排序字段 |
-| `order` | 升序/降序（asc/desc） |
+| `page` | 页码，从 0 开始，默认 0 |
+| `size` | 每页条数，默认 20，最大 100 |
+| `status` | `scan-jobs` 可用，允许 `pending`、`running`、`completed`、`failed` |
+| `ext` | `track-files` 可用，匹配 `fileExt` |
+| `keyword` | `track-files` 可用，模糊匹配 `fileName` 或 `filePath` |
 
 ## 状态码
 
@@ -297,6 +359,7 @@ Authorization: Bearer change-me
 | 201 | 创建成功 |
 | 400 | 请求参数错误 |
 | 401 | 未鉴权 |
+| 409 | 资源状态冲突 |
 | 403 | 无权限 |
 | 404 | 资源不存在 |
 | 500 | 服务器内部错误 |

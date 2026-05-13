@@ -2,6 +2,10 @@ quarkus:
   http:
     host: 0.0.0.0
     port: 8080
+    record-request-start-time: true
+    access-log:
+      enabled: true
+      pattern: '%r %s %D ms'
   datasource:
     db-kind: sqlite
     jdbc:
@@ -18,6 +22,10 @@ quarkus:
     info-title: Xingyu Music Vault API
     info-version: 0.1.0
     info-description: Self-hosted music metadata management API.
+  log:
+    category:
+      "com.xingyu.musicvault":
+        level: INFO
 
 music-vault:
   data-dir: ${MUSIC_VAULT_DATA_DIR:/app/data}
@@ -33,10 +41,14 @@ music-vault:
     datasource:
       jdbc:
         url: jdbc:sqlite:data/music-vault.db
+    log:
+      category:
+        "com.xingyu.musicvault":
+          level: DEBUG
   music-vault:
     data-dir: data
     config-dir: config
-    music-dirs: music
+    music-dirs: /Users/wangjiqing/Project/Musics
     db-path: data/music-vault.db
 
 "%test":
