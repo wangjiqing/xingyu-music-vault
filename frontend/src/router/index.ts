@@ -16,6 +16,12 @@ const router = createRouter({
           meta: { title: '仪表盘' },
         },
         {
+          path: 'music',
+          name: 'MusicList',
+          component: () => import('../views/MusicListView.vue'),
+          meta: { title: '音乐库' },
+        },
+        {
           path: 'tracks',
           name: 'TrackList',
           component: () => import('../views/TrackList.vue'),

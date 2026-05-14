@@ -26,6 +26,7 @@ const activeMenu = computed(() => {
 
 const menuItems = [
   { path: '/dashboard', title: '仪表盘', icon: DataBoard },
+  { path: '/music', title: '音乐库', icon: Headset },
   { path: '/tracks', title: '歌曲列表', icon: Headset },
   { path: '/lyrics', title: '歌词管理', icon: Mic },
   { path: '/artwork', title: '封面管理', icon: Picture },
