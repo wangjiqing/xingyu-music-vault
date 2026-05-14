@@ -37,7 +37,7 @@
 |------|------|------|
 | Scan Engine | 扫描音乐目录，提取音频指纹和元数据 | 规划中 |
 | Metadata Service | 歌手/专辑/曲目元数据的 CRUD | 规划中 |
-| Lyrics Service | 歌词抓取、存储、多版本管理 | 规划中 |
+| Lyrics Service | 本地 LRC 导入、存储、歌曲绑定、歌词状态查询 | 已实现基础能力 |
 | Artwork Service | 封面刮削、缓存、存储 | 规划中 |
 | Match Engine | 自动匹配音乐指纹与元数据源 | 规划中 |
 | Review Workflow | 人工审核工作流与状态机 | 规划中 |
@@ -50,7 +50,7 @@
 | 概览仪表盘 | `/dashboard` | 规划中 |
 | 音乐库（列表/搜索） | `/tracks` | 规划中 |
 | 歌曲详情 | `/tracks/:id` | 规划中 |
-| 歌词管理 | `/lyrics` | 规划中 |
+| 歌词管理 | `/lyrics` | 页面占位，后端基础能力已实现 |
 | 封面管理 | `/artwork` | 规划中 |
 | 待审核项 | `/review` | 规划中 |
 | 扫描任务 | `/scan-jobs` | 规划中 |

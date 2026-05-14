@@ -259,7 +259,7 @@ Authorization: Bearer change-me
 
 | Method | Path | 说明 |
 |--------|------|------|
-| POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `/Users/wangjiqing/Project/Musics` |
+| POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `music.scan.default-path` |
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
 
@@ -287,7 +287,7 @@ Content-Type: application/json
 }
 ```
 
-扫描会递归读取目录，跳过隐藏文件和非音乐文件。当前 v0.3 不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。
+扫描会递归读取目录，跳过隐藏文件和非音乐文件。当前不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。如果历史 `track_files` 行缺少 `track_id`，重复音乐扫描会补建 `tracks` 元数据，供歌词匹配使用。
 
 查询列表：
 
@@ -306,6 +306,8 @@ Authorization: Bearer change-me
       "album": null,
       "albumArtist": "周杰伦",
       "duration": null,
+      "lyricStatus": "BOUND",
+      "lyricId": 1,
       "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
       "fileName": "周杰伦 - 晴天.flac",
       "fileExtension": "flac",
@@ -380,6 +382,87 @@ curl "http://localhost:8080/api/scan-jobs/1" \
 }
 ```
 
+## 歌词管理 API（v0.5）
+
+v0.5 只支持本地 LRC 导入、去重、自动匹配和查询，不做在线歌词刮削、歌词编辑器、多版本审核或播放器逐句滚动。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/lyrics/scan` | 扫描本地 LRC 歌词目录并尝试绑定歌曲 |
+| GET | `/api/songs/{songId}/lyrics` | 获取音乐列表中某首歌的主歌词 |
+
+`songId` 当前对应 `track_files.id`，也就是 `GET /api/music` 返回的 `id`。
+
+### 扫描歌词
+
+```http
+POST /api/lyrics/scan
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics/Lyrics",
+  "overwritePrimary": false
+}
+```
+
+`path` 为空时使用 `music-vault.lyric-dirs` 的第一个目录。扫描目录必须位于 `MUSIC_VAULT_LYRIC_DIRS` 允许范围内。`overwritePrimary` 默认为 `false`，不会覆盖已有主歌词绑定。
+
+响应示例：
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics/Lyrics",
+  "totalFiles": 278,
+  "imported": 0,
+  "duplicateFiles": 278,
+  "matched": 274,
+  "unmatched": 4,
+  "skippedBindings": 0,
+  "failed": 0
+}
+```
+
+歌词扫描会递归查找 `.lrc` 文件，读取 `[ti:]`、`[ar:]`、`[al:]` 标签和文件名中的 `歌手 - 歌名` 作为基础元数据，使用内容 SHA-256 去重。自动绑定依赖音乐扫描生成的 `tracks.normalized_title`，因此首次导入或旧库升级时推荐顺序是：
+
+1. 先执行 `POST /api/music/scan`，补齐 `track_files.track_id` 和 `tracks` 元数据。
+2. 等扫描任务 `completed` 后，再执行 `POST /api/lyrics/scan`。
+3. 刷新 `GET /api/music`，已绑定歌曲会返回 `lyricStatus = BOUND` 和 `lyricId`。
+
+### 查询歌曲歌词
+
+```http
+GET /api/songs/1/lyrics
+Authorization: Bearer change-me
+```
+
+响应示例：
+
+```json
+{
+  "songId": 1,
+  "lyricStatus": "BOUND",
+  "lyricId": 1,
+  "title": "晴天",
+  "artist": "周杰伦",
+  "album": "叶惠美",
+  "language": null,
+  "releaseYear": null,
+  "sourceType": "LOCAL_FILE",
+  "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+  "format": "LRC",
+  "parseStatus": "PARSED",
+  "parseMessage": null,
+  "content": "[ti:晴天]\n[ar:周杰伦]\n...",
+  "createdAt": "2026-05-14T06:40:00",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+当前歌曲歌词状态包括：`BOUND`、`NO_LYRIC`、`PARSE_FAILED`、`MISSING_FILE`。`UNMATCHED` 是歌词扫描统计语义，表示导入了歌词文件但未找到歌曲候选。
+
 ## 规划中接口
 
 以下接口仅为规划，当前版本尚未实现。
@@ -404,12 +487,12 @@ curl "http://localhost:8080/api/scan-jobs/1" \
 | GET | `/api/albums` | 专辑列表 |
 | GET | `/api/albums/{id}` | 专辑详情 |
 
-### 歌词
+### 歌词后续能力
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/tracks/{id}/lyrics` | 获取曲目歌词 |
-| POST | `/api/tracks/{id}/lyrics` | 提交/更新歌词 |
+| PUT | `/api/lyrics/{id}` | 编辑歌词内容 |
+| GET | `/api/lyrics/{id}/versions` | 获取歌词版本 |
 
 ### 封面
 

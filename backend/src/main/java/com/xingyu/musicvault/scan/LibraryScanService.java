@@ -289,7 +289,7 @@ public class LibraryScanService {
         if (isNew) {
             trackFile = new TrackFile();
             trackFile.filePath = filePath;
-        } else if (trackFile.fileSize == fileSize && sameTime(trackFile.lastModifiedAt, lastModifiedAt)) {
+        } else if (trackFile.trackId != null && trackFile.fileSize == fileSize && sameTime(trackFile.lastModifiedAt, lastModifiedAt)) {
             LOG.debugf("Skipping unchanged track file: jobId=%d path=%s", scanJob.id, filePath);
             return UpsertResult.SKIPPED;
         }

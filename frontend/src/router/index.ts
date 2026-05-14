@@ -22,18 +22,6 @@ const router = createRouter({
           meta: { title: '音乐库' },
         },
         {
-          path: 'tracks',
-          name: 'TrackList',
-          component: () => import('../views/TrackList.vue'),
-          meta: { title: '歌曲列表' },
-        },
-        {
-          path: 'tracks/:id',
-          name: 'TrackDetail',
-          component: () => import('../views/TrackDetail.vue'),
-          meta: { title: '歌曲详情' },
-        },
-        {
           path: 'lyrics',
           name: 'LyricsManage',
           component: () => import('../views/LyricsManage.vue'),
