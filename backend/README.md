@@ -15,8 +15,6 @@
 - **默认音乐目录**：`/Users/wangjiqing/Project/Musics/Music`（`music-vault.music-dirs` 配置）
 - **默认歌词目录**：`/Users/wangjiqing/Project/Musics/Lyrics`（`music-vault.lyric-dirs` 配置）
 
-**本阶段不包含**：ffprobe 音频内嵌元数据提取、在线歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理页面、用户登录系统。
-
 - **Track CRUD**：曲目的创建、查询、更新、删除
 - **本地音乐库扫描**：创建扫描任务后递归扫描本地目录，记录音频文件到 `track_files`
 - **扫描稳定性**：重复运行保护（`running`/`completed` 状态任务禁止重复执行，返回 `409`）、扫描路径安全校验（禁止扫描 `/`、`/etc`、`/Users`、`/home` 等危险路径，禁止路径穿越，禁止扫描配置目录外路径）
@@ -46,10 +44,16 @@ In dev mode the SQLite database is stored at `backend/data/music-vault.db`, and 
 The dev profile allows scanning under this local music root by default:
 
 ```text
-/Users/wangjiqing/Project/Musics
+/Users/wangjiqing/Project/Musics/Music
 ```
 
-For local testing, create scan jobs with directories inside that root, for example `/Users/wangjiqing/Project/Musics/Music`. Production and Docker Compose defaults still use `/music`, and any environment can override the allowed scan roots with `MUSIC_VAULT_MUSIC_DIRS`.
+The dev profile uses this local lyric root by default:
+
+```text
+/Users/wangjiqing/Project/Musics/Lyrics
+```
+
+Production and Docker Compose defaults still use `/music`, and any environment can override the allowed scan roots with `MUSIC_VAULT_MUSIC_DIRS` and `MUSIC_VAULT_LYRIC_DIRS`.
 
 You can override paths with environment variables when needed:
 
@@ -57,6 +61,7 @@ You can override paths with environment variables when needed:
 MUSIC_VAULT_DB_PATH=/tmp/xingyu-music-vault-data/music-vault.db \
 MUSIC_VAULT_DATA_DIR=/tmp/xingyu-music-vault-data \
 MUSIC_VAULT_MUSIC_DIRS=/path/to/music \
+MUSIC_VAULT_LYRIC_DIRS=/path/to/lyrics \
 MUSIC_VAULT_API_TOKEN=change-me \
 mvn quarkus:dev
 ```
@@ -127,7 +132,7 @@ curl -i -X POST http://localhost:8080/api/scan-jobs/1/run \
   -H 'Authorization: Bearer change-me'
 ```
 
-The scanner records local files with extensions `mp3`, `flac`, `wav`, `m4a`, `aac`, `ogg`, and `opus` into `track_files`. Re-running a scan updates existing rows by `file_path` instead of inserting duplicates. v0.2 does not call ffprobe, extract embedded tags, fetch lyrics, fetch cover art, perform network matching, or modify local music files.
+The scanner records local files with extensions `mp3`, `flac`, `wav`, `m4a`, `aac`, `ogg`, and `opus` into `track_files`. Re-running a scan updates existing rows by `file_path` instead of inserting duplicates. It does not call ffprobe, extract embedded tags, fetch online lyrics, fetch cover art, perform network matching, or modify local music files.
 
 List scan jobs with pagination and optional status:
 
@@ -157,7 +162,7 @@ curl -i 'http://localhost:8080/api/track-files?ext=flac&keyword=live' \
 `POST /api/music/scan` 是 v0.3 新增的快捷扫描入口，等价于「创建 ScanJob + 立即执行」，返回 `202 Accepted` 后台异步执行：
 
 ```bash
-# 使用默认目录扫描（/Users/wangjiqing/Project/Musics）
+# 使用默认音乐目录扫描（/Users/wangjiqing/Project/Musics/Music）
 curl -i -X POST http://localhost:8080/api/music/scan \
   -H 'Authorization: Bearer change-me' \
   -H 'Content-Type: application/json' \
@@ -167,7 +172,7 @@ curl -i -X POST http://localhost:8080/api/music/scan \
 curl -i -X POST http://localhost:8080/api/music/scan \
   -H 'Authorization: Bearer change-me' \
   -H 'Content-Type: application/json' \
-  -d '{"path": "/Users/wangjiqing/Project/Musics"}'
+  -d '{"path": "/Users/wangjiqing/Project/Musics/Music"}'
 ```
 
 响应：
