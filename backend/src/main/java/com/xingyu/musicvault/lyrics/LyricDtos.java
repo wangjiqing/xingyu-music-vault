@@ -24,6 +24,64 @@ public final class LyricDtos {
     ) {
     }
 
+    public record LyricListItemResponse(
+            Long id,
+            String title,
+            String artist,
+            String album,
+            String language,
+            Integer releaseYear,
+            String sourceType,
+            String sourcePath,
+            String format,
+            String parseStatus,
+            String parseMessage,
+            String bindStatus,
+            Long boundSongId,
+            String boundSongTitle,
+            String boundSongArtist,
+            String matchType,
+            Integer matchScore,
+            Boolean isPrimary,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    public record LyricDetailResponse(
+            Long id,
+            String title,
+            String artist,
+            String album,
+            String language,
+            Integer releaseYear,
+            String sourceType,
+            String sourcePath,
+            String format,
+            String content,
+            String contentHash,
+            String parseStatus,
+            String parseMessage,
+            String bindStatus,
+            BoundSongResponse boundSong,
+            java.util.List<BoundSongResponse> boundSongs,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    public record BoundSongResponse(
+            Long songId,
+            String title,
+            String artist,
+            String album,
+            String fileName,
+            String matchType,
+            Integer matchScore,
+            Boolean isPrimary
+    ) {
+    }
+
     public record SongLyricResponse(
             Long songId,
             String lyricStatus,

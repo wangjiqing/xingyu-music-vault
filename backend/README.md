@@ -2,12 +2,14 @@
 
 ## 当前能力
 
-后端当前已完成本地音乐扫描入库、音乐列表查询和 v0.5 歌词管理基础能力：
+后端当前已完成本地音乐扫描入库、音乐列表查询、v0.5 歌词管理基础能力和 v0.5.2 歌词管理页查询 API：
 
 - **POST /api/music/scan**：异步接受扫描请求，后台执行扫描，返回 `202 Accepted` 与 `scanJobId`
 - **GET /api/music**：音乐分页列表，基于 `track_files` + `tracks` 联合视图
 - **GET /api/music/{id}**：音乐详情
 - **POST /api/lyrics/scan**：扫描本地 LRC 歌词并尝试自动绑定歌曲
+- **GET /api/lyrics**：歌词管理页列表查询，支持分页、关键词、绑定状态、解析状态和来源过滤
+- **GET /api/lyrics/{id}**：歌词详情查询，返回歌词原文、来源信息和绑定歌曲摘要
 - **GET /api/songs/{songId}/lyrics**：获取音乐列表中某首歌的主歌词
 - **文件名元数据兜底**：`Artist - Title.flac` 格式自动解析为 `artist`/`title`，其余字段为 `null`
 - **重复扫描跳过**：文件大小和修改时间均未变化时跳过（1秒容差）
@@ -223,7 +225,7 @@ curl 'http://localhost:8080/api/music/1' \
 
 `page` 从 0 开始，默认 `size=20`，最大 `size=100`。
 
-## Lyrics Scan API (v0.5)
+## Lyrics API (v0.5 / v0.5.2)
 
 `POST /api/lyrics/scan` 扫描本地 LRC 歌词目录，按内容 SHA-256 去重，并基于 LRC 标签或文件名中的 `歌手 - 歌名` 自动绑定音乐列表中的歌曲：
 
@@ -248,6 +250,54 @@ curl -i -X POST http://localhost:8080/api/lyrics/scan \
   "failed": 0
 }
 ```
+
+查询歌词列表（分页，按入库时间倒序）：
+
+```bash
+curl 'http://localhost:8080/api/lyrics?page=0&size=20&keyword=晴天&bindStatus=BOUND&parseStatus=SUCCESS&sourceType=LOCAL_FILE' \
+  -H 'Authorization: Bearer change-me'
+```
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "晴天",
+      "artist": "周杰伦",
+      "album": "叶惠美",
+      "sourceType": "LOCAL_FILE",
+      "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+      "format": "LRC",
+      "parseStatus": "SUCCESS",
+      "parseMessage": null,
+      "bindStatus": "BOUND",
+      "boundSongId": 1,
+      "boundSongTitle": "晴天",
+      "boundSongArtist": "周杰伦",
+      "matchType": "TITLE_ARTIST",
+      "matchScore": 100,
+      "isPrimary": true,
+      "createdAt": "2026-05-15T06:40:00",
+      "updatedAt": "2026-05-15T06:40:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
+
+查询歌词详情：
+
+```bash
+curl 'http://localhost:8080/api/lyrics/1' \
+  -H 'Authorization: Bearer change-me'
+```
+
+详情会返回 `content`、`contentHash`、`boundSong` 和 `boundSongs`。当前页面可优先使用 `boundSong` 展示主绑定，后续多绑定视图可使用 `boundSongs`。
 
 查询歌曲主歌词：
 

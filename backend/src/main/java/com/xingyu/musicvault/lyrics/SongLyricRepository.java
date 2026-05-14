@@ -21,4 +21,17 @@ public class SongLyricRepository implements PanacheRepository<SongLyric> {
         }
         return list("songId in ?1 and isPrimary = true", songIds);
     }
+
+    public List<SongLyric> findByLyricIds(List<Long> lyricIds) {
+        if (lyricIds == null || lyricIds.isEmpty()) {
+            return List.of();
+        }
+        return list("lyricId in ?1 order by isPrimary desc, id asc", lyricIds);
+    }
+
+    public List<Long> findDistinctBoundLyricIds() {
+        return getEntityManager()
+                .createQuery("select distinct songLyric.lyricId from SongLyric songLyric", Long.class)
+                .getResultList();
+    }
 }
