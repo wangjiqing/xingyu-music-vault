@@ -100,6 +100,52 @@ class LyricResourceTest {
                 .body("items[0].id", equalTo(songId.intValue()))
                 .body("items[0].lyricStatus", equalTo("BOUND"))
                 .body("items[0].lyricId", notNullValue());
+
+        Lyric lyric = Lyric.find("title", "晴天").firstResult();
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics?keyword={keyword}&bindStatus=BOUND&parseStatus=SUCCESS&sourceType=LOCAL_FILE", "晴天")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(0))
+                .body("size", equalTo(20))
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(lyric.id.intValue()))
+                .body("items[0].title", equalTo("晴天"))
+                .body("items[0].artist", equalTo("周杰伦"))
+                .body("items[0].sourceType", equalTo("LOCAL_FILE"))
+                .body("items[0].format", equalTo("LRC"))
+                .body("items[0].parseStatus", equalTo("SUCCESS"))
+                .body("items[0].bindStatus", equalTo("BOUND"))
+                .body("items[0].boundSongId", equalTo(songId.intValue()))
+                .body("items[0].boundSongTitle", equalTo("晴天"))
+                .body("items[0].boundSongArtist", equalTo("周杰伦"))
+                .body("items[0].matchType", equalTo("TITLE_ARTIST"))
+                .body("items[0].matchScore", equalTo(100))
+                .body("items[0].isPrimary", equalTo(true));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics/{id}", lyric.id)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(lyric.id.intValue()))
+                .body("title", equalTo("晴天"))
+                .body("contentHash", equalTo(lyric.contentHash))
+                .body("parseStatus", equalTo("SUCCESS"))
+                .body("bindStatus", equalTo("BOUND"))
+                .body("boundSong.songId", equalTo(songId.intValue()))
+                .body("boundSong.title", equalTo("晴天"))
+                .body("boundSongs[0].songId", equalTo(songId.intValue()))
+                .body("content", equalTo("""
+                        [ti:晴天]
+                        [ar:周杰伦]
+                        [al:叶惠美]
+                        [00:01.00]故事的小黄花
+                        """));
     }
 
     @Test
@@ -134,6 +180,35 @@ class LyricResourceTest {
                 .body("lyricStatus", equalTo("BOUND"));
     }
 
+    @Test
+    void listLyricsSupportsUnboundAndFailedFilters() {
+        Lyric lyric = createLyric("搁浅", "周杰伦", "七里香", "PARSE_FAILED");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics?bindStatus=UNBOUND&parseStatus=FAILED&keyword={keyword}", "搁浅")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(lyric.id.intValue()))
+                .body("items[0].title", equalTo("搁浅"))
+                .body("items[0].artist", equalTo("周杰伦"))
+                .body("items[0].album", equalTo("七里香"))
+                .body("items[0].parseStatus", equalTo("FAILED"))
+                .body("items[0].bindStatus", equalTo("UNBOUND"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics/{id}", lyric.id)
+                .then()
+                .statusCode(200)
+                .body("bindStatus", equalTo("UNBOUND"))
+                .body("boundSong", equalTo(null))
+                .body("boundSongs.size()", equalTo(0));
+    }
+
     private Long createSong(String fileName, String title, String artist) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Track track = new Track();
@@ -151,6 +226,24 @@ class LyricResourceTest {
             trackFile.lastModifiedAt = LocalDateTime.now();
             trackFile.persist();
             return trackFile.id;
+        });
+    }
+
+    private Lyric createLyric(String title, String artist, String album, String parseStatus) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Lyric lyric = new Lyric();
+            lyric.title = title;
+            lyric.artist = artist;
+            lyric.album = album;
+            lyric.sourceType = "LOCAL_FILE";
+            lyric.sourcePath = lyricDir.resolve(artist + " - " + title + ".lrc").toAbsolutePath().normalize().toString();
+            lyric.content = "[ti:" + title + "]\n";
+            lyric.contentHash = title + "-hash";
+            lyric.format = "LRC";
+            lyric.parseStatus = parseStatus;
+            lyric.parseMessage = "read failed";
+            lyric.persist();
+            return lyric;
         });
     }
 }

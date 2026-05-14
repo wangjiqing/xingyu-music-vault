@@ -1,10 +1,17 @@
 package com.xingyu.musicvault.lyrics;
 
+import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
+import com.xingyu.musicvault.lyrics.LyricDtos.BoundSongResponse;
+import com.xingyu.musicvault.lyrics.LyricDtos.LyricDetailResponse;
+import com.xingyu.musicvault.lyrics.LyricDtos.LyricListItemResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricScanResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.SongLyricResponse;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
+import io.quarkus.panache.common.Page;
+import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -21,6 +28,8 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -75,6 +84,73 @@ public class LyricService {
                 counters.unmatched,
                 counters.skippedBindings,
                 counters.failed
+        );
+    }
+
+    public PageResponse<LyricListItemResponse> listLyrics(
+            Integer page,
+            Integer size,
+            String keyword,
+            String bindStatus,
+            String parseStatus,
+            String sourceType
+    ) {
+        int pageValue = resolvePage(page);
+        int sizeValue = resolveSize(size);
+        LyricQuery lyricQuery = lyricQuery(keyword, bindStatus, parseStatus, sourceType);
+        if (lyricQuery.emptyResult()) {
+            return new PageResponse<>(List.of(), pageValue, sizeValue, 0);
+        }
+
+        PanacheQuery<Lyric> query = lyricQuery.query().isBlank()
+                ? Lyric.findAll(Sort.descending("createdAt"))
+                : Lyric.find(lyricQuery.query(), Sort.descending("createdAt"), lyricQuery.parameters().toArray());
+        long total = query.count();
+        List<Lyric> lyrics = query.page(Page.of(pageValue, sizeValue)).list();
+        Map<Long, BindingSummary> bindingsByLyricId = primaryBindingsByLyricId(
+                lyrics.stream().map(lyric -> lyric.id).toList()
+        );
+        List<LyricListItemResponse> items = lyrics.stream()
+                .map(lyric -> toListItem(lyric, bindingsByLyricId.get(lyric.id)))
+                .toList();
+        return new PageResponse<>(items, pageValue, sizeValue, total);
+    }
+
+    public LyricDetailResponse getLyric(Long id) {
+        Lyric lyric = lyricRepository.findById(id);
+        if (lyric == null) {
+            throw new NotFoundException("Lyric not found");
+        }
+
+        List<BindingSummary> bindings = bindingsForLyricIds(List.of(id)).getOrDefault(id, List.of());
+        BoundSongResponse primary = bindings.stream()
+                .filter(binding -> Boolean.TRUE.equals(binding.boundSong().isPrimary()))
+                .findFirst()
+                .map(BindingSummary::boundSong)
+                .orElseGet(() -> bindings.isEmpty() ? null : bindings.getFirst().boundSong());
+        List<BoundSongResponse> boundSongs = bindings.stream()
+                .map(BindingSummary::boundSong)
+                .toList();
+
+        return new LyricDetailResponse(
+                lyric.id,
+                lyric.title,
+                lyric.artist,
+                lyric.album,
+                lyric.language,
+                lyric.releaseYear,
+                lyric.sourceType,
+                lyric.sourcePath,
+                lyric.format,
+                lyric.content,
+                lyric.contentHash,
+                apiParseStatus(lyric.parseStatus),
+                lyric.parseMessage,
+                boundSongs.isEmpty() ? "UNBOUND" : "BOUND",
+                primary,
+                boundSongs,
+                lyric.createdAt,
+                lyric.updatedAt
         );
     }
 
@@ -140,6 +216,179 @@ public class LyricService {
                 })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private LyricQuery lyricQuery(String keyword, String bindStatus, String parseStatus, String sourceType) {
+        List<String> conditions = new ArrayList<>();
+        List<Object> parameters = new ArrayList<>();
+
+        String keywordValue = blankToNull(keyword);
+        if (keywordValue != null) {
+            int index = parameters.size() + 1;
+            conditions.add("(lower(title) like ?%1$d or lower(artist) like ?%1$d or lower(album) like ?%1$d or lower(sourcePath) like ?%1$d)"
+                    .formatted(index));
+            parameters.add("%" + keywordValue.toLowerCase(Locale.ROOT) + "%");
+        }
+
+        String sourceTypeValue = normalizeOptionalFilter(sourceType);
+        if (sourceTypeValue != null) {
+            conditions.add("sourceType = ?" + (parameters.size() + 1));
+            parameters.add(sourceTypeValue);
+        }
+
+        String parseStatusValue = apiParseStatusFilter(parseStatus);
+        if (parseStatusValue != null) {
+            conditions.add(parseStatusValue);
+        }
+
+        String bindStatusValue = normalizeBindStatus(bindStatus);
+        if (bindStatusValue != null) {
+            List<Long> boundLyricIds = songLyricRepository.findDistinctBoundLyricIds();
+            if ("BOUND".equals(bindStatusValue)) {
+                if (boundLyricIds.isEmpty()) {
+                    return new LyricQuery("", List.of(), true);
+                }
+                conditions.add("id in ?" + (parameters.size() + 1));
+                parameters.add(boundLyricIds);
+            } else {
+                if (!boundLyricIds.isEmpty()) {
+                    conditions.add("id not in ?" + (parameters.size() + 1));
+                    parameters.add(boundLyricIds);
+                }
+            }
+        }
+
+        return new LyricQuery(String.join(" and ", conditions), parameters, false);
+    }
+
+    private String apiParseStatusFilter(String parseStatus) {
+        String value = normalizeOptionalFilter(parseStatus);
+        if (value == null) {
+            return null;
+        }
+        return switch (value) {
+            case "SUCCESS", "PARSED" -> "parseStatus = 'PARSED'";
+            case "FAILED", "PARSE_FAILED" -> "parseStatus = 'PARSE_FAILED'";
+            case "UNKNOWN" -> "(parseStatus is null or parseStatus not in ('PARSED', 'PARSE_FAILED'))";
+            default -> throw new BadRequestException("parseStatus must be SUCCESS, FAILED, UNKNOWN, PARSED, or PARSE_FAILED");
+        };
+    }
+
+    private String normalizeBindStatus(String bindStatus) {
+        String value = normalizeOptionalFilter(bindStatus);
+        if (value == null) {
+            return null;
+        }
+        if (!"BOUND".equals(value) && !"UNBOUND".equals(value)) {
+            throw new BadRequestException("bindStatus must be BOUND or UNBOUND");
+        }
+        return value;
+    }
+
+    private String normalizeOptionalFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private Map<Long, BindingSummary> primaryBindingsByLyricId(List<Long> lyricIds) {
+        return bindingsForLyricIds(lyricIds).entrySet().stream()
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue().getFirst()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    private Map<Long, List<BindingSummary>> bindingsForLyricIds(List<Long> lyricIds) {
+        List<SongLyric> bindings = songLyricRepository.findByLyricIds(lyricIds);
+        if (bindings.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, TrackFile> trackFilesById = trackFilesById(bindings.stream()
+                .map(binding -> binding.songId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        Map<Long, Track> tracksById = tracksById(trackFilesById.values().stream()
+                .map(trackFile -> trackFile.trackId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+
+        Map<Long, List<BindingSummary>> result = new HashMap<>();
+        for (SongLyric binding : bindings) {
+            TrackFile trackFile = trackFilesById.get(binding.songId);
+            Track track = trackFile == null || trackFile.trackId == null ? null : tracksById.get(trackFile.trackId);
+            String songTitle = track == null ? null : track.title;
+            if ((songTitle == null || songTitle.isBlank()) && trackFile != null) {
+                songTitle = trackFile.fileName;
+            }
+            BoundSongResponse boundSong = new BoundSongResponse(
+                    binding.songId,
+                    songTitle,
+                    track == null ? null : track.artist,
+                    track == null ? null : track.album,
+                    trackFile == null ? null : trackFile.fileName,
+                    binding.matchType,
+                    binding.matchScore,
+                    binding.isPrimary
+            );
+            result.computeIfAbsent(binding.lyricId, ignored -> new ArrayList<>())
+                    .add(new BindingSummary(boundSong));
+        }
+        return result;
+    }
+
+    private Map<Long, TrackFile> trackFilesById(List<Long> songIds) {
+        if (songIds.isEmpty()) {
+            return Map.of();
+        }
+        return TrackFile.<TrackFile>list("id in ?1", songIds).stream()
+                .collect(Collectors.toMap(trackFile -> trackFile.id, Function.identity()));
+    }
+
+    private Map<Long, Track> tracksById(List<Long> trackIds) {
+        if (trackIds.isEmpty()) {
+            return Map.of();
+        }
+        return Track.<Track>list("id in ?1", trackIds).stream()
+                .collect(Collectors.toMap(track -> track.id, Function.identity()));
+    }
+
+    private LyricListItemResponse toListItem(Lyric lyric, BindingSummary binding) {
+        BoundSongResponse boundSong = binding == null ? null : binding.boundSong();
+        return new LyricListItemResponse(
+                lyric.id,
+                lyric.title,
+                lyric.artist,
+                lyric.album,
+                lyric.language,
+                lyric.releaseYear,
+                lyric.sourceType,
+                lyric.sourcePath,
+                lyric.format,
+                apiParseStatus(lyric.parseStatus),
+                lyric.parseMessage,
+                boundSong == null ? "UNBOUND" : "BOUND",
+                boundSong == null ? null : boundSong.songId(),
+                boundSong == null ? null : boundSong.title(),
+                boundSong == null ? null : boundSong.artist(),
+                boundSong == null ? null : boundSong.matchType(),
+                boundSong == null ? null : boundSong.matchScore(),
+                boundSong == null ? null : boundSong.isPrimary(),
+                lyric.createdAt,
+                lyric.updatedAt
+        );
+    }
+
+    private String apiParseStatus(String parseStatus) {
+        if ("PARSED".equals(parseStatus)) {
+            return "SUCCESS";
+        }
+        if ("PARSE_FAILED".equals(parseStatus)) {
+            return "FAILED";
+        }
+        return "UNKNOWN";
     }
 
     private void scanFile(Path path, boolean overwritePrimary, ScanCounters counters) {
@@ -385,6 +634,26 @@ public class LyricService {
         return value.trim().toLowerCase(Locale.ROOT);
     }
 
+    private int resolvePage(Integer page) {
+        if (page == null) {
+            return 0;
+        }
+        if (page < 0) {
+            throw new BadRequestException("page must be greater than or equal to 0");
+        }
+        return page;
+    }
+
+    private int resolveSize(Integer size) {
+        if (size == null) {
+            return 20;
+        }
+        if (size < 1 || size > 100) {
+            throw new BadRequestException("size must be between 1 and 100");
+        }
+        return size;
+    }
+
     private String blankToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -409,6 +678,12 @@ public class LyricService {
     }
 
     private record MatchResult(Long songId, String matchType, int score) {
+    }
+
+    private record LyricQuery(String query, List<Object> parameters, boolean emptyResult) {
+    }
+
+    private record BindingSummary(BoundSongResponse boundSong) {
     }
 
     public record PrimaryLyricSummary(Long lyricId, String lyricStatus) {

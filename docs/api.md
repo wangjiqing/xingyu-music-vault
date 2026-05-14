@@ -382,16 +382,121 @@ curl "http://localhost:8080/api/scan-jobs/1" \
 }
 ```
 
-## 歌词管理 API（v0.5）
+## 歌词管理 API（v0.5 / v0.5.2）
 
-v0.5 只支持本地 LRC 导入、去重、自动匹配和查询，不做在线歌词刮削、歌词编辑器、多版本审核或播放器逐句滚动。
+v0.5 / v0.5.2 只支持本地 LRC 导入、去重、自动匹配和查询，不做在线歌词刮削、歌词编辑器、多版本审核或播放器逐句滚动。
 
 | Method | Path | 说明 |
 |--------|------|------|
+| GET | `/api/lyrics` | 歌词列表分页查询（v0.5.2） |
+| GET | `/api/lyrics/{id}` | 歌词详情查询，包含歌词原文和绑定歌曲（v0.5.2） |
 | POST | `/api/lyrics/scan` | 扫描本地 LRC 歌词目录并尝试绑定歌曲 |
 | GET | `/api/songs/{songId}/lyrics` | 获取音乐列表中某首歌的主歌词 |
 
 `songId` 当前对应 `track_files.id`，也就是 `GET /api/music` 返回的 `id`。
+
+### 歌词列表查询
+
+```http
+GET /api/lyrics?page=0&size=20&bindStatus=BOUND&parseStatus=SUCCESS&sourceType=LOCAL_FILE
+Authorization: Bearer change-me
+```
+
+`page` 从 0 开始。`keyword` 支持标题、歌手、专辑、文件名的模糊搜索。
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "晴天",
+      "artist": "周杰伦",
+      "album": "叶惠美",
+      "language": null,
+      "releaseYear": null,
+      "sourceType": "LOCAL_FILE",
+      "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+      "format": "LRC",
+      "parseStatus": "SUCCESS",
+      "parseMessage": null,
+      "bindStatus": "BOUND",
+      "boundSongId": 1,
+      "boundSongTitle": "晴天",
+      "boundSongArtist": "周杰伦",
+      "matchType": "TITLE_ARTIST",
+      "matchScore": 100,
+      "isPrimary": true,
+      "createdAt": "2026-05-14T06:40:00",
+      "updatedAt": "2026-05-14T06:40:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
+
+`parseStatus` 页面展示值为 `SUCCESS`（内部存储 `PARSED`）/ `FAILED`（`PARSE_FAILED`）/ `UNKNOWN`（未解析或其他）。
+`bindStatus` 为 `BOUND`（已绑定歌曲）或 `UNBOUND`（未绑定）。
+`sourceType` 当前固定为 `LOCAL_FILE`，`MANUAL` 和 `ONLINE` 为后续预留。
+列表接口不返回 `content`，查看歌词原文请调用 `GET /api/lyrics/{id}`。
+
+### 歌词详情查询
+
+```http
+GET /api/lyrics/1
+Authorization: Bearer change-me
+```
+
+响应示例：
+
+```json
+{
+  "id": 1,
+  "title": "晴天",
+  "artist": "周杰伦",
+  "album": "叶惠美",
+  "language": null,
+  "releaseYear": null,
+  "sourceType": "LOCAL_FILE",
+  "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+  "format": "LRC",
+  "content": "[ti:晴天]\n[ar:周杰伦]\n[al:叶惠美]\n[00:00.00] 作曲 : 周杰伦\n[00:05.00] 作词 : 方文山\n[00:10.00] 故事的小黄花\n...",
+  "contentHash": "a3f5e2d...",
+  "parseStatus": "SUCCESS",
+  "parseMessage": null,
+  "bindStatus": "BOUND",
+  "boundSong": {
+    "songId": 1,
+    "title": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "fileName": "周杰伦 - 晴天.flac",
+    "matchType": "TITLE_ARTIST",
+    "matchScore": 100,
+    "isPrimary": true
+  },
+  "boundSongs": [
+    {
+      "songId": 1,
+      "title": "晴天",
+      "artist": "周杰伦",
+      "album": "叶惠美",
+      "fileName": "周杰伦 - 晴天.flac",
+      "matchType": "TITLE_ARTIST",
+      "matchScore": 100,
+      "isPrimary": true
+    }
+  ],
+  "createdAt": "2026-05-14T06:40:00",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+`boundSong` 为当前主绑定歌曲（无主绑定时为第一条绑定），`boundSongs` 为该歌词的所有绑定记录列表。
+若歌词未绑定任何歌曲，`boundStatus` 返回 `UNBOUND`，`boundSong` 和 `boundSongs` 均为空。
 
 ### 扫描歌词
 
