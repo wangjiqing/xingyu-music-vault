@@ -15,7 +15,8 @@
 | `albums` | 专辑信息 | 规划中 |
 | `tracks` | 曲目基础元数据 | 已实现 |
 | `track_files` | 物理音频文件记录（一曲多文件） | 已实现 |
-| `lyrics` | 歌词主记录 | 规划中 |
+| `lyrics` | 歌词主记录 | 已实现 |
+| `song_lyrics` | 音乐文件与歌词绑定关系 | 已实现 |
 | `lyric_versions` | 歌词多版本管理 | 规划中 |
 | `artworks` | 封面图片记录 | 规划中 |
 | `metadata_versions` | 元数据版本历史（审计） | 规划中 |
@@ -80,13 +81,50 @@
 | `created_at` | timestamp not null | 创建时间 |
 | `updated_at` | timestamp not null | 更新时间 |
 
+### lyrics
+
+记录歌词本体。v0.5 仅支持本地 LRC 文件导入，不做在线歌词刮削和逐句时间轴解析。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `title` | text | 歌词标题，优先来自 LRC `[ti:]` 标签 |
+| `artist` | text | 歌手，优先来自 LRC `[ar:]` 标签 |
+| `album` | text | 专辑，优先来自 LRC `[al:]` 标签 |
+| `language` | varchar(16) | 预留语言字段 |
+| `release_year` | integer | 预留发行年份字段 |
+| `source_type` | varchar(32) not null | 当前为 `LOCAL_FILE` |
+| `source_path` | text | 本地歌词文件路径 |
+| `content` | text not null | 歌词全文 |
+| `content_hash` | varchar(64) not null | SHA-256 内容哈希，用于去重 |
+| `format` | varchar(16) not null | 当前为 `LRC` |
+| `parse_status` | varchar(32) not null | 当前为 `PARSED`，预留 `PARSE_FAILED` |
+| `parse_message` | text | 解析说明或错误信息 |
+| `created_at` | timestamp not null | 创建时间 |
+| `updated_at` | timestamp not null | 更新时间 |
+
+### song_lyrics
+
+记录歌曲与歌词的绑定关系。v0.5 尚未引入独立 `songs` 表，因此这里的 `song_id` 指向 `track_files.id`，也就是音乐列表 API 暴露的 `id`。后续如果引入正式 `songs` 表，需要迁移该外键语义。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `song_id` | bigint not null | v0.5 对应 `track_files.id` |
+| `lyric_id` | bigint not null | 关联 `lyrics.id` |
+| `match_type` | varchar(32) not null | 当前为 `TITLE` 或 `TITLE_ARTIST` |
+| `match_score` | integer not null default 0 | 自动匹配评分 |
+| `is_primary` | boolean not null default false | 是否为当前主歌词 |
+| `created_at` | timestamp not null | 创建时间 |
+| `updated_at` | timestamp not null | 更新时间 |
+
 ## 表关系（草稿）
 
 ```
 artists 1───< albums
 albums 1───< tracks
 tracks 1───< track_files
-tracks 1───< lyrics
+track_files 1───< song_lyrics >───1 lyrics
 tracks 1───< artworks
 lyrics 1───< lyric_versions
 tracks 1───< metadata_versions
@@ -103,6 +141,14 @@ tracks 1───< review_items
 - `idx_track_files_track_id` — track_id 查询优化
 - `idx_track_files_scan_job_id` — scan_job_id 查询优化
 - `idx_track_files_file_ext` — 扩展名过滤
+- `idx_lyrics_content_hash` — lyrics 内容去重
+- `idx_lyrics_source_path` — lyrics 来源文件查询
+- `idx_lyrics_title_artist` — lyrics 标题/歌手查询
+- `idx_lyrics_parse_status` — lyrics 解析状态查询
+- `idx_song_lyrics_song_id` — song_lyrics 按歌曲查询
+- `idx_song_lyrics_lyric_id` — song_lyrics 按歌词查询
+- `idx_song_lyrics_song_lyric` — song_id + lyric_id 唯一绑定
+- `idx_song_lyrics_primary_song` — 每首歌最多一个主歌词
 
 ## SQLite 注意事项
 

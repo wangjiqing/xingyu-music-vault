@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -83,6 +84,35 @@ class LibraryScanServiceTest {
         TrackFile trackFile = TrackFile.find("fileName", "a.flac").firstResult();
         assertNotNull(trackFile);
         assertEquals(firstJobId, trackFile.scanJobId);
+    }
+
+    @Test
+    @Transactional
+    void repeatedScanRepairsLegacyTrackFileWithoutTrackId() throws IOException {
+        Path file = musicDir.resolve("周杰伦 - 晴天.flac");
+        Files.writeString(file, "music");
+
+        TrackFile trackFile = new TrackFile();
+        trackFile.filePath = file.toAbsolutePath().normalize().toString();
+        trackFile.fileName = file.getFileName().toString();
+        trackFile.fileExt = "flac";
+        trackFile.fileSize = Files.size(file);
+        trackFile.lastModifiedAt = LocalDateTime.ofInstant(Files.getLastModifiedTime(file).toInstant(), java.time.ZoneId.systemDefault());
+        trackFile.persist();
+
+        Long scanJobId = createScanJob(musicDir);
+        ScanJob scanJob = libraryScanService.run(scanJobId);
+
+        assertEquals("completed", scanJob.status);
+        assertEquals(0, scanJob.newFiles);
+        assertEquals(1, scanJob.updatedFiles);
+
+        TrackFile repaired = TrackFile.find("fileName", "周杰伦 - 晴天.flac").firstResult();
+        assertNotNull(repaired.trackId);
+        Track track = Track.findById(repaired.trackId);
+        assertNotNull(track);
+        assertEquals("晴天", track.title);
+        assertEquals("周杰伦", track.artist);
     }
 
     @Test

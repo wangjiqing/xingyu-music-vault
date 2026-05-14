@@ -8,6 +8,8 @@ export interface MusicItem {
   album: string | null
   albumArtist: string | null
   duration: number | null
+  lyricStatus: string
+  lyricId: number | null
   filePath: string
   fileName: string
   fileExtension: string

@@ -47,7 +47,7 @@
 - [x] GET /api/music/{id}：音乐详情
 - [x] 文件名元数据兜底解析（`Artist - Title` 格式）
 - [x] 重复扫描跳过未变化文件（size + lastModifiedTime，1秒容差）
-- [x] 默认扫描目录 /Users/wangjiqing/Project/Musics
+- [x] 默认音乐扫描目录 /Users/wangjiqing/Project/Musics/Music
 
 **本阶段不包含**：ffprobe 音频内嵌元数据提取、歌词抓取、封面刮削、联网匹配。
 
@@ -65,12 +65,20 @@
 
 ## v0.5 — 歌词管理
 
-> 阶段目标：歌词抓取、存储、多版本对比。
+> 阶段目标：本地 LRC 导入、存储、歌曲绑定与歌词状态查询。
 
-- [ ] 歌词数据模型（lyrics / lyric_versions）
-- [ ] 歌词抓取服务（外部源）
-- [ ] 歌词多版本管理
-- [ ] 歌词审核工作流
+- [x] 歌词数据模型（lyrics / song_lyrics）
+- [x] 本地 LRC 扫描导入
+- [x] 内容 hash 去重
+- [x] 基于标题/歌手的初步自动匹配
+- [x] 音乐列表返回 `lyricStatus` / `lyricId`
+- [x] `GET /api/songs/{songId}/lyrics`
+- [x] 前端歌词状态展示（BOUND / NO_LYRIC / UNMATCHED / PARSE_FAILED / MISSING_FILE）
+- [x] 前端歌词扫描触发与结果反馈
+- [x] 前端 LRC 原文查看弹窗
+- [ ] 在线歌词抓取（后续）
+- [ ] 歌词多版本管理（后续）
+- [ ] 歌词审核工作流（后续）
 
 ## v0.6 — 封面管理
 
@@ -87,11 +95,12 @@
 
 - [x] Vue 3 + TypeScript 项目初始化
 - [x] 管理后台页面路由骨架
-- [x] 音乐库列表页（v0.4）
+- [x] 音乐库列表页（v0.4 + v0.5 歌词状态）
+- [x] 扫描任务页面
+- [x] 系统设置页面（Token 配置）
 - [ ] 概览仪表盘
-- [ ] 歌词管理页面
+- [ ] 歌词管理页面（独立页，含编辑/多版本）
 - [ ] 封面管理页面
-- [ ] 扫描任务页面
 - [ ] 待审核工作流页面
 
 ## v0.8 — 客户端 API

@@ -30,7 +30,8 @@ quarkus:
 music-vault:
   data-dir: ${MUSIC_VAULT_DATA_DIR:/app/data}
   config-dir: ${MUSIC_VAULT_CONFIG_DIR:/app/config}
-  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/Users/wangjiqing/Project/Musics}
+  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/Users/wangjiqing/Project/Musics/Music}
+  lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/Users/wangjiqing/Project/Musics/Lyrics}
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
@@ -52,7 +53,8 @@ music:
   music-vault:
     data-dir: data
     config-dir: config
-    music-dirs: /Users/wangjiqing/Project/Musics
+    music-dirs: /Users/wangjiqing/Project/Musics/Music
+    lyric-dirs: /Users/wangjiqing/Project/Musics/Lyrics
     db-path: data/music-vault.db
 
 "%test":
@@ -67,4 +69,5 @@ music:
     data-dir: target/test-data
     config-dir: target/test-config
     music-dirs: target/test-music
+    lyric-dirs: target/test-music
     db-path: target/test-music-vault.db

@@ -1,6 +1,7 @@
 package com.xingyu.musicvault.library;
 
 import com.xingyu.musicvault.job.ScanJob;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import jakarta.transaction.Transactional;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -127,6 +129,30 @@ class MusicResourceTest {
                 .then()
                 .statusCode(404)
                 .body("error", equalTo("not_found"));
+    }
+
+    @Test
+    void listHandlesLegacyTrackFileWithoutTrackId() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = new TrackFile();
+            trackFile.filePath = musicDir.resolve("legacy.flac").toAbsolutePath().normalize().toString();
+            trackFile.fileName = "legacy.flac";
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("legacy"))
+                .body("items[0].artist", equalTo("Unknown"))
+                .body("items[0].lyricStatus", equalTo("NO_LYRIC"));
     }
 
     private ScanJob waitForScanJobStatus(Long scanJobId, String expectedStatus) throws InterruptedException {

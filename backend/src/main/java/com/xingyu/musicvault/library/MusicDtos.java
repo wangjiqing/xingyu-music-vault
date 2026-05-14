@@ -28,6 +28,8 @@ public final class MusicDtos {
             String album,
             String albumArtist,
             Long duration,
+            String lyricStatus,
+            Long lyricId,
             String filePath,
             String fileName,
             String fileExtension,
@@ -38,6 +40,15 @@ public final class MusicDtos {
     ) {
         public static MusicResponse from(TrackFile trackFile) {
             Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
+            return from(trackFile, track, null, null);
+        }
+
+        public static MusicResponse from(TrackFile trackFile, String lyricStatus, Long lyricId) {
+            Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
+            return from(trackFile, track, lyricStatus, lyricId);
+        }
+
+        public static MusicResponse from(TrackFile trackFile, Track track, String lyricStatus, Long lyricId) {
             return new MusicResponse(
                     trackFile.id,
                     titleOf(track, trackFile),
@@ -45,6 +56,8 @@ public final class MusicDtos {
                     track == null ? null : track.album,
                     track == null ? null : track.albumArtist,
                     track == null ? null : track.duration,
+                    lyricStatus,
+                    lyricId,
                     trackFile.filePath,
                     trackFile.fileName,
                     trackFile.fileExt,

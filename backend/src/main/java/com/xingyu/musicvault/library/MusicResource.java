@@ -6,6 +6,7 @@ import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
+import com.xingyu.musicvault.lyrics.LyricService;
 import com.xingyu.musicvault.scan.LibraryScanService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -27,7 +28,12 @@ import org.eclipse.microprofile.context.ManagedExecutor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Path("/api/music")
 @Produces(MediaType.APPLICATION_JSON)
@@ -42,6 +48,9 @@ public class MusicResource {
 
     @Inject
     LibraryScanService libraryScanService;
+
+    @Inject
+    LyricService lyricService;
 
     @Inject
     ManagedExecutor managedExecutor;
@@ -86,8 +95,13 @@ public class MusicResource {
 
         PanacheQuery<TrackFile> query = TrackFile.findAll(Sort.descending("createdAt"));
         long total = query.count();
-        List<MusicResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
-                .map(MusicResponse::from)
+        List<TrackFile> trackFiles = query.page(Page.of(pageValue, sizeValue)).list();
+        Map<Long, Track> tracksById = tracksById(trackFiles);
+        Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(
+                trackFiles.stream().map(trackFile -> trackFile.id).toList()
+        );
+        List<MusicResponse> items = trackFiles.stream()
+                .map(trackFile -> toMusicResponse(trackFile, trackOf(trackFile, tracksById), lyricsBySongId.get(trackFile.id)))
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
@@ -99,7 +113,45 @@ public class MusicResource {
         if (trackFile == null) {
             throw new NotFoundException("Music not found");
         }
-        return MusicResponse.from(trackFile);
+        return toMusicResponse(trackFile);
+    }
+
+    private MusicResponse toMusicResponse(TrackFile trackFile) {
+        LyricService.PrimaryLyricSummary lyric = lyricService.primaryLyricsForSongIds(List.of(trackFile.id)).get(trackFile.id);
+        return MusicResponse.from(
+                trackFile,
+                lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
+                lyric == null ? null : lyric.lyricId()
+        );
+    }
+
+    private MusicResponse toMusicResponse(TrackFile trackFile, Track track, LyricService.PrimaryLyricSummary lyric) {
+        return MusicResponse.from(
+                trackFile,
+                track,
+                lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
+                lyric == null ? null : lyric.lyricId()
+        );
+    }
+
+    private Track trackOf(TrackFile trackFile, Map<Long, Track> tracksById) {
+        if (trackFile.trackId == null) {
+            return null;
+        }
+        return tracksById.get(trackFile.trackId);
+    }
+
+    private Map<Long, Track> tracksById(List<TrackFile> trackFiles) {
+        List<Long> trackIds = trackFiles.stream()
+                .map(trackFile -> trackFile.trackId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (trackIds.isEmpty()) {
+            return new HashMap<>();
+        }
+        return Track.<Track>list("id in ?1", trackIds).stream()
+                .collect(Collectors.toMap(track -> track.id, Function.identity()));
     }
 
     private String resolveScanPath(MusicScanRequest request) {

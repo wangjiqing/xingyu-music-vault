@@ -7,7 +7,7 @@ cd backend
 mvn quarkus:dev
 ```
 
-服务监听 `http://localhost:8080`，默认扫描目录 `/Users/wangjiqing/Project/Musics`。
+服务监听 `http://localhost:8080`。开发环境默认音乐目录为 `/Users/wangjiqing/Project/Musics/Music`，默认歌词目录为 `/Users/wangjiqing/Project/Musics/Lyrics`。
 
 ## 2. 触发扫描
 
@@ -62,6 +62,24 @@ curl 'http://localhost:8080/api/music/1' \
 
 说明未变化文件被正确跳过。
 
+## 7. 歌词扫描验证
+
+首次导入或旧库升级时，先完成音乐扫描，确认 `GET /api/music` 中标题和歌手已经从文件名解析出来，再扫描歌词：
+
+```bash
+curl -i -X POST http://localhost:8080/api/lyrics/scan \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/Users/wangjiqing/Project/Musics/Lyrics"}'
+```
+
+歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。
+
+```bash
+curl 'http://localhost:8080/api/songs/1/lyrics' \
+  -H 'Authorization: Bearer change-me'
+```
+
 ## 验证检查清单
 
 - [ ] 服务启动正常，`/api/health` 返回 200
@@ -70,6 +88,8 @@ curl 'http://localhost:8080/api/music/1' \
 - [ ] `GET /api/music` 返回非空列表
 - [ ] `GET /api/music/{id}` 返回音乐详情
 - [ ] 重复扫描 `skippedFiles` > 0
+- [ ] `POST /api/lyrics/scan` 返回 200，且 `matched` 反映自动绑定数量
+- [ ] 已绑定歌曲在 `GET /api/music` 中返回 `lyricStatus = BOUND`
 
 ## v0.4 前后端联调验证
 

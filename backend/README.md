@@ -1,18 +1,21 @@
 # Xingyu Music Vault Backend
 
-## v0.3 当前能力
+## 当前能力
 
-后端 v0.3 在 v0.2.1 基础上完成了本地音乐扫描与入库闭环：
+后端当前已完成本地音乐扫描入库、音乐列表查询和 v0.5 歌词管理基础能力：
 
 - **POST /api/music/scan**：异步接受扫描请求，后台执行扫描，返回 `202 Accepted` 与 `scanJobId`
 - **GET /api/music**：音乐分页列表，基于 `track_files` + `tracks` 联合视图
 - **GET /api/music/{id}**：音乐详情
+- **POST /api/lyrics/scan**：扫描本地 LRC 歌词并尝试自动绑定歌曲
+- **GET /api/songs/{songId}/lyrics**：获取音乐列表中某首歌的主歌词
 - **文件名元数据兜底**：`Artist - Title.flac` 格式自动解析为 `artist`/`title`，其余字段为 `null`
 - **重复扫描跳过**：文件大小和修改时间均未变化时跳过（1秒容差）
 - **隐藏文件跳过**：`Files.walk` 中跳过以 `.` 开头的路径节点
-- **默认扫描目录**：`/Users/wangjiqing/Project/Musics`（`music.scan.default-path` 配置）
+- **默认音乐目录**：`/Users/wangjiqing/Project/Musics/Music`（`music-vault.music-dirs` 配置）
+- **默认歌词目录**：`/Users/wangjiqing/Project/Musics/Lyrics`（`music-vault.lyric-dirs` 配置）
 
-**本阶段不包含**：ffprobe 音频内嵌元数据提取、歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理页面、用户登录系统。
+**本阶段不包含**：ffprobe 音频内嵌元数据提取、在线歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理页面、用户登录系统。
 
 - **Track CRUD**：曲目的创建、查询、更新、删除
 - **本地音乐库扫描**：创建扫描任务后递归扫描本地目录，记录音频文件到 `track_files`
@@ -23,7 +26,7 @@
 - **Bearer Token 鉴权**：所有 `/api/*` 接口（除 `/api/health` 外）需要 Authorization header
 - **SQLite + Flyway**：数据库自动迁移
 
-**本阶段不包含**：音频内嵌元数据提取（ffprobe）、歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理、登录系统、复杂权限系统。
+**本阶段不包含**：音频内嵌元数据提取（ffprobe）、在线歌词抓取、封面刮削、MusicBrainz/LRCLIB 等联网匹配、音频指纹、歌手/专辑管理、登录系统、复杂权限系统。
 
 ## Requirements
 
@@ -201,6 +204,8 @@ curl 'http://localhost:8080/api/music/1' \
   "album": null,
   "albumArtist": "周杰伦",
   "duration": null,
+  "lyricStatus": "BOUND",
+  "lyricId": 1,
   "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
   "fileName": "周杰伦 - 晴天.flac",
   "fileExtension": "flac",
@@ -212,6 +217,41 @@ curl 'http://localhost:8080/api/music/1' \
 ```
 
 `page` 从 0 开始，默认 `size=20`，最大 `size=100`。
+
+## Lyrics Scan API (v0.5)
+
+`POST /api/lyrics/scan` 扫描本地 LRC 歌词目录，按内容 SHA-256 去重，并基于 LRC 标签或文件名中的 `歌手 - 歌名` 自动绑定音乐列表中的歌曲：
+
+```bash
+curl -i -X POST http://localhost:8080/api/lyrics/scan \
+  -H 'Authorization: Bearer change-me' \
+  -H 'Content-Type: application/json' \
+  -d '{"path": "/Users/wangjiqing/Project/Musics/Lyrics"}'
+```
+
+响应示例：
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics/Lyrics",
+  "totalFiles": 278,
+  "imported": 0,
+  "duplicateFiles": 278,
+  "matched": 274,
+  "unmatched": 4,
+  "skippedBindings": 0,
+  "failed": 0
+}
+```
+
+查询歌曲主歌词：
+
+```bash
+curl 'http://localhost:8080/api/songs/1/lyrics' \
+  -H 'Authorization: Bearer change-me'
+```
+
+首次导入或旧库升级时，请先跑 `POST /api/music/scan`，等扫描任务完成后再跑 `POST /api/lyrics/scan`。歌词绑定依赖音乐扫描生成的 `tracks` 元数据；如果历史 `track_files.track_id` 为空，重复音乐扫描会补齐它。
 
 ## 本地验证流程
 

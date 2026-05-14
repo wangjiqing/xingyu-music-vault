@@ -12,6 +12,8 @@ public interface MusicVaultConfig {
 
     List<String> musicDirs();
 
+    List<String> lyricDirs();
+
     String dbPath();
 
     String apiToken();
