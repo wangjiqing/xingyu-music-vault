@@ -262,6 +262,8 @@ Authorization: Bearer change-me
 | POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `music.scan.default-path` |
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
+| PUT | `/api/music/{musicId}/artwork` | 绑定音乐主封面 |
+| DELETE | `/api/music/{musicId}/artwork` | 取消音乐主封面绑定 |
 
 `POST /api/music/scan` 可传空对象使用默认目录，也可传入 `path` 覆盖本次扫描目录：
 
@@ -308,6 +310,10 @@ Authorization: Bearer change-me
       "duration": null,
       "lyricStatus": "BOUND",
       "lyricId": 1,
+      "artworkStatus": "BOUND",
+      "artworkId": 1,
+      "artworkPreviewUrl": "/api/artworks/1/file",
+      "artworkFileName": "周杰伦 - 晴天.png",
       "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
       "fileName": "周杰伦 - 晴天.flac",
       "fileExtension": "flac",
@@ -331,6 +337,51 @@ Authorization: Bearer change-me
 ```
 
 不存在时返回 `404`。扫描目录不存在、不可读或不在允许根目录下时，后台扫描任务会进入 `failed`，失败原因写入 `/api/scan-jobs/{id}` 的 `errorMessage`。
+
+绑定音乐主封面：
+
+```http
+PUT /api/music/1/artwork
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "artworkId": 1
+}
+```
+
+响应：
+
+```json
+{
+  "musicId": 1,
+  "artworkStatus": "BOUND",
+  "artworkId": 1,
+  "artworkPreviewUrl": "/api/artworks/1/file",
+  "artworkFileName": "周杰伦 - 晴天.png"
+}
+```
+
+取消绑定：
+
+```http
+DELETE /api/music/1/artwork
+Authorization: Bearer change-me
+```
+
+响应：
+
+```json
+{
+  "musicId": 1,
+  "artworkStatus": "MISSING",
+  "artworkId": null,
+  "artworkPreviewUrl": null,
+  "artworkFileName": null
+}
+```
 
 #### curl 验证
 
@@ -379,6 +430,111 @@ curl "http://localhost:8080/api/scan-jobs/1" \
   "page": 0,
   "size": 20,
   "total": 1
+}
+```
+
+## 封面管理 API（v0.6）
+
+v0.6 只支持本地封面文件扫描、去重、查询、文件访问和音乐绑定。不做在线封面刮削、AI 生成、复杂审核、多版本封面管理、用户系统或云同步。
+
+默认扫描目录配置为 `app.artwork.scan-dir`，本地开发默认值：
+
+```yaml
+app:
+  artwork:
+    scan-dir: /Users/wangjiqing/Project/Musics/Artworks
+```
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/artworks?page=0&size=20` | 封面列表分页查询 |
+| GET | `/api/artworks/{id}` | 封面详情 |
+| GET | `/api/artworks/{id}/file` | 封面文件访问，供 `<img>` 使用 |
+| POST | `/api/artworks/scan` | 扫描本地封面目录 |
+
+### 封面列表查询
+
+```http
+GET /api/artworks?page=0&size=20
+Authorization: Bearer change-me
+```
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "fileName": "周杰伦 - 晴天.png",
+      "fileExt": "png",
+      "mimeType": "image/png",
+      "fileSize": 123456,
+      "width": 600,
+      "height": 600,
+      "hash": "a3f5e2d...",
+      "sourceType": "local",
+      "sourcePath": "/Users/wangjiqing/Project/Musics/Artworks/周杰伦 - 晴天.png",
+      "title": "周杰伦 - 晴天",
+      "description": null,
+      "previewUrl": "/api/artworks/1/file",
+      "createdAt": "2026-05-15T22:40:00",
+      "updatedAt": "2026-05-15T22:40:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total": 1
+}
+```
+
+### 封面详情
+
+```http
+GET /api/artworks/1
+Authorization: Bearer change-me
+```
+
+响应字段同列表项。
+
+### 封面文件访问
+
+```http
+GET /api/artworks/1/file
+Authorization: Bearer change-me
+```
+
+成功时返回图片二进制，`Content-Type` 为入库时记录的 MIME 类型。该接口不会接受任意文件路径，只能通过已入库的 `artwork.id` 访问，并会校验真实文件路径仍位于 `app.artwork.scan-dir` 根目录内。
+
+### 扫描封面
+
+```http
+POST /api/artworks/scan
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics/Artworks"
+}
+```
+
+`path` 可省略，省略时使用 `app.artwork.scan-dir`。扫描支持 `jpg`、`jpeg`、`png`、`webp`，按真实文件路径和 SHA-256 文件哈希去重。扫描目录和扫描到的真实文件路径都必须位于配置根目录内，目录穿越和指向根目录外的符号链接文件会被拒绝或计入失败。
+
+扫描入库后会尝试按文件名自动绑定：封面文件名去扩展名后，与 `track_files.file_name` 或 `track_files.file_path` 文件名去扩展名完全相同，则写入 `music_artwork_bindings`。当前 `music_artwork_bindings.music_id` 使用 `track_files.id`，`relation_type` 使用 `track_cover`。已有主封面绑定时不会覆盖。
+
+响应示例：
+
+```json
+{
+  "path": "/Users/wangjiqing/Project/Musics/Artworks",
+  "totalFiles": 278,
+  "imported": 200,
+  "duplicateFiles": 78,
+  "autoBound": 196,
+  "unmatched": 4,
+  "failed": 0
 }
 ```
 
@@ -598,13 +754,6 @@ Authorization: Bearer change-me
 |--------|------|------|
 | PUT | `/api/lyrics/{id}` | 编辑歌词内容 |
 | GET | `/api/lyrics/{id}/versions` | 获取歌词版本 |
-
-### 封面
-
-| Method | Path | 说明 |
-|--------|------|------|
-| GET | `/api/tracks/{id}/artwork` | 获取曲目封面 |
-| POST | `/api/tracks/{id}/artwork` | 上传/更新封面 |
 
 ### 审核
 

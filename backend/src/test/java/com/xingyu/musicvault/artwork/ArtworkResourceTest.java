@@ -1,0 +1,410 @@
+package com.xingyu.musicvault.artwork;
+
+import com.xingyu.musicvault.library.Track;
+import com.xingyu.musicvault.library.TrackFile;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
+import jakarta.transaction.Transactional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.notNullValue;
+
+@QuarkusTest
+class ArtworkResourceTest {
+    private static final String AUTHORIZATION = "Bearer change-me";
+    private static final Path ARTWORK_ROOT = Path.of("target/test-music/artworks");
+
+    Path artworkDir;
+
+    @BeforeEach
+    @Transactional
+    void cleanData() throws IOException {
+        Files.createDirectories(ARTWORK_ROOT);
+        artworkDir = Files.createTempDirectory(ARTWORK_ROOT, "artwork-api-test-");
+        MusicArtworkBinding.deleteAll();
+        Artwork.deleteAll();
+        TrackFile.deleteAll();
+        Track.deleteAll();
+    }
+
+    @Test
+    void scanListsReadsAndBindsLocalArtwork() throws IOException {
+        writePng(artworkDir.resolve("周杰伦 - 晴天.png"), 3, 2);
+        writePng(artworkDir.resolve("duplicate.png"), 3, 2);
+        Files.writeString(artworkDir.resolve("note.txt"), "skip");
+        Long musicId = createMusic("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(artworkDir))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(200)
+                .body("totalFiles", equalTo(2))
+                .body("imported", equalTo(1))
+                .body("duplicateFiles", equalTo(1))
+                .body("failed", equalTo(0));
+
+        Integer artworkId = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("items[0].fileExt", equalTo("png"))
+                .body("items[0].mimeType", equalTo("image/png"))
+                .body("items[0].width", equalTo(3))
+                .body("items[0].height", equalTo(2))
+                .body("items[0].sourceType", equalTo("local"))
+                .body("items[0].previewUrl", notNullValue())
+                .extract()
+                .path("items[0].id");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks/{id}", artworkId)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(artworkId))
+                .body("fileName", notNullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks/{id}/file", artworkId)
+                .then()
+                .statusCode(200)
+                .contentType("image/png");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "artworkId": %d
+                        }
+                        """.formatted(artworkId))
+                .when()
+                .put("/api/music/{musicId}/artwork", musicId)
+                .then()
+                .statusCode(200)
+                .body("musicId", equalTo(musicId.intValue()))
+                .body("artworkStatus", equalTo("BOUND"))
+                .body("artworkId", equalTo(artworkId));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("items[0].id", equalTo(musicId.intValue()))
+                .body("items[0].artworkStatus", equalTo("BOUND"))
+                .body("items[0].artworkId", equalTo(artworkId))
+                .body("items[0].artworkPreviewUrl", equalTo("/api/artworks/" + artworkId + "/file"))
+                .body("items[0].artworkFileName", notNullValue());
+
+        org.junit.jupiter.api.Assertions.assertEquals("matched", artworkStatusForMusic(musicId));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{musicId}/artwork", musicId)
+                .then()
+                .statusCode(200)
+                .body("musicId", equalTo(musicId.intValue()))
+                .body("artworkStatus", equalTo("MISSING"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{musicId}", musicId)
+                .then()
+                .statusCode(200)
+                .body("artworkStatus", equalTo("MISSING"))
+                .body("artworkId", equalTo(null));
+
+        org.junit.jupiter.api.Assertions.assertEquals("missing", artworkStatusForMusic(musicId));
+    }
+
+    @Test
+    void artworkFileIsPublicButScanStillRequiresAuthorization() throws IOException {
+        Long artworkId = createArtwork("public-preview.png");
+
+        given()
+                .when()
+                .get("/api/artworks/{id}/file", artworkId)
+                .then()
+                .statusCode(200)
+                .contentType("image/png");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(401)
+                .body("error", equalTo("unauthorized"));
+    }
+
+    @Test
+    void scanAutoBindsArtworkByExactBaseFileName() throws IOException {
+        writePng(artworkDir.resolve("星语 - 六月的雨.png"), 4, 4);
+        Long musicId = createMusic("星语 - 六月的雨.flac", "六月的雨", "星语");
+
+        Integer artworkId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(artworkDir))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(1))
+                .body("duplicateFiles", equalTo(0))
+                .body("autoBound", equalTo(1))
+                .body("unmatched", equalTo(0))
+                .body("failed", equalTo(0))
+                .extract()
+                .path("autoBound");
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, artworkId);
+
+        MusicArtworkBinding binding = QuarkusTransaction.requiringNew().call(() ->
+                MusicArtworkBinding.<MusicArtworkBinding>find("musicId", musicId).firstResult()
+        );
+        org.junit.jupiter.api.Assertions.assertNotNull(binding);
+        org.junit.jupiter.api.Assertions.assertEquals(musicId, binding.musicId);
+        org.junit.jupiter.api.Assertions.assertEquals(ArtworkService.TRACK_COVER, binding.relationType);
+        org.junit.jupiter.api.Assertions.assertTrue(binding.isPrimary);
+        org.junit.jupiter.api.Assertions.assertEquals("matched", artworkStatusForMusic(musicId));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{musicId}", musicId)
+                .then()
+                .statusCode(200)
+                .body("artworkStatus", equalTo("BOUND"))
+                .body("artworkId", equalTo(binding.artworkId.intValue()))
+                .body("artworkPreviewUrl", equalTo("/api/artworks/" + binding.artworkId + "/file"))
+                .body("artworkFileName", equalTo("星语 - 六月的雨.png"));
+    }
+
+    @Test
+    void scanDoesNotOverwriteExistingPrimaryArtworkBinding() throws IOException {
+        writePng(artworkDir.resolve("星语 - 要.png"), 4, 4);
+        Long musicId = createMusic("星语 - 要.flac", "要", "星语");
+        Long existingArtworkId = createArtwork("existing.png");
+        QuarkusTransaction.requiringNew().run(() -> {
+            MusicArtworkBinding binding = new MusicArtworkBinding();
+            binding.musicId = musicId;
+            binding.artworkId = existingArtworkId;
+            binding.relationType = ArtworkService.TRACK_COVER;
+            binding.isPrimary = true;
+            binding.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(artworkDir))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(200)
+                .body("imported", equalTo(1))
+                .body("autoBound", equalTo(0))
+                .body("unmatched", equalTo(0));
+
+        Long primaryArtworkId = QuarkusTransaction.requiringNew().call(() ->
+                MusicArtworkBinding.<MusicArtworkBinding>find("musicId = ?1 and isPrimary = true", musicId)
+                        .firstResult()
+                        .artworkId
+        );
+        org.junit.jupiter.api.Assertions.assertEquals(existingArtworkId, primaryArtworkId);
+    }
+
+    @Test
+    void scanRejectsDirectoryOutsideConfiguredRoot() throws IOException {
+        Path outside = Files.createTempDirectory(Path.of("target"), "outside-artwork-");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(outside))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void scanRejectsPathTraversal() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(ARTWORK_ROOT.resolve("..").resolve("artworks")))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void scanSkipsSymlinkedFileOutsideConfiguredRoot() throws IOException {
+        Path outside = Files.createTempDirectory(Path.of("target"), "outside-artwork-file-");
+        Path outsideImage = outside.resolve("outside.png");
+        writePng(outsideImage, 2, 2);
+        Files.createSymbolicLink(artworkDir.resolve("linked.png"), outsideImage.toAbsolutePath());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(artworkDir))
+                .when()
+                .post("/api/artworks/scan")
+                .then()
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(0))
+                .body("failed", equalTo(1));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(0));
+    }
+
+    @Test
+    void fileEndpointRejectsStoredPathOutsideConfiguredRoot() throws IOException {
+        Path outside = Files.createTempDirectory(Path.of("target"), "outside-artwork-db-");
+        Path outsideImage = outside.resolve("outside.png");
+        writePng(outsideImage, 2, 2);
+        Long artworkId = QuarkusTransaction.requiringNew().call(() -> {
+            Artwork artwork = new Artwork();
+            artwork.filePath = outsideImage.toAbsolutePath().normalize().toString();
+            artwork.fileName = outsideImage.getFileName().toString();
+            artwork.fileExt = "png";
+            artwork.mimeType = "image/png";
+            artwork.fileSize = 1;
+            artwork.hash = "outside-hash";
+            artwork.sourceType = "local";
+            artwork.sourcePath = artwork.filePath;
+            artwork.persist();
+            return artwork.id;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks/{id}/file", artworkId)
+                .then()
+                .statusCode(404)
+                .body("error", equalTo("not_found"));
+    }
+
+    private void writePng(Path path, int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                image.setRGB(x, y, Color.BLUE.getRGB());
+            }
+        }
+        ImageIO.write(image, "png", path.toFile());
+    }
+
+    private Long createMusic(String fileName, String title, String artist) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = artworkDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 5;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createArtwork(String fileName) throws IOException {
+        Path path = Files.createTempDirectory(ARTWORK_ROOT, "preexisting-artwork-").resolve(fileName);
+        writePng(path, 2, 2);
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Artwork artwork = new Artwork();
+            artwork.filePath = path.toAbsolutePath().normalize().toString();
+            artwork.fileName = fileName;
+            artwork.fileExt = "png";
+            artwork.mimeType = "image/png";
+            artwork.fileSize = 1;
+            artwork.hash = fileName + "-hash";
+            artwork.sourceType = "local";
+            artwork.sourcePath = artwork.filePath;
+            artwork.title = fileName;
+            artwork.persist();
+            return artwork.id;
+        });
+    }
+
+    private String artworkStatusForMusic(Long musicId) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            return track.artworkStatus;
+        });
+    }
+}

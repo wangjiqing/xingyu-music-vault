@@ -5,6 +5,8 @@ import { View } from '@element-plus/icons-vue'
 import { fetchMusicList, triggerMusicScan, type MusicItem } from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
 
+const brokenImages = reactive(new Set<number>())
+
 const list = ref<MusicItem[]>([])
 const loading = ref(false)
 const scanning = ref(false)
@@ -218,6 +220,17 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="封面" width="80" align="center">
+        <template #default="{ row }">
+          <img
+            v-if="row.artworkStatus === 'BOUND' && row.artworkPreviewUrl && !brokenImages.has(row.id)"
+            :src="row.artworkPreviewUrl"
+            class="cover-thumb"
+            @error="brokenImages.add(row.id)"
+          />
+          <el-tag v-else size="small" type="info">无封面</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">
         <template #default="{ row }">
           <el-button
@@ -312,5 +325,11 @@ onMounted(() => {
   max-height: 400px;
   overflow-y: auto;
   margin: 0;
+}
+.cover-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
 }
 </style>

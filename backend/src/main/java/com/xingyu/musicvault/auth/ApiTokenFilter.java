@@ -16,6 +16,7 @@ import jakarta.ws.rs.ext.Provider;
 @Priority(Priorities.AUTHENTICATION)
 public class ApiTokenFilter implements ContainerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
+    private static final String GET = "GET";
 
     @Inject
     MusicVaultConfig config;
@@ -23,7 +24,7 @@ public class ApiTokenFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext requestContext) {
         String path = normalizePath(requestContext.getUriInfo().getPath());
-        if (isPublicPath(path) || !path.startsWith("api/")) {
+        if (isPublicPath(path) || isPublicArtworkFile(requestContext, path) || !path.startsWith("api/")) {
             return;
         }
 
@@ -40,6 +41,11 @@ public class ApiTokenFilter implements ContainerRequestFilter {
         return "api/health".equals(path)
                 || path.startsWith("q/")
                 || "q".equals(path);
+    }
+
+    private boolean isPublicArtworkFile(ContainerRequestContext requestContext, String path) {
+        return GET.equals(requestContext.getMethod())
+                && path.matches("api/artworks/\\d+/file");
     }
 
     private String normalizePath(String path) {

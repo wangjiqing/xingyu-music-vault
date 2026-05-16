@@ -18,7 +18,8 @@
 | `lyrics` | 歌词主记录 | 已实现 |
 | `song_lyrics` | 音乐文件与歌词绑定关系 | 已实现 |
 | `lyric_versions` | 歌词多版本管理 | 规划中 |
-| `artworks` | 封面图片记录 | 规划中 |
+| `artworks` | 封面图片记录 | 已实现 |
+| `music_artwork_bindings` | 音乐文件与封面绑定关系 | 已实现 |
 | `metadata_versions` | 元数据版本历史（审计） | 规划中 |
 | `scan_jobs` | 扫描任务记录 | 已实现 |
 | `match_records` | 自动匹配结果记录 | 规划中 |
@@ -34,6 +35,10 @@
 | `id` | integer primary key autoincrement | 主键 |
 | `title` | text not null | 曲目标题 |
 | `normalized_title` | text | 标准化标题，用于基础检索/排序扩展 |
+| `artist` | text | 歌手名，当前为扫描解析得到的字符串 |
+| `album` | text | 专辑名，当前为扫描解析得到的字符串 |
+| `album_artist` | text | 专辑艺人，当前为扫描解析得到的字符串 |
+| `duration` | bigint | 音频时长，预留 |
 | `metadata_status` | varchar(32) not null default 'pending' | 元数据状态 |
 | `lyrics_status` | varchar(32) not null default 'pending' | 歌词状态 |
 | `artwork_status` | varchar(32) not null default 'pending' | 封面状态 |
@@ -118,6 +123,42 @@
 | `created_at` | timestamp not null | 创建时间 |
 | `updated_at` | timestamp not null | 更新时间 |
 
+### artworks
+
+记录本地封面图片资产。v0.6 仅支持扫描配置目录中的本地 `jpg/jpeg/png/webp` 文件，不做在线刮削、AI 生成或复杂审核流。文件访问接口只按已入库 `artworks.id` 读取，并要求真实路径仍在 `app.artwork.scan-dir` 配置根目录内。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `file_path` | text not null unique | 真实绝对文件路径 |
+| `file_name` | text not null | 文件名 |
+| `file_ext` | varchar(16) not null | 小写扩展名 |
+| `mime_type` | varchar(64) not null | MIME 类型 |
+| `file_size` | bigint not null | 文件大小 |
+| `width` | integer | 图片宽度，无法读取时为空 |
+| `height` | integer | 图片高度，无法读取时为空 |
+| `hash` | varchar(64) not null unique | SHA-256 文件哈希，用于去重 |
+| `source_type` | varchar(32) not null | 当前为 `local` |
+| `source_path` | text | 来源路径，当前等于本地文件路径 |
+| `title` | text | 标题，当前来自文件名去后缀 |
+| `description` | text | 描述，预留 |
+| `created_at` | timestamp not null | 创建时间 |
+| `updated_at` | timestamp not null | 更新时间 |
+
+### music_artwork_bindings
+
+记录音乐文件与封面图片的绑定关系。v0.6 尚未引入独立 `songs` 表，因此 `music_id` 指向 `track_files.id`，也就是音乐列表 API 暴露的 `id`。后续如引入正式歌曲、专辑、歌手模型，可迁移该外键语义或新增对应绑定表。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `music_id` | bigint not null | v0.6 对应 `track_files.id` |
+| `artwork_id` | bigint not null | 关联 `artworks.id` |
+| `relation_type` | varchar(32) not null | 当前为 `track_cover` |
+| `is_primary` | boolean not null default true | 是否为当前主封面 |
+| `created_at` | timestamp not null | 创建时间 |
+| `updated_at` | timestamp not null | 更新时间 |
+
 ## 表关系（草稿）
 
 ```
@@ -125,7 +166,7 @@ artists 1───< albums
 albums 1───< tracks
 tracks 1───< track_files
 track_files 1───< song_lyrics >───1 lyrics
-tracks 1───< artworks
+track_files 1───< music_artwork_bindings >───1 artworks
 lyrics 1───< lyric_versions
 tracks 1───< metadata_versions
 tracks 1───< match_records
@@ -149,6 +190,14 @@ tracks 1───< review_items
 - `idx_song_lyrics_lyric_id` — song_lyrics 按歌词查询
 - `idx_song_lyrics_song_lyric` — song_id + lyric_id 唯一绑定
 - `idx_song_lyrics_primary_song` — 每首歌最多一个主歌词
+- `idx_artworks_file_path` — artworks 文件路径唯一去重
+- `idx_artworks_hash` — artworks 文件内容哈希唯一去重
+- `idx_artworks_source_type` — artworks 来源类型过滤
+- `idx_artworks_file_name` — artworks 文件名查询预留
+- `idx_music_artwork_bindings_music_id` — music_artwork_bindings 按音乐查询
+- `idx_music_artwork_bindings_artwork_id` — music_artwork_bindings 按封面查询
+- `idx_music_artwork_bindings_music_artwork_relation` — music_id + artwork_id + relation_type 唯一绑定
+- `idx_music_artwork_bindings_primary_music_relation` — 每首音乐每种关系最多一个主封面
 
 ## SQLite 注意事项
 

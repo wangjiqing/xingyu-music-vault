@@ -10,6 +10,10 @@ export interface MusicItem {
   duration: number | null
   lyricStatus: string
   lyricId: number | null
+  artworkStatus: string
+  artworkId: number | null
+  artworkPreviewUrl: string | null
+  artworkFileName: string | null
   filePath: string
   fileName: string
   fileExtension: string
