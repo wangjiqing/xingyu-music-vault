@@ -34,6 +34,7 @@ public final class MusicDtos {
             Long artworkId,
             String artworkPreviewUrl,
             String artworkFileName,
+            Boolean artworkFileExists,
             String filePath,
             String fileName,
             String fileExtension,
@@ -59,14 +60,15 @@ public final class MusicDtos {
                 String artworkStatus,
                 Long artworkId,
                 String artworkPreviewUrl,
-                String artworkFileName
+                String artworkFileName,
+                Boolean artworkFileExists
         ) {
             Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
-            return from(trackFile, track, lyricStatus, lyricId, artworkStatus, artworkId, artworkPreviewUrl, artworkFileName);
+            return from(trackFile, track, lyricStatus, lyricId, artworkStatus, artworkId, artworkPreviewUrl, artworkFileName, artworkFileExists);
         }
 
         public static MusicResponse from(TrackFile trackFile, Track track, String lyricStatus, Long lyricId) {
-            return from(trackFile, track, lyricStatus, lyricId, null, null, null, null);
+            return from(trackFile, track, lyricStatus, lyricId, null, null, null, null, null);
         }
 
         public static MusicResponse from(
@@ -77,7 +79,8 @@ public final class MusicDtos {
                 String artworkStatus,
                 Long artworkId,
                 String artworkPreviewUrl,
-                String artworkFileName
+                String artworkFileName,
+                Boolean artworkFileExists
         ) {
             return new MusicResponse(
                     trackFile.id,
@@ -92,6 +95,7 @@ public final class MusicDtos {
                     artworkId,
                     artworkPreviewUrl,
                     artworkFileName,
+                    artworkFileExists,
                     trackFile.filePath,
                     trackFile.fileName,
                     trackFile.fileExt,

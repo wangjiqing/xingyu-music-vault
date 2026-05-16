@@ -348,11 +348,17 @@ onMounted(() => {
       <el-table-column label="封面" width="80" align="center">
         <template #default="{ row }">
           <img
-            v-if="row.artworkStatus === 'BOUND' && row.artworkPreviewUrl && !brokenImages.has(row.id)"
+            v-if="row.artworkStatus === 'BOUND' && row.artworkFileExists !== false && row.artworkPreviewUrl && !brokenImages.has(row.id)"
             :src="row.artworkPreviewUrl"
             class="cover-thumb"
             @error="brokenImages.add(row.id)"
           />
+          <el-tag v-else-if="row.artworkStatus === 'BOUND' && row.artworkFileExists === false" size="small" type="danger">
+            文件缺失
+          </el-tag>
+          <el-tag v-else-if="row.artworkStatus === 'BOUND' && brokenImages.has(row.id)" size="small" type="warning">
+            加载失败
+          </el-tag>
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
@@ -488,11 +494,12 @@ onMounted(() => {
           <el-table-column label="" width="60" align="center">
             <template #default="{ row }">
               <img
-                v-if="row.previewUrl && !brokenBindThumbs.has(row.id)"
+                v-if="row.previewUrl && row.fileExists && !brokenBindThumbs.has(row.id)"
                 :src="row.previewUrl"
                 class="bind-thumb"
                 @error="brokenBindThumbs.add(row.id)"
               />
+              <el-tag v-else-if="!row.fileExists" size="small" type="danger">缺失</el-tag>
               <span v-else style="color: #c0c4cc; font-size: 12px">无</span>
             </template>
           </el-table-column>

@@ -26,9 +26,10 @@ public class ArtworkResource {
     public PageResponse<ArtworkResponse> list(
             @QueryParam("page") Integer page,
             @QueryParam("size") Integer size,
-            @QueryParam("keyword") String keyword
+            @QueryParam("keyword") String keyword,
+            @QueryParam("boundStatus") String boundStatus
     ) {
-        return artworkService.list(page, size, keyword);
+        return artworkService.list(page, size, keyword, boundStatus);
     }
 
     @GET

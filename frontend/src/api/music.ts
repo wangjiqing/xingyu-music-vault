@@ -14,6 +14,7 @@ export interface MusicItem {
   artworkId: number | null
   artworkPreviewUrl: string | null
   artworkFileName: string | null
+  artworkFileExists: boolean | null
   filePath: string
   fileName: string
   fileExtension: string
