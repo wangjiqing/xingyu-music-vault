@@ -1,6 +1,9 @@
 package com.xingyu.musicvault.library;
 
 import com.xingyu.musicvault.common.PageResponse;
+import com.xingyu.musicvault.artwork.ArtworkDtos.ArtworkBindRequest;
+import com.xingyu.musicvault.artwork.ArtworkDtos.MusicArtworkResponse;
+import com.xingyu.musicvault.artwork.ArtworkService;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
@@ -15,9 +18,11 @@ import io.quarkus.panache.common.Sort;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -51,6 +56,9 @@ public class MusicResource {
 
     @Inject
     LyricService lyricService;
+
+    @Inject
+    ArtworkService artworkService;
 
     @Inject
     ManagedExecutor managedExecutor;
@@ -100,8 +108,16 @@ public class MusicResource {
         Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(
                 trackFiles.stream().map(trackFile -> trackFile.id).toList()
         );
+        Map<Long, ArtworkService.PrimaryArtworkSummary> artworksByMusicId = artworkService.primaryArtworkForMusicIds(
+                trackFiles.stream().map(trackFile -> trackFile.id).toList()
+        );
         List<MusicResponse> items = trackFiles.stream()
-                .map(trackFile -> toMusicResponse(trackFile, trackOf(trackFile, tracksById), lyricsBySongId.get(trackFile.id)))
+                .map(trackFile -> toMusicResponse(
+                        trackFile,
+                        trackOf(trackFile, tracksById),
+                        lyricsBySongId.get(trackFile.id),
+                        artworksByMusicId.get(trackFile.id)
+                ))
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
@@ -116,21 +132,51 @@ public class MusicResource {
         return toMusicResponse(trackFile);
     }
 
+    @PUT
+    @Path("/{musicId}/artwork")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public MusicArtworkResponse bindArtwork(
+            @PathParam("musicId") Long musicId,
+            ArtworkBindRequest request
+    ) {
+        return artworkService.bind(musicId, request == null ? null : request.artworkId());
+    }
+
+    @DELETE
+    @Path("/{musicId}/artwork")
+    public MusicArtworkResponse unbindArtwork(@PathParam("musicId") Long musicId) {
+        return artworkService.unbind(musicId);
+    }
+
     private MusicResponse toMusicResponse(TrackFile trackFile) {
         LyricService.PrimaryLyricSummary lyric = lyricService.primaryLyricsForSongIds(List.of(trackFile.id)).get(trackFile.id);
+        ArtworkService.PrimaryArtworkSummary artwork = artworkService.primaryArtworkForMusicIds(List.of(trackFile.id)).get(trackFile.id);
         return MusicResponse.from(
                 trackFile,
                 lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
-                lyric == null ? null : lyric.lyricId()
+                lyric == null ? null : lyric.lyricId(),
+                artwork == null ? "MISSING" : "BOUND",
+                artwork == null ? null : artwork.artworkId(),
+                artwork == null ? null : artwork.artworkPreviewUrl(),
+                artwork == null ? null : artwork.artworkFileName()
         );
     }
 
-    private MusicResponse toMusicResponse(TrackFile trackFile, Track track, LyricService.PrimaryLyricSummary lyric) {
+    private MusicResponse toMusicResponse(
+            TrackFile trackFile,
+            Track track,
+            LyricService.PrimaryLyricSummary lyric,
+            ArtworkService.PrimaryArtworkSummary artwork
+    ) {
         return MusicResponse.from(
                 trackFile,
                 track,
                 lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
-                lyric == null ? null : lyric.lyricId()
+                lyric == null ? null : lyric.lyricId(),
+                artwork == null ? "MISSING" : "BOUND",
+                artwork == null ? null : artwork.artworkId(),
+                artwork == null ? null : artwork.artworkPreviewUrl(),
+                artwork == null ? null : artwork.artworkFileName()
         );
     }
 

@@ -39,7 +39,11 @@ music-vault:
 
 music:
   scan:
-    default-path: ${MUSIC_SCAN_DEFAULT_PATH:/Users/wangjiqing/Project/Musics}
+    default-path: ${MUSIC_SCAN_DEFAULT_PATH:/Users/wangjiqing/Project/Musics/Music}
+
+app:
+  artwork:
+    scan-dir: ${APP_ARTWORK_SCAN_DIR:/Users/wangjiqing/Project/Musics/Artworks}
 
 "%dev":
   quarkus:
@@ -56,6 +60,9 @@ music:
     music-dirs: /Users/wangjiqing/Project/Musics/Music
     lyric-dirs: /Users/wangjiqing/Project/Musics/Lyrics
     db-path: data/music-vault.db
+  app:
+    artwork:
+      scan-dir: /Users/wangjiqing/Project/Musics/Artworks
 
 "%test":
   quarkus:
@@ -71,3 +78,6 @@ music:
     music-dirs: target/test-music
     lyric-dirs: target/test-music
     db-path: target/test-music-vault.db
+  app:
+    artwork:
+      scan-dir: target/test-music/artworks

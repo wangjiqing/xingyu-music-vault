@@ -30,6 +30,10 @@ public final class MusicDtos {
             Long duration,
             String lyricStatus,
             Long lyricId,
+            String artworkStatus,
+            Long artworkId,
+            String artworkPreviewUrl,
+            String artworkFileName,
             String filePath,
             String fileName,
             String fileExtension,
@@ -48,7 +52,33 @@ public final class MusicDtos {
             return from(trackFile, track, lyricStatus, lyricId);
         }
 
+        public static MusicResponse from(
+                TrackFile trackFile,
+                String lyricStatus,
+                Long lyricId,
+                String artworkStatus,
+                Long artworkId,
+                String artworkPreviewUrl,
+                String artworkFileName
+        ) {
+            Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
+            return from(trackFile, track, lyricStatus, lyricId, artworkStatus, artworkId, artworkPreviewUrl, artworkFileName);
+        }
+
         public static MusicResponse from(TrackFile trackFile, Track track, String lyricStatus, Long lyricId) {
+            return from(trackFile, track, lyricStatus, lyricId, null, null, null, null);
+        }
+
+        public static MusicResponse from(
+                TrackFile trackFile,
+                Track track,
+                String lyricStatus,
+                Long lyricId,
+                String artworkStatus,
+                Long artworkId,
+                String artworkPreviewUrl,
+                String artworkFileName
+        ) {
             return new MusicResponse(
                     trackFile.id,
                     titleOf(track, trackFile),
@@ -58,6 +88,10 @@ public final class MusicDtos {
                     track == null ? null : track.duration,
                     lyricStatus,
                     lyricId,
+                    artworkStatus == null ? "MISSING" : artworkStatus,
+                    artworkId,
+                    artworkPreviewUrl,
+                    artworkFileName,
                     trackFile.filePath,
                     trackFile.fileName,
                     trackFile.fileExt,
