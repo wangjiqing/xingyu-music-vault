@@ -1,6 +1,7 @@
 package com.xingyu.musicvault.artwork;
 
 import com.xingyu.musicvault.artwork.ArtworkDtos.ArtworkResponse;
+import com.xingyu.musicvault.artwork.ArtworkDtos.BoundTrackResponse;
 import com.xingyu.musicvault.artwork.ArtworkDtos.ArtworkScanResponse;
 import com.xingyu.musicvault.artwork.ArtworkDtos.MusicArtworkResponse;
 import com.xingyu.musicvault.common.PageResponse;
@@ -17,6 +18,7 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -26,6 +28,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -46,6 +49,8 @@ public class ArtworkService {
 
     private static final Logger LOG = Logger.getLogger(ArtworkService.class);
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
+    private static final long MAX_IMPORT_FILE_SIZE = 10L * 1024L * 1024L;
+    private static final int MAX_SAFE_FILE_NAME_BASE_LENGTH = 120;
 
     @ConfigProperty(name = "app.artwork.scan-dir")
     String defaultScanDir;
@@ -83,19 +88,23 @@ public class ArtworkService {
         );
     }
 
-    public PageResponse<ArtworkResponse> list(Integer page, Integer size) {
+    public PageResponse<ArtworkResponse> list(Integer page, Integer size, String keyword) {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size);
-        PanacheQuery<Artwork> query = Artwork.findAll(Sort.descending("createdAt"));
+        PanacheQuery<Artwork> query = artworkListQuery(keyword);
         long total = query.count();
-        List<ArtworkResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
-                .map(ArtworkResponse::from)
+        List<Artwork> artworks = query.page(Page.of(pageValue, sizeValue)).list();
+        Map<Long, Long> boundCounts = boundCountsByArtworkId(artworks);
+        List<ArtworkResponse> items = artworks.stream()
+                .map(artwork -> ArtworkResponse.from(artwork, boundCounts.getOrDefault(artwork.id, 0L), List.of()))
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
 
     public ArtworkResponse get(Long id) {
-        return ArtworkResponse.from(findArtwork(id));
+        Artwork artwork = findArtwork(id);
+        List<BoundTrackResponse> boundTracks = boundTracksForArtwork(id);
+        return ArtworkResponse.from(artwork, boundTracks.size(), boundTracks);
     }
 
     public Response file(Long id) {
@@ -114,37 +123,94 @@ public class ArtworkService {
         if (artworkId == null) {
             throw new BadRequestException("artworkId is required");
         }
-        TrackFile trackFile = TrackFile.findById(musicId);
-        if (trackFile == null) {
-            throw new NotFoundException("Music not found");
-        }
+        TrackFile trackFile = findTrackFile(musicId);
         Artwork artwork = findArtwork(artworkId);
 
-        MusicArtworkBinding primary = bindingRepository.findPrimaryTrackCoverByMusicId(musicId);
-        if (primary != null && Objects.equals(primary.artworkId, artworkId)) {
-            updateTrackArtworkStatus(trackFile, "matched");
+        bindPrimaryArtwork(trackFile, artwork);
+        return toMusicArtworkResponse(musicId, artwork);
+    }
+
+    @Transactional
+    public MusicArtworkResponse importAndBind(Long musicId, FileUpload upload) {
+        TrackFile trackFile = findTrackFile(musicId);
+        if (upload == null || upload.uploadedFile() == null) {
+            throw new BadRequestException("file is required");
+        }
+
+        Path uploadedFile = upload.uploadedFile();
+        String extension = extensionOf(upload.fileName());
+        validateImportFile(uploadedFile, extension, upload.contentType());
+        String hash;
+        ImageSize imageSize;
+        try {
+            hash = sha256(uploadedFile);
+            imageSize = readImageSize(uploadedFile);
+        } catch (IOException exception) {
+            throw new BadRequestException("Uploaded artwork is not a readable image", exception);
+        }
+
+        Artwork artwork = artworkRepository.findByHash(hash);
+        Path importedFile = null;
+        try {
+            if (artwork == null) {
+                Path storageRoot = configuredArtworkRoot();
+                Path target = uniqueArtworkTarget(storageRoot, safeArtworkBaseName(trackFile), extension);
+                Files.copy(uploadedFile, target, StandardCopyOption.COPY_ATTRIBUTES);
+                importedFile = target;
+
+                artwork = new Artwork();
+                artwork.filePath = target.toString();
+                artwork.fileName = target.getFileName().toString();
+                artwork.fileExt = extension;
+                artwork.mimeType = mimeTypeOf(extension);
+                artwork.fileSize = Files.size(target);
+                artwork.width = imageSize.width();
+                artwork.height = imageSize.height();
+                artwork.hash = hash;
+                artwork.sourceType = "local";
+                artwork.sourcePath = artwork.filePath;
+                artwork.title = titleOf(artwork.fileName);
+                artwork.persist();
+            }
+
+            bindPrimaryArtwork(trackFile, artwork);
             return toMusicArtworkResponse(musicId, artwork);
+        } catch (IOException exception) {
+            deleteImportedFileQuietly(importedFile);
+            throw new BadRequestException("Failed to save uploaded artwork: " + exception.getMessage(), exception);
+        } catch (RuntimeException exception) {
+            deleteImportedFileQuietly(importedFile);
+            throw exception;
+        }
+    }
+
+    private void bindPrimaryArtwork(TrackFile trackFile, Artwork artwork) {
+        MusicArtworkBinding primary = bindingRepository.findPrimaryTrackCoverByMusicId(trackFile.id);
+        if (primary != null && Objects.equals(primary.artworkId, artwork.id)) {
+            updateTrackArtworkStatus(trackFile, "matched");
+            return;
         }
         if (primary != null) {
             primary.isPrimary = false;
         }
 
-        MusicArtworkBinding binding = new MusicArtworkBinding();
-        binding.musicId = musicId;
-        binding.artworkId = artworkId;
-        binding.relationType = TRACK_COVER;
-        binding.isPrimary = true;
-        binding.persist();
+        MusicArtworkBinding binding = bindingRepository.findTrackCoverByMusicIdAndArtworkId(trackFile.id, artwork.id);
+        if (binding == null) {
+            binding = new MusicArtworkBinding();
+            binding.musicId = trackFile.id;
+            binding.artworkId = artwork.id;
+            binding.relationType = TRACK_COVER;
+            binding.isPrimary = true;
+            binding.persist();
+        } else {
+            binding.isPrimary = true;
+        }
         updateTrackArtworkStatus(trackFile, "matched");
-        return toMusicArtworkResponse(musicId, artwork);
     }
 
     @Transactional
     public MusicArtworkResponse unbind(Long musicId) {
-        TrackFile trackFile = TrackFile.findById(musicId);
-        if (trackFile == null) {
-            throw new NotFoundException("Music not found");
-        }
+        TrackFile trackFile = findTrackFile(musicId);
         MusicArtworkBinding primary = bindingRepository.findPrimaryTrackCoverByMusicId(musicId);
         if (primary != null) {
             primary.delete();
@@ -268,6 +334,79 @@ public class ArtworkService {
                 .collect(Collectors.groupingBy(this::baseNameOf));
     }
 
+    private PanacheQuery<Artwork> artworkListQuery(String keyword) {
+        String normalizedKeyword = normalizeKeyword(keyword);
+        if (normalizedKeyword == null) {
+            return Artwork.findAll(Sort.descending("createdAt"));
+        }
+        String likeKeyword = "%" + normalizedKeyword + "%";
+        return Artwork.find(
+                "lower(fileName) like ?1 or lower(title) like ?1",
+                Sort.descending("createdAt"),
+                likeKeyword
+        );
+    }
+
+    private Map<Long, Long> boundCountsByArtworkId(List<Artwork> artworks) {
+        if (artworks == null || artworks.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> artworkIds = artworks.stream().map(artwork -> artwork.id).toList();
+        Map<Long, Long> counts = new HashMap<>();
+        for (Object[] row : bindingRepository.countPrimaryTrackCoversByArtworkIds(artworkIds)) {
+            counts.put((Long) row[0], (Long) row[1]);
+        }
+        return counts;
+    }
+
+    private List<BoundTrackResponse> boundTracksForArtwork(Long artworkId) {
+        List<MusicArtworkBinding> bindings = bindingRepository.findPrimaryTrackCoversByArtworkId(artworkId);
+        if (bindings.isEmpty()) {
+            return List.of();
+        }
+        List<Long> musicIds = bindings.stream().map(binding -> binding.musicId).distinct().toList();
+        Map<Long, TrackFile> trackFilesById = TrackFile.<TrackFile>list("id in ?1", musicIds).stream()
+                .collect(Collectors.toMap(trackFile -> trackFile.id, Function.identity()));
+        Map<Long, Track> tracksById = tracksById(trackFilesById.values().stream().toList());
+
+        return musicIds.stream()
+                .map(trackFilesById::get)
+                .filter(Objects::nonNull)
+                .map(trackFile -> toBoundTrackResponse(trackFile, tracksById.get(trackFile.trackId)))
+                .toList();
+    }
+
+    private Map<Long, Track> tracksById(List<TrackFile> trackFiles) {
+        List<Long> trackIds = trackFiles.stream()
+                .map(trackFile -> trackFile.trackId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (trackIds.isEmpty()) {
+            return Map.of();
+        }
+        return Track.<Track>list("id in ?1", trackIds).stream()
+                .collect(Collectors.toMap(track -> track.id, Function.identity()));
+    }
+
+    private BoundTrackResponse toBoundTrackResponse(TrackFile trackFile, Track track) {
+        return new BoundTrackResponse(
+                trackFile.id,
+                trackFile.trackId,
+                trackFile.fileName,
+                trackFile.filePath,
+                track == null ? null : track.title,
+                track == null ? null : track.artist
+        );
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return null;
+        }
+        return keyword.trim().toLowerCase(Locale.ROOT);
+    }
+
     private String baseNameOf(TrackFile trackFile) {
         String fileName = trackFile.fileName;
         if ((fileName == null || fileName.isBlank()) && trackFile.filePath != null && !trackFile.filePath.isBlank()) {
@@ -282,6 +421,127 @@ public class ArtworkService {
             throw new NotFoundException("Artwork not found");
         }
         return artwork;
+    }
+
+    private TrackFile findTrackFile(Long musicId) {
+        TrackFile trackFile = TrackFile.findById(musicId);
+        if (trackFile == null) {
+            throw new NotFoundException("Music not found");
+        }
+        return trackFile;
+    }
+
+    private void validateImportFile(Path uploadedFile, String extension, String contentType) {
+        if (!Files.isRegularFile(uploadedFile) || !Files.isReadable(uploadedFile)) {
+            throw new BadRequestException("Uploaded artwork file is not readable");
+        }
+        if (!SUPPORTED_EXTENSIONS.contains(extension)) {
+            throw new BadRequestException("Unsupported artwork file extension: " + extension);
+        }
+        String normalizedContentType = normalizeContentType(contentType);
+        if (!isSupportedMimeType(normalizedContentType)) {
+            throw new BadRequestException("Unsupported artwork content type: " + contentType);
+        }
+        String expectedMimeType = mimeTypeOf(extension);
+        if (!expectedMimeType.equals(normalizedContentType)) {
+            throw new BadRequestException("Artwork file extension does not match content type");
+        }
+        try {
+            long size = Files.size(uploadedFile);
+            if (size < 1) {
+                throw new BadRequestException("Uploaded artwork file is empty");
+            }
+            if (size > MAX_IMPORT_FILE_SIZE) {
+                throw new BadRequestException("Uploaded artwork file must be 10MB or smaller");
+            }
+            String detectedExtension = detectedImageExtension(uploadedFile);
+            if (detectedExtension == null) {
+                throw new BadRequestException("Uploaded artwork file is not a supported image");
+            }
+            if (!extensionMatchesDetectedImage(extension, detectedExtension)) {
+                throw new BadRequestException("Artwork file extension does not match image content");
+            }
+        } catch (IOException exception) {
+            throw new BadRequestException("Uploaded artwork file size cannot be read", exception);
+        }
+    }
+
+    private boolean isSupportedMimeType(String contentType) {
+        return "image/jpeg".equals(contentType)
+                || "image/png".equals(contentType)
+                || "image/webp".equals(contentType);
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return "";
+        }
+        int semicolonIndex = contentType.indexOf(';');
+        String rawContentType = semicolonIndex < 0 ? contentType : contentType.substring(0, semicolonIndex);
+        return rawContentType.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private Path uniqueArtworkTarget(Path storageRoot, String baseName, String extension) {
+        Path safeRoot = storageRoot.toAbsolutePath().normalize();
+        for (int index = 0; index < 1000; index++) {
+            String suffix = index == 0 ? "" : "-" + index;
+            Path target = safeRoot.resolve(baseName + suffix + "." + extension).normalize();
+            if (!target.startsWith(safeRoot)) {
+                throw new BadRequestException("Artwork file name is invalid");
+            }
+            if (!Files.exists(target)) {
+                return target;
+            }
+        }
+        throw new BadRequestException("Cannot allocate artwork file name");
+    }
+
+    private String safeArtworkBaseName(TrackFile trackFile) {
+        Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
+        String title = track == null ? null : track.title;
+        String artist = track == null ? null : track.artist;
+        String baseName;
+        if (artist != null && !artist.isBlank() && title != null && !title.isBlank()) {
+            baseName = artist + " - " + title;
+        } else if (title != null && !title.isBlank()) {
+            baseName = title;
+        } else {
+            baseName = baseNameOf(trackFile);
+        }
+        baseName = sanitizeFileNameBase(baseName);
+        if (baseName.isBlank()) {
+            return "artwork-" + trackFile.id;
+        }
+        if (baseName.length() > MAX_SAFE_FILE_NAME_BASE_LENGTH) {
+            return baseName.substring(0, MAX_SAFE_FILE_NAME_BASE_LENGTH).strip();
+        }
+        return baseName;
+    }
+
+    private String sanitizeFileNameBase(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (Character.isISOControl(character) || "/\\:*?\"<>|".indexOf(character) >= 0) {
+                continue;
+            }
+            builder.append(character);
+        }
+        return builder.toString().strip();
+    }
+
+    private void deleteImportedFileQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            LOG.warnf(exception, "Failed to clean up imported artwork file: path=%s", path);
+        }
     }
 
     private MusicArtworkResponse toMusicArtworkResponse(Long musicId, Artwork artwork) {
@@ -388,15 +648,29 @@ public class ArtworkService {
     }
 
     private boolean hasSupportedImageSignature(Path path) throws IOException {
+        return detectedImageExtension(path) != null;
+    }
+
+    private boolean extensionMatchesDetectedImage(String extension, String detectedExtension) {
+        if ("jpg".equals(detectedExtension)) {
+            return "jpg".equals(extension) || "jpeg".equals(extension);
+        }
+        return detectedExtension.equals(extension);
+    }
+
+    private String detectedImageExtension(Path path) throws IOException {
         byte[] header = new byte[12];
         int read;
         try (InputStream inputStream = Files.newInputStream(path)) {
             read = inputStream.read(header);
         }
         if (read < 4) {
-            return false;
+            return null;
         }
         boolean jpeg = (header[0] & 0xff) == 0xff && (header[1] & 0xff) == 0xd8;
+        if (jpeg) {
+            return "jpg";
+        }
         boolean png = read >= 8
                 && (header[0] & 0xff) == 0x89
                 && header[1] == 'P'
@@ -406,6 +680,9 @@ public class ArtworkService {
                 && (header[5] & 0xff) == 0x0a
                 && (header[6] & 0xff) == 0x1a
                 && (header[7] & 0xff) == 0x0a;
+        if (png) {
+            return "png";
+        }
         boolean webp = read >= 12
                 && header[0] == 'R'
                 && header[1] == 'I'
@@ -415,7 +692,10 @@ public class ArtworkService {
                 && header[9] == 'E'
                 && header[10] == 'B'
                 && header[11] == 'P';
-        return jpeg || png || webp;
+        if (webp) {
+            return "webp";
+        }
+        return null;
     }
 
     private String sha256(Path path) throws IOException {
@@ -432,7 +712,13 @@ public class ArtworkService {
     }
 
     private String extensionOf(Path path) {
-        String fileName = path.getFileName().toString();
+        return extensionOf(path.getFileName().toString());
+    }
+
+    private String extensionOf(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "";
+        }
         int dotIndex = fileName.lastIndexOf('.');
         if (dotIndex < 0 || dotIndex == fileName.length() - 1) {
             return "";

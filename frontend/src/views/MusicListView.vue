@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled } from '@element-plus/icons-vue'
 import { fetchMusicList, triggerMusicScan, type MusicItem } from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
+import {
+  fetchArtworkList,
+  bindArtworkToMusic,
+  unbindArtworkFromMusic,
+  importArtworkFile,
+  type ArtworkItem,
+} from '../api/artwork'
 
 const brokenImages = reactive(new Set<number>())
 
@@ -24,6 +31,25 @@ const lyricLoading = ref(false)
 const currentLyric = ref<SongLyric | null>(null)
 const currentSongTitle = ref('')
 const currentSongArtist = ref('')
+
+const bindDialogVisible = ref(false)
+const bindDialogLoading = ref(false)
+const bindDialogKeyword = ref('')
+const bindDialogPage = ref(1)
+const bindDialogTotal = ref(0)
+const bindArtworkList = ref<ArtworkItem[]>([])
+const bindTargetMusic = ref<MusicItem | null>(null)
+const bindSubmitting = ref(false)
+
+const brokenBindThumbs = reactive(new Set<number>())
+
+const bindActiveTab = ref('select')
+const uploadFile = ref<File | null>(null)
+const uploadFileName = ref('')
+const uploading = ref(false)
+
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 const lyricStatusLabel = (status: string) => {
   const map: Record<string, string> = {
@@ -138,6 +164,105 @@ async function handleViewLyric(row: MusicItem) {
   }
 }
 
+async function handleBindOpen(row: MusicItem) {
+  bindTargetMusic.value = row
+  bindDialogKeyword.value = ''
+  bindDialogPage.value = 1
+  bindActiveTab.value = 'select'
+  resetUpload()
+  bindDialogVisible.value = true
+  await loadBindArtworks()
+}
+
+async function loadBindArtworks() {
+  bindDialogLoading.value = true
+  try {
+    const res = await fetchArtworkList({
+      page: bindDialogPage.value - 1,
+      size: 10,
+      keyword: bindDialogKeyword.value || undefined,
+    })
+    bindArtworkList.value = res.items
+    bindDialogTotal.value = res.total
+  } catch {
+    ElMessage.error('加载封面列表失败')
+  } finally {
+    bindDialogLoading.value = false
+  }
+}
+
+function handleBindSearch() {
+  bindDialogPage.value = 1
+  loadBindArtworks()
+}
+
+function handleBindPageChange(page: number) {
+  bindDialogPage.value = page
+  loadBindArtworks()
+}
+
+async function handleBindSelect(artwork: ArtworkItem) {
+  if (!bindTargetMusic.value) return
+  bindSubmitting.value = true
+  try {
+    await bindArtworkToMusic(bindTargetMusic.value.id, artwork.id)
+    ElMessage.success('封面已绑定')
+    bindDialogVisible.value = false
+    await loadList()
+  } catch {
+    ElMessage.error('绑定封面失败')
+  } finally {
+    bindSubmitting.value = false
+  }
+}
+
+function handleFileChange(upload: { raw?: File }) {
+  const file = upload.raw
+  if (!file) return
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    ElMessage.warning('仅支持 JPG、PNG、WebP 格式')
+    return
+  }
+  if (file.size > MAX_FILE_SIZE) {
+    ElMessage.warning('文件大小不能超过 10MB')
+    return
+  }
+  uploadFile.value = file
+  uploadFileName.value = file.name
+}
+
+async function handleUpload() {
+  if (!uploadFile.value || !bindTargetMusic.value) return
+  uploading.value = true
+  try {
+    await importArtworkFile(bindTargetMusic.value.id, uploadFile.value)
+    ElMessage.success('封面已导入并绑定')
+    bindDialogVisible.value = false
+    brokenImages.delete(bindTargetMusic.value.id)
+    await loadList()
+  } catch {
+    ElMessage.error('导入封面失败')
+  } finally {
+    uploading.value = false
+  }
+}
+
+function resetUpload() {
+  uploadFile.value = null
+  uploadFileName.value = ''
+}
+
+async function handleUnbind(row: MusicItem) {
+  try {
+    await unbindArtworkFromMusic(row.id)
+    ElMessage.success('封面已取消绑定')
+    brokenImages.delete(row.id)
+    await loadList()
+  } catch {
+    ElMessage.error('取消绑定失败')
+  }
+}
+
 function handlePageChange(page: number) {
   query.page = page
   loadList()
@@ -231,7 +356,7 @@ onMounted(() => {
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="row.lyricStatus === 'BOUND'"
@@ -241,7 +366,36 @@ onMounted(() => {
             :icon="View"
             @click="handleViewLyric(row)"
           >
-            查看歌词
+            歌词
+          </el-button>
+          <el-button
+            v-if="row.artworkStatus === 'BOUND'"
+            type="primary"
+            size="small"
+            text
+            :icon="PictureFilled"
+            @click="handleBindOpen(row)"
+          >
+            更换封面
+          </el-button>
+          <el-button
+            v-else
+            type="primary"
+            size="small"
+            text
+            :icon="PictureFilled"
+            @click="handleBindOpen(row)"
+          >
+            选择/导入封面
+          </el-button>
+          <el-button
+            v-if="row.artworkStatus === 'BOUND'"
+            type="danger"
+            size="small"
+            text
+            @click="handleUnbind(row)"
+          >
+            取消
           </el-button>
         </template>
       </el-table-column>
@@ -301,6 +455,119 @@ onMounted(() => {
       </template>
     </div>
   </el-dialog>
+
+  <el-dialog
+    v-model="bindDialogVisible"
+    title="选择 / 导入封面"
+    width="720px"
+    destroy-on-close
+  >
+    <el-tabs v-model="bindActiveTab" @tab-change="resetUpload">
+      <el-tab-pane label="选择已有封面" name="select">
+        <div class="bind-filter-bar">
+          <el-input
+            v-model="bindDialogKeyword"
+            placeholder="搜索封面文件名..."
+            clearable
+            size="small"
+            style="width: 260px"
+            @keyup.enter="handleBindSearch"
+            @clear="handleBindSearch"
+          />
+          <el-button size="small" type="primary" style="margin-left: 12px" @click="handleBindSearch">
+            搜索
+          </el-button>
+        </div>
+        <el-table
+          :data="bindArtworkList"
+          v-loading="bindDialogLoading"
+          empty-text="暂无封面"
+          max-height="360"
+          style="margin-top: 12px"
+        >
+          <el-table-column label="" width="60" align="center">
+            <template #default="{ row }">
+              <img
+                v-if="row.previewUrl && !brokenBindThumbs.has(row.id)"
+                :src="row.previewUrl"
+                class="bind-thumb"
+                @error="brokenBindThumbs.add(row.id)"
+              />
+              <span v-else style="color: #c0c4cc; font-size: 12px">无</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip />
+          <el-table-column label="尺寸" width="110" align="center">
+            <template #default="{ row }">
+              {{ row.width && row.height ? `${row.width}×${row.height}` : '--' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="已绑定" width="80" align="center">
+            <template #default="{ row }">
+              {{ row.boundCount }}
+            </template>
+          </el-table-column>
+          <el-table-column label="" width="80" align="center">
+            <template #default="{ row }">
+              <el-button
+                type="primary"
+                size="small"
+                :loading="bindSubmitting"
+                @click="handleBindSelect(row)"
+              >
+                选择
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+          <el-pagination
+            v-model:current-page="bindDialogPage"
+            :page-size="10"
+            :total="bindDialogTotal"
+            layout="total, prev, pager, next"
+            small
+            @current-change="handleBindPageChange"
+          />
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="导入本地图片" name="import">
+        <div class="upload-area">
+          <el-upload
+            :auto-upload="false"
+            :limit="1"
+            accept=".jpg,.jpeg,.png,.webp"
+            drag
+            :on-change="handleFileChange"
+            :file-list="[]"
+          >
+            <el-icon :size="40" style="color: #909399"><UploadFilled /></el-icon>
+            <div style="margin-top: 12px; color: #606266">
+              将图片拖到此处，或 <em>点击上传</em>
+            </div>
+            <template #tip>
+              <div style="margin-top: 8px; font-size: 12px; color: #909399">
+                支持 JPG / PNG / WebP，单文件不超过 10MB
+              </div>
+            </template>
+          </el-upload>
+          <div v-if="uploadFileName" class="upload-file-info">
+            <el-tag size="small" closable @close="resetUpload">{{ uploadFileName }}</el-tag>
+          </div>
+          <el-button
+            v-if="uploadFile"
+            type="primary"
+            :loading="uploading"
+            style="margin-top: 16px"
+            @click="handleUpload"
+          >
+            确认导入并绑定
+          </el-button>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -331,5 +598,24 @@ onMounted(() => {
   height: 48px;
   object-fit: cover;
   border-radius: 4px;
+}
+.bind-filter-bar {
+  display: flex;
+  align-items: center;
+}
+.bind-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+}
+.upload-file-info {
+  margin-top: 12px;
 }
 </style>

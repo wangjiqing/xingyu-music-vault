@@ -31,6 +31,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.context.ManagedExecutor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.jboss.logging.Logger;
 
 import java.util.HashMap;
@@ -140,6 +142,16 @@ public class MusicResource {
             ArtworkBindRequest request
     ) {
         return artworkService.bind(musicId, request == null ? null : request.artworkId());
+    }
+
+    @POST
+    @Path("/{musicId}/artwork/import")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public MusicArtworkResponse importArtwork(
+            @PathParam("musicId") Long musicId,
+            @RestForm("file") FileUpload file
+    ) {
+        return artworkService.importAndBind(musicId, file);
     }
 
     @DELETE

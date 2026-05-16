@@ -1,6 +1,7 @@
 package com.xingyu.musicvault.artwork;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class ArtworkDtos {
     private ArtworkDtos() {
@@ -37,10 +38,16 @@ public final class ArtworkDtos {
             String title,
             String description,
             String previewUrl,
+            long boundCount,
+            List<BoundTrackResponse> boundTracks,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
         public static ArtworkResponse from(Artwork artwork) {
+            return from(artwork, 0, List.of());
+        }
+
+        public static ArtworkResponse from(Artwork artwork, long boundCount, List<BoundTrackResponse> boundTracks) {
             return new ArtworkResponse(
                     artwork.id,
                     artwork.fileName,
@@ -55,10 +62,22 @@ public final class ArtworkDtos {
                     artwork.title,
                     artwork.description,
                     "/api/artworks/" + artwork.id + "/file",
+                    boundCount,
+                    boundTracks == null ? List.of() : boundTracks,
                     artwork.createdAt,
                     artwork.updatedAt
             );
         }
+    }
+
+    public record BoundTrackResponse(
+            Long musicId,
+            Long trackId,
+            String fileName,
+            String filePath,
+            String title,
+            String artist
+    ) {
     }
 
     public record MusicArtworkResponse(
