@@ -145,6 +145,8 @@
 | `created_at` | timestamp not null | 创建时间 |
 | `updated_at` | timestamp not null | 更新时间 |
 
+>`boundCount`（API 返回）是派生字段，通过 `COUNT(music_artwork_bindings)` 计算，不存储在表中。
+
 ### music_artwork_bindings
 
 记录音乐文件与封面图片的绑定关系。v0.6 尚未引入独立 `songs` 表，因此 `music_id` 指向 `track_files.id`，也就是音乐列表 API 暴露的 `id`。后续如引入正式歌曲、专辑、歌手模型，可迁移该外键语义或新增对应绑定表。

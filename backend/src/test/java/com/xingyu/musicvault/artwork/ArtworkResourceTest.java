@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.notNullValue;
 
 @QuarkusTest
@@ -76,6 +77,7 @@ class ArtworkResourceTest {
                 .body("items[0].height", equalTo(2))
                 .body("items[0].sourceType", equalTo("local"))
                 .body("items[0].previewUrl", notNullValue())
+                .body("items[0].boundCount", equalTo(1))
                 .extract()
                 .path("items[0].id");
 
@@ -86,7 +88,12 @@ class ArtworkResourceTest {
                 .then()
                 .statusCode(200)
                 .body("id", equalTo(artworkId))
-                .body("fileName", notNullValue());
+                .body("fileName", notNullValue())
+                .body("boundCount", equalTo(1))
+                .body("boundTracks[0].musicId", equalTo(musicId.intValue()))
+                .body("boundTracks[0].fileName", equalTo("周杰伦 - 晴天.flac"))
+                .body("boundTracks[0].title", equalTo("晴天"))
+                .body("boundTracks[0].artist", equalTo("周杰伦"));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -253,6 +260,94 @@ class ArtworkResourceTest {
                         .artworkId
         );
         org.junit.jupiter.api.Assertions.assertEquals(existingArtworkId, primaryArtworkId);
+    }
+
+    @Test
+    void listSupportsKeywordSearchAndBoundCount() throws IOException {
+        Long musicId = createMusic("星语 - 要.flac", "要", "星语");
+        Long matchedArtworkId = createArtwork("星语 - 要.png");
+        createArtwork("郭静 - 下一个天亮.png");
+        QuarkusTransaction.requiringNew().run(() -> {
+            MusicArtworkBinding binding = new MusicArtworkBinding();
+            binding.musicId = musicId;
+            binding.artworkId = matchedArtworkId;
+            binding.relationType = ArtworkService.TRACK_COVER;
+            binding.isPrimary = true;
+            binding.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/artworks?page=0&size=20&keyword=星语")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(matchedArtworkId.intValue()))
+                .body("items[0].boundCount", equalTo(1))
+                .body("items[0].boundTracks.size()", equalTo(0));
+    }
+
+    @Test
+    void importLocalArtworkSavesReusesAndBindsToMusic() throws IOException {
+        Path uploadFile = Files.createTempFile(Path.of("target"), "upload-cover-", ".png");
+        writePng(uploadFile, 5, 6);
+        Long musicId = createMusic("刘若英 - 后来.flac", "后来", "刘若英");
+
+        Integer artworkId = given()
+                .header("Authorization", AUTHORIZATION)
+                .multiPart("file", uploadFile.toFile(), "image/png")
+                .when()
+                .post("/api/music/{musicId}/artwork/import", musicId)
+                .then()
+                .statusCode(200)
+                .body("musicId", equalTo(musicId.intValue()))
+                .body("artworkStatus", equalTo("BOUND"))
+                .body("artworkPreviewUrl", notNullValue())
+                .body("artworkFileName", matchesPattern("刘若英 - 后来(-\\d+)?\\.png"))
+                .extract()
+                .path("artworkId");
+
+        Artwork artwork = QuarkusTransaction.requiringNew().call(() -> Artwork.<Artwork>findById(artworkId.longValue()));
+        org.junit.jupiter.api.Assertions.assertNotNull(artwork);
+        org.junit.jupiter.api.Assertions.assertTrue(artwork.fileName.matches("刘若英 - 后来(-\\d+)?\\.png"));
+        org.junit.jupiter.api.Assertions.assertEquals("png", artwork.fileExt);
+        org.junit.jupiter.api.Assertions.assertEquals("image/png", artwork.mimeType);
+        org.junit.jupiter.api.Assertions.assertEquals(5, artwork.width);
+        org.junit.jupiter.api.Assertions.assertEquals(6, artwork.height);
+        org.junit.jupiter.api.Assertions.assertTrue(Path.of(artwork.filePath).startsWith(ARTWORK_ROOT.toAbsolutePath()));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(Path.of(artwork.filePath)));
+        org.junit.jupiter.api.Assertions.assertEquals("matched", artworkStatusForMusic(musicId));
+
+        Long secondMusicId = createMusic("刘若英 - 很爱很爱你.flac", "很爱很爱你", "刘若英");
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .multiPart("file", uploadFile.toFile(), "image/png")
+                .when()
+                .post("/api/music/{musicId}/artwork/import", secondMusicId)
+                .then()
+                .statusCode(200)
+                .body("artworkId", equalTo(artworkId))
+                .body("artworkFileName", equalTo(artwork.fileName));
+
+        long artworkCount = QuarkusTransaction.requiringNew().call(() -> Artwork.<Artwork>listAll().size());
+        org.junit.jupiter.api.Assertions.assertEquals(1, artworkCount);
+    }
+
+    @Test
+    void importLocalArtworkRejectsUnsupportedMimeType() throws IOException {
+        Path uploadFile = Files.createTempFile(Path.of("target"), "upload-cover-", ".png");
+        writePng(uploadFile, 2, 2);
+        Long musicId = createMusic("任贤齐 - 心太软.flac", "心太软", "任贤齐");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .multiPart("file", uploadFile.toFile(), "text/plain")
+                .when()
+                .post("/api/music/{musicId}/artwork/import", musicId)
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
     }
 
     @Test

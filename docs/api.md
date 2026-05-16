@@ -263,6 +263,7 @@ Authorization: Bearer change-me
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
 | PUT | `/api/music/{musicId}/artwork` | 绑定音乐主封面 |
+| POST | `/api/music/{musicId}/artwork/import` | 上传本地图片、入库并绑定为音乐主封面 |
 | DELETE | `/api/music/{musicId}/artwork` | 取消音乐主封面绑定 |
 
 `POST /api/music/scan` 可传空对象使用默认目录，也可传入 `path` 覆盖本次扫描目录：
@@ -364,7 +365,41 @@ Content-Type: application/json
 }
 ```
 
-取消绑定：
+该接口为幂等绑定：若该歌曲已有主封面绑定，旧绑定会被降级（`is_primary = false`），然后写入新绑定（`is_primary = true`）。绑定目标 artwork 不存在时返回 `404`。
+
+导入本地图片并立即绑定：
+
+```http
+POST /api/music/1/artwork/import
+Authorization: Bearer change-me
+Content-Type: multipart/form-data
+```
+
+字段：
+
+| 字段 | 说明 |
+|------|------|
+| `file` | 本地 `jpg/jpeg/png/webp` 图片，最大 10MB |
+
+后端会将图片保存到 `app.artwork.scan-dir` 配置目录，按歌曲信息生成文件名，例如 `刘若英 - 后来.jpg`；若文件名已存在则追加 `-1`、`-2`。上传文件会按扩展名、Content-Type、图片可读性和 SHA-256 hash 校验；hash 已存在时复用已有 `artworks` 记录，并将当前歌曲主封面切换到该 artwork。
+
+响应：
+
+```json
+{
+  "musicId": 1,
+  "artworkStatus": "BOUND",
+  "artworkId": 10,
+  "artworkPreviewUrl": "/api/artworks/10/file",
+  "artworkFileName": "刘若英 - 后来.jpg"
+}
+```
+
+错误处理：文件类型不符或超过 10MB 时返回 `400`；文件无法解析为图片时返回 `422`。
+
+后续可考虑 `POST /api/music/{musicId}/artwork/import-url`，但本轮不实现。URL 导入需要额外处理：SSRF 防护、文件大小限制、Content-Type 校验、下载超时、重定向限制、域名/IP 限制、来源记录。
+
+ 取消绑定：
 
 ```http
 DELETE /api/music/1/artwork
@@ -447,7 +482,7 @@ app:
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/artworks?page=0&size=20` | 封面列表分页查询 |
+| GET | `/api/artworks?page=0&size=20&keyword=晴天` | 封面列表分页查询，可按文件名/标题搜索 |
 | GET | `/api/artworks/{id}` | 封面详情 |
 | GET | `/api/artworks/{id}/file` | 封面文件访问，供 `<img>` 使用 |
 | POST | `/api/artworks/scan` | 扫描本地封面目录 |
@@ -478,6 +513,8 @@ Authorization: Bearer change-me
       "title": "周杰伦 - 晴天",
       "description": null,
       "previewUrl": "/api/artworks/1/file",
+      "boundCount": 1,
+      "boundTracks": [],
       "createdAt": "2026-05-15T22:40:00",
       "updatedAt": "2026-05-15T22:40:00"
     }
@@ -488,6 +525,8 @@ Authorization: Bearer change-me
 }
 ```
 
+列表接口只返回 `boundCount` 用于快速展示绑定数量，`boundTracks` 固定为空数组以避免分页列表展开过多歌曲信息；需要查看关联歌曲时使用 `GET /api/artworks/{id}`。
+
 ### 封面详情
 
 ```http
@@ -495,7 +534,25 @@ GET /api/artworks/1
 Authorization: Bearer change-me
 ```
 
-响应字段同列表项。
+响应字段同列表项，并在 `boundTracks` 中返回轻量关联音乐信息：
+
+```json
+{
+  "id": 1,
+  "fileName": "周杰伦 - 晴天.png",
+  "boundCount": 1,
+  "boundTracks": [
+    {
+      "musicId": 1,
+      "trackId": 1,
+      "fileName": "周杰伦 - 晴天.flac",
+      "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+      "title": "晴天",
+      "artist": "周杰伦"
+    }
+  ]
+}
+```
 
 ### 封面文件访问
 

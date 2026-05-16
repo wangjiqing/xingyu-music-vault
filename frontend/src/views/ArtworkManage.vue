@@ -192,6 +192,11 @@ onMounted(() => {
           <el-tag size="small" type="info">{{ row.sourceType }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="已绑定" width="80" align="center">
+        <template #default="{ row }">
+          {{ row.boundCount }}
+        </template>
+      </el-table-column>
       <el-table-column label="创建时间" width="170">
         <template #default="{ row }">
           {{ formatTime(row.createdAt) }}
