@@ -315,6 +315,7 @@ Authorization: Bearer change-me
       "artworkId": 1,
       "artworkPreviewUrl": "/api/artworks/1/file",
       "artworkFileName": "周杰伦 - 晴天.png",
+      "artworkFileExists": true,
       "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
       "fileName": "周杰伦 - 晴天.flac",
       "fileExtension": "flac",
@@ -361,11 +362,12 @@ Content-Type: application/json
   "artworkStatus": "BOUND",
   "artworkId": 1,
   "artworkPreviewUrl": "/api/artworks/1/file",
-  "artworkFileName": "周杰伦 - 晴天.png"
+  "artworkFileName": "周杰伦 - 晴天.png",
+  "artworkFileExists": true
 }
 ```
 
-该接口为幂等绑定：若该歌曲已有主封面绑定，旧绑定会被降级（`is_primary = false`），然后写入新绑定（`is_primary = true`）。绑定目标 artwork 不存在时返回 `404`。
+该接口为幂等绑定：若该歌曲已有主封面绑定，旧绑定会被降级（`is_primary = false`），然后写入新绑定（`is_primary = true`）。绑定目标 artwork 不存在时返回 `404`；目标 artwork 文件已缺失时返回 `400`。
 
 导入本地图片并立即绑定：
 
@@ -391,11 +393,12 @@ Content-Type: multipart/form-data
   "artworkStatus": "BOUND",
   "artworkId": 10,
   "artworkPreviewUrl": "/api/artworks/10/file",
-  "artworkFileName": "刘若英 - 后来.jpg"
+  "artworkFileName": "刘若英 - 后来.jpg",
+  "artworkFileExists": true
 }
 ```
 
-错误处理：文件类型不符或超过 10MB 时返回 `400`；文件无法解析为图片时返回 `422`。
+错误处理：歌曲不存在时返回 `404`；文件类型不符、超过 10MB、无法识别为支持的图片、图片损坏、Artworks 目录不可写或配置路径不是目录时返回 `400`。
 
 后续可考虑 `POST /api/music/{musicId}/artwork/import-url`，但本轮不实现。URL 导入需要额外处理：SSRF 防护、文件大小限制、Content-Type 校验、下载超时、重定向限制、域名/IP 限制、来源记录。
 
@@ -414,7 +417,8 @@ Authorization: Bearer change-me
   "artworkStatus": "MISSING",
   "artworkId": null,
   "artworkPreviewUrl": null,
-  "artworkFileName": null
+  "artworkFileName": null,
+  "artworkFileExists": null
 }
 ```
 
@@ -482,7 +486,7 @@ app:
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/artworks?page=0&size=20&keyword=晴天` | 封面列表分页查询，可按文件名/标题搜索 |
+| GET | `/api/artworks?page=0&size=20&keyword=晴天&boundStatus=all` | 封面列表分页查询，可按文件名/标题搜索和绑定状态筛选 |
 | GET | `/api/artworks/{id}` | 封面详情 |
 | GET | `/api/artworks/{id}/file` | 封面文件访问，供 `<img>` 使用 |
 | POST | `/api/artworks/scan` | 扫描本地封面目录 |
@@ -490,9 +494,11 @@ app:
 ### 封面列表查询
 
 ```http
-GET /api/artworks?page=0&size=20
+GET /api/artworks?page=0&size=20&keyword=晴天&boundStatus=all
 Authorization: Bearer change-me
 ```
+
+`boundStatus` 可选值：`all`（默认）、`bound`、`unbound`。
 
 响应示例：
 
@@ -513,6 +519,7 @@ Authorization: Bearer change-me
       "title": "周杰伦 - 晴天",
       "description": null,
       "previewUrl": "/api/artworks/1/file",
+      "fileExists": true,
       "boundCount": 1,
       "boundTracks": [],
       "createdAt": "2026-05-15T22:40:00",
@@ -540,6 +547,7 @@ Authorization: Bearer change-me
 {
   "id": 1,
   "fileName": "周杰伦 - 晴天.png",
+  "fileExists": true,
   "boundCount": 1,
   "boundTracks": [
     {
@@ -561,7 +569,7 @@ GET /api/artworks/1/file
 Authorization: Bearer change-me
 ```
 
-成功时返回图片二进制，`Content-Type` 为入库时记录的 MIME 类型。该接口不会接受任意文件路径，只能通过已入库的 `artwork.id` 访问，并会校验真实文件路径仍位于 `app.artwork.scan-dir` 根目录内。
+成功时返回图片二进制，`Content-Type` 为入库时记录的 MIME 类型。该接口不会接受任意文件路径，只能通过已入库的 `artwork.id` 访问，并会校验真实文件路径仍位于 `app.artwork.scan-dir` 根目录内。若数据库记录存在但本地文件已被删除，返回 `404`，同时列表/详情中的 `fileExists` 会返回 `false`，音乐列表中的 `artworkFileExists` 会返回 `false`。
 
 ### 扫描封面
 
@@ -577,7 +585,7 @@ Content-Type: application/json
 }
 ```
 
-`path` 可省略，省略时使用 `app.artwork.scan-dir`。扫描支持 `jpg`、`jpeg`、`png`、`webp`，按真实文件路径和 SHA-256 文件哈希去重。扫描目录和扫描到的真实文件路径都必须位于配置根目录内，目录穿越和指向根目录外的符号链接文件会被拒绝或计入失败。
+`path` 可省略，省略时使用 `app.artwork.scan-dir`。如果配置的 Artworks 目录不存在，扫描或导入时会自动创建；如果配置路径已存在但不是目录、不可读或不可写，返回 `400`。扫描支持 `jpg`、`jpeg`、`png`、`webp`，按真实文件路径和 SHA-256 文件哈希去重。扫描目录和扫描到的真实文件路径都必须位于配置根目录内，目录穿越和指向根目录外的符号链接文件会被拒绝或计入失败。
 
 扫描入库后会尝试按文件名自动绑定：封面文件名去扩展名后，与 `track_files.file_name` 或 `track_files.file_path` 文件名去扩展名完全相同，则写入 `music_artwork_bindings`。当前 `music_artwork_bindings.music_id` 使用 `track_files.id`，`relation_type` 使用 `track_cover`。已有主封面绑定时不会覆盖。
 

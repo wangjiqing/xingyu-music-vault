@@ -38,16 +38,22 @@ public final class ArtworkDtos {
             String title,
             String description,
             String previewUrl,
+            boolean fileExists,
             long boundCount,
             List<BoundTrackResponse> boundTracks,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
         public static ArtworkResponse from(Artwork artwork) {
-            return from(artwork, 0, List.of());
+            return from(artwork, false, 0, List.of());
         }
 
-        public static ArtworkResponse from(Artwork artwork, long boundCount, List<BoundTrackResponse> boundTracks) {
+        public static ArtworkResponse from(
+                Artwork artwork,
+                boolean fileExists,
+                long boundCount,
+                List<BoundTrackResponse> boundTracks
+        ) {
             return new ArtworkResponse(
                     artwork.id,
                     artwork.fileName,
@@ -62,6 +68,7 @@ public final class ArtworkDtos {
                     artwork.title,
                     artwork.description,
                     "/api/artworks/" + artwork.id + "/file",
+                    fileExists,
                     boundCount,
                     boundTracks == null ? List.of() : boundTracks,
                     artwork.createdAt,
@@ -85,10 +92,11 @@ public final class ArtworkDtos {
             String artworkStatus,
             Long artworkId,
             String artworkPreviewUrl,
-            String artworkFileName
+            String artworkFileName,
+            Boolean artworkFileExists
     ) {
         public static MusicArtworkResponse missing(Long musicId) {
-            return new MusicArtworkResponse(musicId, "MISSING", null, null, null);
+            return new MusicArtworkResponse(musicId, "MISSING", null, null, null, null);
         }
     }
 }

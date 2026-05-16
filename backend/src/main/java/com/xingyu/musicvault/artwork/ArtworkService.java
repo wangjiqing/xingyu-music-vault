@@ -63,7 +63,7 @@ public class ArtworkService {
 
     @Transactional
     public ArtworkScanResponse scan(String requestedPath) {
-        Path configuredRoot = configuredArtworkRoot();
+        Path configuredRoot = configuredArtworkRoot(true, true);
         Path root = resolveScanRoot(requestedPath, configuredRoot);
         ScanCounters counters = new ScanCounters();
         Map<String, List<TrackFile>> trackFilesByBaseName = trackFilesByBaseName();
@@ -88,15 +88,20 @@ public class ArtworkService {
         );
     }
 
-    public PageResponse<ArtworkResponse> list(Integer page, Integer size, String keyword) {
+    public PageResponse<ArtworkResponse> list(Integer page, Integer size, String keyword, String boundStatus) {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size);
-        PanacheQuery<Artwork> query = artworkListQuery(keyword);
+        PanacheQuery<Artwork> query = artworkListQuery(keyword, boundStatus);
         long total = query.count();
         List<Artwork> artworks = query.page(Page.of(pageValue, sizeValue)).list();
         Map<Long, Long> boundCounts = boundCountsByArtworkId(artworks);
         List<ArtworkResponse> items = artworks.stream()
-                .map(artwork -> ArtworkResponse.from(artwork, boundCounts.getOrDefault(artwork.id, 0L), List.of()))
+                .map(artwork -> ArtworkResponse.from(
+                        artwork,
+                        artworkFileExists(artwork),
+                        boundCounts.getOrDefault(artwork.id, 0L),
+                        List.of()
+                ))
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
@@ -104,7 +109,7 @@ public class ArtworkService {
     public ArtworkResponse get(Long id) {
         Artwork artwork = findArtwork(id);
         List<BoundTrackResponse> boundTracks = boundTracksForArtwork(id);
-        return ArtworkResponse.from(artwork, boundTracks.size(), boundTracks);
+        return ArtworkResponse.from(artwork, artworkFileExists(artwork), boundTracks.size(), boundTracks);
     }
 
     public Response file(Long id) {
@@ -125,6 +130,9 @@ public class ArtworkService {
         }
         TrackFile trackFile = findTrackFile(musicId);
         Artwork artwork = findArtwork(artworkId);
+        if (!artworkFileExists(artwork)) {
+            throw new BadRequestException("Artwork file is missing");
+        }
 
         bindPrimaryArtwork(trackFile, artwork);
         return toMusicArtworkResponse(musicId, artwork);
@@ -152,25 +160,21 @@ public class ArtworkService {
         Artwork artwork = artworkRepository.findByHash(hash);
         Path importedFile = null;
         try {
-            if (artwork == null) {
-                Path storageRoot = configuredArtworkRoot();
+            if (artwork == null || !artworkFileExists(artwork)) {
+                Path storageRoot = configuredArtworkRoot(true, true);
                 Path target = uniqueArtworkTarget(storageRoot, safeArtworkBaseName(trackFile), extension);
                 Files.copy(uploadedFile, target, StandardCopyOption.COPY_ATTRIBUTES);
                 importedFile = target;
 
-                artwork = new Artwork();
-                artwork.filePath = target.toString();
-                artwork.fileName = target.getFileName().toString();
-                artwork.fileExt = extension;
-                artwork.mimeType = mimeTypeOf(extension);
-                artwork.fileSize = Files.size(target);
-                artwork.width = imageSize.width();
-                artwork.height = imageSize.height();
-                artwork.hash = hash;
-                artwork.sourceType = "local";
-                artwork.sourcePath = artwork.filePath;
-                artwork.title = titleOf(artwork.fileName);
-                artwork.persist();
+                if (artwork == null) {
+                    artwork = new Artwork();
+                    artwork.hash = hash;
+                    artwork.sourceType = "local";
+                }
+                updateArtworkFileMetadata(artwork, target, extension, imageSize);
+                if (!artwork.isPersistent()) {
+                    artwork.persist();
+                }
             }
 
             bindPrimaryArtwork(trackFile, artwork);
@@ -208,6 +212,18 @@ public class ArtworkService {
         updateTrackArtworkStatus(trackFile, "matched");
     }
 
+    private void updateArtworkFileMetadata(Artwork artwork, Path path, String extension, ImageSize imageSize) throws IOException {
+        artwork.filePath = path.toString();
+        artwork.fileName = path.getFileName().toString();
+        artwork.fileExt = extension;
+        artwork.mimeType = mimeTypeOf(extension);
+        artwork.fileSize = Files.size(path);
+        artwork.width = imageSize.width();
+        artwork.height = imageSize.height();
+        artwork.sourcePath = artwork.filePath;
+        artwork.title = titleOf(artwork.fileName);
+    }
+
     @Transactional
     public MusicArtworkResponse unbind(Long musicId) {
         TrackFile trackFile = findTrackFile(musicId);
@@ -243,7 +259,8 @@ public class ArtworkService {
             result.put(binding.musicId, new PrimaryArtworkSummary(
                     artwork.id,
                     "/api/artworks/" + artwork.id + "/file",
-                    artwork.fileName
+                    artwork.fileName,
+                    artworkFileExists(artwork)
             ));
         }
         return result;
@@ -334,14 +351,27 @@ public class ArtworkService {
                 .collect(Collectors.groupingBy(this::baseNameOf));
     }
 
-    private PanacheQuery<Artwork> artworkListQuery(String keyword) {
+    private PanacheQuery<Artwork> artworkListQuery(String keyword, String boundStatus) {
         String normalizedKeyword = normalizeKeyword(keyword);
+        String normalizedBoundStatus = normalizeBoundStatus(boundStatus);
+        String boundFilter = switch (normalizedBoundStatus) {
+            case "bound" -> "id in (select binding.artworkId from MusicArtworkBinding binding where binding.relationType = 'track_cover' and binding.isPrimary = true)";
+            case "unbound" -> "id not in (select binding.artworkId from MusicArtworkBinding binding where binding.relationType = 'track_cover' and binding.isPrimary = true)";
+            default -> null;
+        };
         if (normalizedKeyword == null) {
-            return Artwork.findAll(Sort.descending("createdAt"));
+            if (boundFilter == null) {
+                return Artwork.findAll(Sort.descending("createdAt"));
+            }
+            return Artwork.find(boundFilter, Sort.descending("createdAt"));
         }
         String likeKeyword = "%" + normalizedKeyword + "%";
+        String keywordFilter = "(lower(fileName) like ?1 or lower(title) like ?1)";
+        if (boundFilter == null) {
+            return Artwork.find(keywordFilter, Sort.descending("createdAt"), likeKeyword);
+        }
         return Artwork.find(
-                "lower(fileName) like ?1 or lower(title) like ?1",
+                keywordFilter + " and " + boundFilter,
                 Sort.descending("createdAt"),
                 likeKeyword
         );
@@ -405,6 +435,17 @@ public class ArtworkService {
             return null;
         }
         return keyword.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeBoundStatus(String boundStatus) {
+        if (boundStatus == null || boundStatus.isBlank()) {
+            return "all";
+        }
+        String normalized = boundStatus.trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("all", "bound", "unbound").contains(normalized)) {
+            throw new BadRequestException("boundStatus must be one of: all, bound, unbound");
+        }
+        return normalized;
     }
 
     private String baseNameOf(TrackFile trackFile) {
@@ -550,7 +591,8 @@ public class ArtworkService {
                 "BOUND",
                 artwork.id,
                 "/api/artworks/" + artwork.id + "/file",
-                artwork.fileName
+                artwork.fileName,
+                artworkFileExists(artwork)
         );
     }
 
@@ -564,9 +606,18 @@ public class ArtworkService {
         }
     }
 
+    private boolean artworkFileExists(Artwork artwork) {
+        try {
+            Path path = resolveArtworkFile(artwork);
+            return Files.isRegularFile(path) && Files.isReadable(path);
+        } catch (NotFoundException exception) {
+            return false;
+        }
+    }
+
     private Path resolveArtworkFile(Artwork artwork) {
         try {
-            Path configuredRoot = configuredArtworkRoot();
+            Path configuredRoot = configuredArtworkRoot(false, false);
             Path requested = Path.of(artwork.filePath);
             rejectPathTraversal(requested);
             Path realPath = requested.toRealPath();
@@ -577,6 +628,8 @@ public class ArtworkService {
             }
             return realPath;
         } catch (IOException exception) {
+            throw new NotFoundException("Artwork file not found", exception);
+        } catch (BadRequestException exception) {
             throw new NotFoundException("Artwork file not found", exception);
         }
     }
@@ -592,29 +645,39 @@ public class ArtworkService {
 
         Path requested = Path.of(rawPath.trim());
         rejectPathTraversal(requested);
-        Path realPath = toReadableDirectory(requested);
+        Path realPath = toUsableDirectory(requested, false, true);
         if (!realPath.startsWith(configuredRoot)) {
             throw new BadRequestException("Artwork directory is outside configured scan root: " + requested);
         }
         return realPath;
     }
 
-    private Path configuredArtworkRoot() {
+    private Path configuredArtworkRoot(boolean createIfMissing, boolean requireWritable) {
         if (defaultScanDir == null || defaultScanDir.isBlank()) {
             throw new BadRequestException("No artwork scan directory configured");
         }
-        return toReadableDirectory(Path.of(defaultScanDir));
+        return toUsableDirectory(Path.of(defaultScanDir), createIfMissing, requireWritable);
     }
 
-    private Path toReadableDirectory(Path path) {
+    private Path toUsableDirectory(Path path, boolean createIfMissing, boolean requireWritable) {
         if (!Files.exists(path)) {
-            throw new BadRequestException("Artwork directory does not exist: " + path);
+            if (!createIfMissing) {
+                throw new BadRequestException("Artwork directory does not exist: " + path);
+            }
+            try {
+                Files.createDirectories(path);
+            } catch (IOException exception) {
+                throw new BadRequestException("Artwork directory cannot be created: " + path, exception);
+            }
         }
         if (!Files.isDirectory(path)) {
             throw new BadRequestException("Artwork path is not a directory: " + path);
         }
         if (!Files.isReadable(path)) {
             throw new BadRequestException("Artwork directory is not readable: " + path);
+        }
+        if (requireWritable && !Files.isWritable(path)) {
+            throw new BadRequestException("Artwork directory is not writable: " + path);
         }
         try {
             return path.toRealPath();
@@ -770,7 +833,12 @@ public class ArtworkService {
         return size;
     }
 
-    public record PrimaryArtworkSummary(Long artworkId, String artworkPreviewUrl, String artworkFileName) {
+    public record PrimaryArtworkSummary(
+            Long artworkId,
+            String artworkPreviewUrl,
+            String artworkFileName,
+            boolean artworkFileExists
+    ) {
     }
 
     private record ImageSize(Integer width, Integer height) {

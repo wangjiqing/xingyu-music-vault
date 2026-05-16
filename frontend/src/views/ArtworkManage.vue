@@ -19,6 +19,7 @@ const brokenThumbs = reactive(new Set<number>())
 const query = reactive({
   page: 1,
   size: 20,
+  boundStatus: '',
 })
 const total = ref(0)
 
@@ -63,7 +64,12 @@ async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const res = await fetchArtworkList({ page: query.page - 1, size: query.size })
+    const params: Record<string, unknown> = {
+      page: query.page - 1,
+      size: query.size,
+    }
+    if (query.boundStatus) params.boundStatus = query.boundStatus
+    const res = await fetchArtworkList(params as any)
     items.value = res.items
     total.value = res.total
   } catch {
@@ -98,6 +104,11 @@ function handlePreview(row: ArtworkItem) {
   previewUrl.value = row.previewUrl
   previewTitle.value = row.fileName
   previewVisible.value = true
+}
+
+function handleBoundStatusChange() {
+  query.page = 1
+  loadList()
 }
 
 function handlePageChange(page: number) {
@@ -154,6 +165,21 @@ onMounted(() => {
       当前扫描本地 Artworks 目录中的封面图片，扫描完成后会自动刷新列表。
     </div>
 
+    <div class="filter-bar">
+      <el-select
+        v-model="query.boundStatus"
+        placeholder="绑定状态"
+        clearable
+        size="small"
+        style="width: 130px"
+        @change="handleBoundStatusChange"
+      >
+        <el-option label="全部" value="" />
+        <el-option label="已绑定" value="bound" />
+        <el-option label="未绑定" value="unbound" />
+      </el-select>
+    </div>
+
     <el-table
       :data="items"
       v-loading="loading"
@@ -163,11 +189,12 @@ onMounted(() => {
       <el-table-column label="缩略图" width="80" align="center">
         <template #default="{ row }">
           <img
-            v-if="row.previewUrl && !brokenThumbs.has(row.id)"
+            v-if="row.previewUrl && row.fileExists && !brokenThumbs.has(row.id)"
             :src="row.previewUrl"
             class="artwork-thumb"
             @error="brokenThumbs.add(row.id)"
           />
+          <el-tag v-else-if="!row.fileExists" size="small" type="danger">缺失</el-tag>
           <span v-else style="color: #c0c4cc; font-size: 12px">无</span>
         </template>
       </el-table-column>
@@ -257,6 +284,9 @@ onMounted(() => {
 .header-actions {
   display: flex;
   gap: 8px;
+}
+.filter-bar {
+  margin-bottom: 4px;
 }
 .artwork-thumb {
   width: 48px;

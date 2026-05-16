@@ -170,7 +170,8 @@ public class MusicResource {
                 artwork == null ? "MISSING" : "BOUND",
                 artwork == null ? null : artwork.artworkId(),
                 artwork == null ? null : artwork.artworkPreviewUrl(),
-                artwork == null ? null : artwork.artworkFileName()
+                artwork == null ? null : artwork.artworkFileName(),
+                artwork == null ? null : artwork.artworkFileExists()
         );
     }
 
@@ -188,7 +189,8 @@ public class MusicResource {
                 artwork == null ? "MISSING" : "BOUND",
                 artwork == null ? null : artwork.artworkId(),
                 artwork == null ? null : artwork.artworkPreviewUrl(),
-                artwork == null ? null : artwork.artworkFileName()
+                artwork == null ? null : artwork.artworkFileName(),
+                artwork == null ? null : artwork.artworkFileExists()
         );
     }
 

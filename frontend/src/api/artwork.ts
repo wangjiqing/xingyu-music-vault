@@ -24,6 +24,7 @@ export interface ArtworkItem {
   title: string
   description: string | null
   previewUrl: string
+  fileExists: boolean
   boundCount: number
   boundTracks: BoundTrack[]
   createdAt: string
@@ -52,6 +53,7 @@ export async function fetchArtworkList(params: {
   page: number
   size: number
   keyword?: string
+  boundStatus?: string
 }): Promise<PageResponse<ArtworkItem>> {
   const { data } = await http.get('/api/artworks', { params })
   return data
