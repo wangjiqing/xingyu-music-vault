@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled } from '@element-plus/icons-vue'
-import { fetchMusicList, triggerMusicScan, type MusicItem } from '../api/music'
+import { View, PictureFilled, UploadFilled, Edit } from '@element-plus/icons-vue'
+import {
+  fetchMusicList,
+  triggerMusicScan,
+  updateMusicMetadata,
+  type MusicItem,
+  type MusicMetadataUpdate,
+} from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
 import {
   fetchArtworkList,
@@ -47,6 +53,18 @@ const bindActiveTab = ref('select')
 const uploadFile = ref<File | null>(null)
 const uploadFileName = ref('')
 const uploading = ref(false)
+
+const editDialogVisible = ref(false)
+const editSaving = ref(false)
+const editForm = reactive<MusicMetadataUpdate & { id: number }>({
+  id: 0,
+  title: '',
+  artist: '',
+  album: '',
+  year: null,
+  trackNo: null,
+  genre: '',
+})
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -263,6 +281,56 @@ async function handleUnbind(row: MusicItem) {
   }
 }
 
+function displayTitle(row: MusicItem): string {
+  return row.title || row.fileName || '--'
+}
+
+function openEditDialog(row: MusicItem) {
+  editForm.id = row.id
+  editForm.title = row.title || ''
+  editForm.artist = row.artist || ''
+  editForm.album = row.album || ''
+  editForm.year = row.year ?? null
+  editForm.trackNo = row.trackNo ?? null
+  editForm.genre = row.genre || ''
+  editDialogVisible.value = true
+}
+
+async function handleEditSave() {
+  if (editForm.trackNo != null && editForm.trackNo <= 0) {
+    ElMessage.warning('曲目号必须大于 0')
+    return
+  }
+  if (editForm.year != null) {
+    const maxYear = new Date().getFullYear() + 1
+    if (editForm.year < 1900 || editForm.year > maxYear) {
+      ElMessage.warning(`年份需在 1900 ~ ${maxYear} 之间`)
+      return
+    }
+  }
+  editSaving.value = true
+  try {
+    const res = await updateMusicMetadata(editForm.id, {
+      title: editForm.title || undefined,
+      artist: editForm.artist || undefined,
+      album: editForm.album || undefined,
+      year: editForm.year ?? undefined,
+      trackNo: editForm.trackNo ?? undefined,
+      genre: editForm.genre || undefined,
+    })
+    const idx = list.value.findIndex((item) => item.id === res.id)
+    if (idx !== -1) {
+      list.value[idx] = res
+    }
+    ElMessage.success('元数据已保存')
+    editDialogVisible.value = false
+  } catch {
+    ElMessage.error('保存元数据失败')
+  } finally {
+    editSaving.value = false
+  }
+}
+
 function handlePageChange(page: number) {
   query.page = page
   loadList()
@@ -312,7 +380,11 @@ onMounted(() => {
       empty-text="暂无音乐文件，请点击「扫描音乐目录」导入"
       style="width: 100%"
     >
-      <el-table-column prop="title" label="歌曲名" min-width="180" show-overflow-tooltip />
+      <el-table-column label="歌曲名" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ displayTitle(row) }}
+        </template>
+      </el-table-column>
       <el-table-column label="歌手" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.artist || 'Unknown' }}
@@ -321,6 +393,16 @@ onMounted(() => {
       <el-table-column label="专辑" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.album || '--' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="年份" width="70" align="center">
+        <template #default="{ row }">
+          {{ row.year ?? '--' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="流派" width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.genre || '--' }}
         </template>
       </el-table-column>
       <el-table-column label="格式" width="80">
@@ -362,8 +444,17 @@ onMounted(() => {
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
+          <el-button
+            type="primary"
+            size="small"
+            text
+            :icon="Edit"
+            @click="openEditDialog(row)"
+          >
+            编辑
+          </el-button>
           <el-button
             v-if="row.lyricStatus === 'BOUND'"
             type="primary"
@@ -574,6 +665,51 @@ onMounted(() => {
         </div>
       </el-tab-pane>
     </el-tabs>
+  </el-dialog>
+
+  <el-dialog
+    v-model="editDialogVisible"
+    title="编辑元数据"
+    width="480px"
+    destroy-on-close
+  >
+    <el-form label-width="72px" :disabled="editSaving">
+      <el-form-item label="标题">
+        <el-input v-model="editForm.title" placeholder="留空则使用文件名" />
+      </el-form-item>
+      <el-form-item label="歌手">
+        <el-input v-model="editForm.artist" placeholder="留空则显示 Unknown" />
+      </el-form-item>
+      <el-form-item label="专辑">
+        <el-input v-model="editForm.album" />
+      </el-form-item>
+      <el-form-item label="年份">
+        <el-input-number
+          v-model="editForm.year"
+          :min="1900"
+          :max="new Date().getFullYear() + 1"
+          placeholder="如：2007"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="曲目号">
+        <el-input-number
+          v-model="editForm.trackNo"
+          :min="1"
+          placeholder="如：3"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="流派">
+        <el-input v-model="editForm.genre" placeholder="如：Pop" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="editDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="editSaving" @click="handleEditSave">
+        保存
+      </el-button>
+    </template>
   </el-dialog>
 </template>
 

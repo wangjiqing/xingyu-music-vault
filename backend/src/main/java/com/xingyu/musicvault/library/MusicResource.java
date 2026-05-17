@@ -6,6 +6,7 @@ import com.xingyu.musicvault.artwork.ArtworkDtos.MusicArtworkResponse;
 import com.xingyu.musicvault.artwork.ArtworkService;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
+import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
@@ -29,14 +30,18 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.context.ManagedExecutor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.jboss.logging.Logger;
 
+import java.time.LocalDateTime;
+import java.time.Year;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -135,6 +140,45 @@ public class MusicResource {
     }
 
     @PUT
+    @Path("/{id}/metadata")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Transactional
+    public MusicResponse updateMetadata(
+            @PathParam("id") Long id,
+            MusicMetadataUpdateRequest request
+    ) {
+        if (request == null) {
+            throw new BadRequestException("Request body is required");
+        }
+
+        TrackFile trackFile = TrackFile.findById(id);
+        if (trackFile == null) {
+            throw new NotFoundException("Music not found");
+        }
+
+        validateYear(request.year());
+        validateTrackNo(request.trackNo());
+
+        Track track = trackOf(trackFile);
+        String title = cleanText(request.title());
+        track.title = title;
+        track.normalizedTitle = title == null ? null : title.toLowerCase(Locale.ROOT);
+        track.artist = cleanText(request.artist());
+        track.album = cleanText(request.album());
+        track.year = request.year();
+        track.trackNo = request.trackNo();
+        track.genre = cleanText(request.genre());
+        track.metadataUpdatedAt = LocalDateTime.now();
+
+        if (!track.isPersistent()) {
+            track.persist();
+            trackFile.trackId = track.id;
+        }
+
+        return toMusicResponse(trackFile);
+    }
+
+    @PUT
     @Path("/{musicId}/artwork")
     @Consumes(MediaType.APPLICATION_JSON)
     public MusicArtworkResponse bindArtwork(
@@ -201,6 +245,17 @@ public class MusicResource {
         return tracksById.get(trackFile.trackId);
     }
 
+    private Track trackOf(TrackFile trackFile) {
+        if (trackFile.trackId == null) {
+            return new Track();
+        }
+        Track track = Track.findById(trackFile.trackId);
+        if (track == null) {
+            return new Track();
+        }
+        return track;
+    }
+
     private Map<Long, Track> tracksById(List<TrackFile> trackFiles) {
         List<Long> trackIds = trackFiles.stream()
                 .map(trackFile -> trackFile.trackId)
@@ -247,4 +302,32 @@ public class MusicResource {
         }
         return size;
     }
+
+    private void validateYear(Integer year) {
+        if (year == null) {
+            return;
+        }
+        int maxYear = Year.now().getValue() + 1;
+        if (year < 1900 || year > maxYear) {
+            throw new BadRequestException("year must be between 1900 and " + maxYear);
+        }
+    }
+
+    private void validateTrackNo(Integer trackNo) {
+        if (trackNo == null) {
+            return;
+        }
+        if (trackNo <= 0) {
+            throw new BadRequestException("trackNo must be greater than 0");
+        }
+    }
+
+    private String cleanText(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
 }

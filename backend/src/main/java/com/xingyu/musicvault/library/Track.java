@@ -20,7 +20,7 @@ public class Track extends PanacheEntityBase {
     @Column(columnDefinition = "integer")
     public Long id;
 
-    @Column(nullable = false)
+    @Column
     public String title;
 
     @Column(name = "normalized_title")
@@ -37,6 +37,18 @@ public class Track extends PanacheEntityBase {
 
     @Column
     public Long duration;
+
+    @Column
+    public Integer year;
+
+    @Column(name = "track_no")
+    public Integer trackNo;
+
+    @Column
+    public String genre;
+
+    @Column(name = "metadata_updated_at")
+    public LocalDateTime metadataUpdatedAt;
 
     @Column(name = "metadata_status", nullable = false)
     public String metadataStatus = "pending";

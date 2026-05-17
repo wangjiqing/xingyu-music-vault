@@ -28,6 +28,10 @@ public final class MusicDtos {
             String album,
             String albumArtist,
             Long duration,
+            Integer year,
+            Integer trackNo,
+            String genre,
+            LocalDateTime metadataUpdatedAt,
             String lyricStatus,
             Long lyricId,
             String artworkStatus,
@@ -89,6 +93,10 @@ public final class MusicDtos {
                     track == null ? null : track.album,
                     track == null ? null : track.albumArtist,
                     track == null ? null : track.duration,
+                    track == null ? null : track.year,
+                    track == null ? null : track.trackNo,
+                    track == null ? null : track.genre,
+                    track == null ? null : track.metadataUpdatedAt,
                     lyricStatus,
                     lyricId,
                     artworkStatus == null ? "MISSING" : artworkStatus,
@@ -123,5 +131,15 @@ public final class MusicDtos {
             }
             return track.artist;
         }
+    }
+
+    public record MusicMetadataUpdateRequest(
+            String title,
+            String artist,
+            String album,
+            Integer year,
+            Integer trackNo,
+            String genre
+    ) {
     }
 }
