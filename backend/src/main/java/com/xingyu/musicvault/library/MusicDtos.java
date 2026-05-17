@@ -44,6 +44,9 @@ public final class MusicDtos {
             String fileExtension,
             long fileSize,
             LocalDateTime lastModifiedTime,
+            LocalDateTime deletedAt,
+            String trashPath,
+            String deleteStatus,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
@@ -109,6 +112,9 @@ public final class MusicDtos {
                     trackFile.fileExt,
                     trackFile.fileSize,
                     trackFile.lastModifiedAt,
+                    trackFile.deletedAt,
+                    trackFile.trashPath,
+                    trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus,
                     trackFile.createdAt,
                     trackFile.updatedAt
             );
@@ -141,5 +147,35 @@ public final class MusicDtos {
             Integer trackNo,
             String genre
     ) {
+    }
+
+    public record MusicFileResponse(
+            Long id,
+            String filePath,
+            String fileName,
+            String fileExtension,
+            long fileSize,
+            LocalDateTime lastModifiedTime,
+            LocalDateTime deletedAt,
+            String trashPath,
+            String deleteStatus,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+        public static MusicFileResponse from(TrackFile trackFile) {
+            return new MusicFileResponse(
+                    trackFile.id,
+                    trackFile.filePath,
+                    trackFile.fileName,
+                    trackFile.fileExt,
+                    trackFile.fileSize,
+                    trackFile.lastModifiedAt,
+                    trackFile.deletedAt,
+                    trackFile.trashPath,
+                    trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus,
+                    trackFile.createdAt,
+                    trackFile.updatedAt
+            );
+        }
     }
 }

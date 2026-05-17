@@ -63,6 +63,26 @@ class LibraryScanServiceTest {
     }
 
     @Test
+    void scanSkipsMusicVaultTrashDirectory() throws IOException {
+        Files.writeString(musicDir.resolve("active.flac"), "active");
+        Path trashDir = musicDir.resolve(".music-vault-trash").resolve("1");
+        Files.createDirectories(trashDir);
+        Files.writeString(trashDir.resolve("trashed.flac"), "trashed");
+
+        Long scanJobId = createScanJob(musicDir);
+        ScanJob scanJob = libraryScanService.run(scanJobId);
+
+        assertEquals("completed", scanJob.status);
+        assertEquals(1, scanJob.totalFiles);
+        assertEquals(1, scanJob.scannedFiles);
+        assertEquals(1, scanJob.newFiles);
+        assertEquals(0, scanJob.skippedFiles);
+        assertEquals(1, TrackFile.count());
+        assertNotNull(TrackFile.find("fileName", "active.flac").firstResult());
+        assertNull(TrackFile.find("fileName", "trashed.flac").firstResult());
+    }
+
+    @Test
     void repeatedScanSkipsUnchangedTrackFiles() throws IOException {
         Path file = musicDir.resolve("a.flac");
         Files.writeString(file, "first");
@@ -84,6 +104,42 @@ class LibraryScanServiceTest {
         TrackFile trackFile = TrackFile.find("fileName", "a.flac").firstResult();
         assertNotNull(trackFile);
         assertEquals(firstJobId, trackFile.scanJobId);
+    }
+
+    @Test
+    @Transactional
+    void repeatedScanRestoresTrashedTrackFileWhenOriginalFileExistsAgain() throws IOException {
+        Path file = musicDir.resolve("restored.flac");
+        Files.writeString(file, "first");
+
+        Long firstJobId = createScanJob(musicDir);
+        libraryScanService.run(firstJobId);
+
+        TrackFile trashed = TrackFile.find("fileName", "restored.flac").firstResult();
+        trashed.deleteStatus = "trashed";
+        trashed.deletedAt = LocalDateTime.now();
+        trashed.trashPath = musicDir.resolve(".music-vault-trash")
+                .resolve(trashed.id.toString())
+                .resolve("restored.flac")
+                .toAbsolutePath()
+                .normalize()
+                .toString();
+
+        Long secondJobId = createScanJob(musicDir);
+        ScanJob secondJob = libraryScanService.run(secondJobId);
+
+        assertEquals("completed", secondJob.status);
+        assertEquals(1, secondJob.totalFiles);
+        assertEquals(1, secondJob.scannedFiles);
+        assertEquals(0, secondJob.newFiles);
+        assertEquals(1, secondJob.updatedFiles);
+        assertEquals(0, secondJob.skippedFiles);
+
+        TrackFile restored = TrackFile.find("fileName", "restored.flac").firstResult();
+        assertEquals("active", restored.deleteStatus);
+        assertNull(restored.deletedAt);
+        assertNull(restored.trashPath);
+        assertEquals(secondJobId, restored.scanJobId);
     }
 
     @Test

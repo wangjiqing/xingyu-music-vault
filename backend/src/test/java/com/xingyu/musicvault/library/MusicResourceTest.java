@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.stream.Stream;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +42,7 @@ class MusicResourceTest {
     void cleanData() throws IOException {
         Files.createDirectories(ALLOWED_MUSIC_ROOT);
         musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "music-api-test-");
+        deleteRecursively(ALLOWED_MUSIC_ROOT.resolve(".music-vault-trash"));
         MusicArtworkBinding.deleteAll();
         Artwork.deleteAll();
         SongLyric.deleteAll();
@@ -368,6 +371,234 @@ class MusicResourceTest {
                 .body("metadataUpdatedAt", notNullValue());
     }
 
+    @Test
+    void getMusicFileReturnsFileDeleteFields() throws IOException {
+        Long musicId = createMusicWithFile("file-info.flac", "File Info", "Tester", "audio");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{id}/file", musicId)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(musicId.intValue()))
+                .body("fileName", equalTo("file-info.flac"))
+                .body("fileExtension", equalTo("flac"))
+                .body("deleteStatus", equalTo("active"))
+                .body("deletedAt", nullValue())
+                .body("trashPath", nullValue());
+    }
+
+    @Test
+    void deleteMissingMusicReturnsNotFound() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", 999999)
+                .then()
+                .statusCode(404)
+                .body("error", equalTo("not_found"));
+    }
+
+    @Test
+    void deleteMusicMovesFileToTrashAndHidesFromList() throws IOException {
+        Long musicId = createMusicWithFile("delete-me.flac", "Delete Me", "Tester", "audio");
+        Path originalPath = musicDir.resolve("delete-me.flac").toAbsolutePath().normalize();
+
+        String trashPath = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(musicId.intValue()))
+                .body("fileName", equalTo("delete-me.flac"))
+                .body("deleteStatus", equalTo("trashed"))
+                .body("deletedAt", notNullValue())
+                .body("trashPath", notNullValue())
+                .extract()
+                .path("trashPath");
+
+        org.junit.jupiter.api.Assertions.assertFalse(Files.exists(originalPath));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(Path.of(trashPath)));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                Path.of(trashPath).startsWith(ALLOWED_MUSIC_ROOT.toAbsolutePath().normalize().resolve(".music-vault-trash"))
+        );
+
+        TrackFile trashed = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("trashed", trashed.deleteStatus);
+        assertNotNull(trashed.deletedAt);
+        assertEquals(trashPath, trashed.trashPath);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(0))
+                .body("total", equalTo(0));
+    }
+
+    @Test
+    void deleteMusicUsesUniqueTrashFileNameOnConflict() throws IOException {
+        Long musicId = createMusicWithFile("conflict.flac", "Conflict", "Tester", "audio");
+        Path trashDir = ALLOWED_MUSIC_ROOT.resolve(".music-vault-trash").resolve(String.valueOf(musicId)).toAbsolutePath().normalize();
+        Files.createDirectories(trashDir);
+        Files.writeString(trashDir.resolve("conflict.flac"), "existing");
+
+        String trashPath = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(200)
+                .body("deleteStatus", equalTo("trashed"))
+                .extract()
+                .path("trashPath");
+
+        org.junit.jupiter.api.Assertions.assertTrue(trashPath.endsWith("conflict-1.flac"));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(Path.of(trashPath)));
+    }
+
+    @Test
+    void deleteMissingFileReturnsConflictAndKeepsDatabaseActive() {
+        Long musicId = createMusic("missing-file.flac", "Missing File", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("active", trackFile.deleteStatus);
+        assertNull(trackFile.deletedAt);
+        assertNull(trackFile.trashPath);
+    }
+
+    @Test
+    void deleteRejectsFileOutsideLibraryRoot() throws IOException {
+        Path outsideDir = Files.createTempDirectory(Path.of("/private/tmp"), "music-delete-outside-");
+        Path outsideFile = outsideDir.resolve("outside.flac");
+        Files.writeString(outsideFile, "audio");
+        Long musicId = createMusicRecordForPath(outsideFile, "Outside", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(outsideFile));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("active", trackFile.deleteStatus);
+        assertNull(trackFile.deletedAt);
+    }
+
+    @Test
+    void deleteRejectsFileAlreadyInsideMusicVaultTrash() throws IOException {
+        Path trashDir = ALLOWED_MUSIC_ROOT.resolve(".music-vault-trash").resolve("manual");
+        Files.createDirectories(trashDir);
+        Path trashFile = trashDir.resolve("already-trashed.flac");
+        Files.writeString(trashFile, "audio");
+        Long musicId = createMusicRecordForPath(trashFile, "Already Trashed", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(trashFile));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("active", trackFile.deleteStatus);
+        assertNull(trackFile.deletedAt);
+    }
+
+    @Test
+    void deleteRejectsDirectoryPath() throws IOException {
+        Path directory = Files.createDirectory(musicDir.resolve("directory.flac"));
+        Long musicId = createMusicRecordForPath(directory, "Directory", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.isDirectory(directory));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("active", trackFile.deleteStatus);
+        assertNull(trackFile.deletedAt);
+    }
+
+    @Test
+    void deleteAlreadyTrashedMusicReturnsConflict() throws IOException {
+        Long musicId = createMusicWithFile("repeat.flac", "Repeat", "Tester", "audio");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+    }
+
+    @Test
+    void deleteDoesNotBreakExistingListFieldsBeforeDeletion() throws IOException {
+        Long musicId = createMusicWithFile("field-check.flac", "Field Check", "Tester", "audio");
+        BindingIds bindingIds = createPrimaryLyricAndArtwork(musicId);
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "title": "Field Check",
+                          "artist": "Tester",
+                          "album": "Album",
+                          "year": 2024,
+                          "trackNo": 1,
+                          "genre": "Pop"
+                        }
+                        """)
+                .when()
+                .put("/api/music/{id}/metadata", musicId)
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?page=0&size=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].year", equalTo(2024))
+                .body("items[0].trackNo", equalTo(1))
+                .body("items[0].genre", equalTo("Pop"))
+                .body("items[0].lyricId", equalTo(bindingIds.lyricId().intValue()))
+                .body("items[0].artworkId", equalTo(bindingIds.artworkId().intValue()))
+                .body("items[0].deleteStatus", equalTo("active"))
+                .body("items[0].deletedAt", nullValue());
+    }
+
     private Long createMusic(String fileName, String title, String artist) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Track track = new Track();
@@ -380,6 +611,31 @@ class MusicResourceTest {
             trackFile.trackId = track.id;
             trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
             trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createMusicWithFile(String fileName, String title, String artist, String content) throws IOException {
+        Files.writeString(musicDir.resolve(fileName), content);
+        return createMusic(fileName, title, artist);
+    }
+
+    private Long createMusicRecordForPath(Path path, String title, String artist) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = path.toAbsolutePath().normalize().toString();
+            trackFile.fileName = path.getFileName().toString();
             trackFile.fileExt = "flac";
             trackFile.fileSize = 1;
             trackFile.lastModifiedAt = LocalDateTime.now();
@@ -431,6 +687,17 @@ class MusicResourceTest {
     }
 
     private record BindingIds(Long lyricId, Long artworkId) {
+    }
+
+    private void deleteRecursively(Path path) throws IOException {
+        if (!Files.exists(path)) {
+            return;
+        }
+        try (Stream<Path> paths = Files.walk(path)) {
+            for (Path item : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(item);
+            }
+        }
     }
 
     private ScanJob waitForScanJobStatus(Long scanJobId, String expectedStatus) throws InterruptedException {

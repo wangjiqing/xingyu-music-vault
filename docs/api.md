@@ -262,6 +262,8 @@ Authorization: Bearer change-me
 | POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `music.scan.default-path` |
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
+| GET | `/api/music/{id}/file` | 音乐文件信息和安全删除状态 |
+| DELETE | `/api/music/{id}` | 安全删除音乐文件，移动到音乐库根目录下的 `.music-vault-trash` |
 | PUT | `/api/music/{musicId}/artwork` | 绑定音乐主封面 |
 | POST | `/api/music/{musicId}/artwork/import` | 上传本地图片、入库并绑定为音乐主封面 |
 | DELETE | `/api/music/{musicId}/artwork` | 取消音乐主封面绑定 |
@@ -290,7 +292,7 @@ Content-Type: application/json
 }
 ```
 
-扫描会递归读取目录，跳过隐藏文件和非音乐文件。当前不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。如果历史 `track_files` 行缺少 `track_id`，重复音乐扫描会补建 `tracks` 元数据，供歌词匹配使用。
+扫描会递归读取目录，跳过隐藏文件、非音乐文件和音乐库根目录下的 `.music-vault-trash` 回收目录。当前不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。如果历史 `track_files` 行缺少 `track_id`，重复音乐扫描会补建 `tracks` 元数据，供歌词匹配使用。
 
 查询列表：
 
@@ -321,6 +323,9 @@ Authorization: Bearer change-me
       "fileExtension": "flac",
       "fileSize": 123456,
       "lastModifiedTime": "2026-05-14T06:40:00",
+      "deletedAt": null,
+      "trashPath": null,
+      "deleteStatus": "active",
       "createdAt": "2026-05-14T06:40:00",
       "updatedAt": "2026-05-14T06:40:00"
     }
@@ -339,6 +344,30 @@ Authorization: Bearer change-me
 ```
 
 不存在时返回 `404`。扫描目录不存在、不可读或不在允许根目录下时，后台扫描任务会进入 `failed`，失败原因写入 `/api/scan-jobs/{id}` 的 `errorMessage`。
+
+查询文件信息：
+
+```http
+GET /api/music/1/file
+Authorization: Bearer change-me
+```
+
+响应包含 `filePath`、`fileName`、`fileExtension`、`fileSize`、`lastModifiedTime`、`deletedAt`、`trashPath`、`deleteStatus` 等字段。
+
+安全删除：
+
+```http
+DELETE /api/music/1
+Authorization: Bearer change-me
+```
+
+安全删除不会彻底物理删除文件，也不会删除歌词、封面或其他关联资源。后端会校验原文件真实路径位于配置的音乐库根目录内，且必须是普通文件；已经位于 `.music-vault-trash` 下的文件会被拒绝。删除成功后，文件会移动到匹配音乐库根目录下：
+
+```text
+{musicRoot}/.music-vault-trash/{musicId}/{originalFileName}
+```
+
+如果目标文件名冲突，会自动生成唯一文件名。数据库会记录 `deletedAt`、`trashPath`、`deleteStatus = "trashed"`，`GET /api/music` 默认不再返回该音乐。`.music-vault-trash` 会被音乐扫描器忽略，避免回收文件再次入库。
 
 绑定音乐主封面：
 
