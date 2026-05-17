@@ -8,6 +8,10 @@ export interface MusicItem {
   album: string | null
   albumArtist: string | null
   duration: number | null
+  year: number | null
+  trackNo: number | null
+  genre: string | null
+  metadataUpdatedAt: string | null
   lyricStatus: string
   lyricId: number | null
   artworkStatus: string
@@ -35,6 +39,15 @@ export interface MusicListQuery {
   size: number
 }
 
+export interface MusicMetadataUpdate {
+  title?: string
+  artist?: string
+  album?: string
+  year?: number | null
+  trackNo?: number | null
+  genre?: string
+}
+
 export async function fetchMusicList(query: MusicListQuery): Promise<PageResponse<MusicItem>> {
   const { data } = await http.get('/api/music', { params: query })
   return data
@@ -42,5 +55,13 @@ export async function fetchMusicList(query: MusicListQuery): Promise<PageRespons
 
 export async function triggerMusicScan(payload?: { path?: string }): Promise<MusicScanAccepted> {
   const { data } = await http.post('/api/music/scan', payload || {})
+  return data
+}
+
+export async function updateMusicMetadata(
+  id: number,
+  payload: MusicMetadataUpdate,
+): Promise<MusicItem> {
+  const { data } = await http.put(`/api/music/${id}/metadata`, payload)
   return data
 }
