@@ -14,9 +14,12 @@ import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -25,11 +28,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Stream;
 
 @ApplicationScoped
 public class LibraryScanService {
     private static final Logger LOG = Logger.getLogger(LibraryScanService.class);
+    private static final String TRASH_DIRECTORY_NAME = ".music-vault-trash";
+    private static final String DELETE_STATUS_ACTIVE = "active";
+    private static final String DELETE_STATUS_TRASHED = "trashed";
     private static final Set<String> AUDIO_EXTENSIONS = Set.of("mp3", "flac", "wav", "m4a", "aac", "ogg", "opus");
     private static final Set<Path> UNSAFE_ROOTS = Set.of(
             Paths.get("/"),
@@ -230,9 +235,25 @@ public class LibraryScanService {
             return;
         }
 
-        try (Stream<Path> paths = Files.walk(root)) {
-            paths.filter(Files::isRegularFile)
-                    .forEach(path -> scanFile(scanJob, path, messages));
+        try {
+            Files.walkFileTree(root, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                    if (TRASH_DIRECTORY_NAME.equals(dir.getFileName().toString())) {
+                        LOG.debugf("Skipping music vault trash directory: jobId=%d path=%s", scanJob.id, dir);
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (attrs.isRegularFile()) {
+                        scanFile(scanJob, file, messages);
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
         } catch (IOException | UncheckedIOException exception) {
             scanJob.errorFiles++;
             messages.add("Failed to scan directory " + root + ": " + exception.getMessage());
@@ -290,6 +311,10 @@ public class LibraryScanService {
             trackFile = new TrackFile();
             trackFile.filePath = filePath;
         } else if (trackFile.trackId != null && trackFile.fileSize == fileSize && sameTime(trackFile.lastModifiedAt, lastModifiedAt)) {
+            if (DELETE_STATUS_TRASHED.equals(trackFile.deleteStatus)) {
+                restoreTrackFile(scanJob, trackFile, filePath);
+                return UpsertResult.UPDATED;
+            }
             LOG.debugf("Skipping unchanged track file: jobId=%d path=%s", scanJob.id, filePath);
             return UpsertResult.SKIPPED;
         }
@@ -300,6 +325,9 @@ public class LibraryScanService {
         trackFile.lastModifiedAt = lastModifiedAt;
         trackFile.scanJobId = scanJob.id;
         trackFile.trackId = upsertTrack(trackFile.trackId, fileName).id;
+        trackFile.deletedAt = null;
+        trackFile.trashPath = null;
+        trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
 
         if (isNew) {
             trackFile.persist();
@@ -309,6 +337,14 @@ public class LibraryScanService {
             LOG.debugf("Updated track file: jobId=%d path=%s ext=%s size=%d", scanJob.id, filePath, ext, trackFile.fileSize);
             return UpsertResult.UPDATED;
         }
+    }
+
+    private void restoreTrackFile(ScanJob scanJob, TrackFile trackFile, String filePath) {
+        trackFile.deletedAt = null;
+        trackFile.trashPath = null;
+        trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
+        trackFile.scanJobId = scanJob.id;
+        LOG.debugf("Restored trashed track file found during scan: jobId=%d path=%s", scanJob.id, filePath);
     }
 
     private Track upsertTrack(Long trackId, String fileName) {

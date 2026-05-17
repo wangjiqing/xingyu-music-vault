@@ -65,3 +65,27 @@ export async function updateMusicMetadata(
   const { data } = await http.put(`/api/music/${id}/metadata`, payload)
   return data
 }
+
+export interface MusicFileInfo {
+  id: number
+  filePath: string
+  fileName: string
+  fileExtension: string
+  fileSize: number
+  lastModifiedTime: string
+  deletedAt: string | null
+  trashPath: string | null
+  deleteStatus: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchMusicFileInfo(id: number): Promise<MusicFileInfo> {
+  const { data } = await http.get(`/api/music/${id}/file`)
+  return data
+}
+
+export async function deleteMusic(id: number): Promise<MusicFileInfo> {
+  const { data } = await http.delete(`/api/music/${id}`)
+  return data
+}

@@ -4,8 +4,10 @@ import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.artwork.ArtworkDtos.ArtworkBindRequest;
 import com.xingyu.musicvault.artwork.ArtworkDtos.MusicArtworkResponse;
 import com.xingyu.musicvault.artwork.ArtworkService;
+import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
+import com.xingyu.musicvault.library.MusicDtos.MusicFileResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
@@ -37,6 +39,9 @@ import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.jboss.logging.Logger;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.HashMap;
@@ -51,6 +56,9 @@ import java.util.stream.Collectors;
 @Produces(MediaType.APPLICATION_JSON)
 public class MusicResource {
     private static final Logger LOG = Logger.getLogger(MusicResource.class);
+    private static final String DELETE_STATUS_ACTIVE = "active";
+    private static final String DELETE_STATUS_TRASHED = "trashed";
+    private static final String TRASH_DIRECTORY_NAME = ".music-vault-trash";
 
     @Inject
     MusicVaultConfig config;
@@ -108,7 +116,11 @@ public class MusicResource {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size);
 
-        PanacheQuery<TrackFile> query = TrackFile.findAll(Sort.descending("createdAt"));
+        PanacheQuery<TrackFile> query = TrackFile.find(
+                "deleteStatus is null or deleteStatus = ?1",
+                Sort.descending("createdAt"),
+                DELETE_STATUS_ACTIVE
+        );
         long total = query.count();
         List<TrackFile> trackFiles = query.page(Page.of(pageValue, sizeValue)).list();
         Map<Long, Track> tracksById = tracksById(trackFiles);
@@ -137,6 +149,60 @@ public class MusicResource {
             throw new NotFoundException("Music not found");
         }
         return toMusicResponse(trackFile);
+    }
+
+    @GET
+    @Path("/{id}/file")
+    public MusicFileResponse getFile(@PathParam("id") Long id) {
+        TrackFile trackFile = TrackFile.findById(id);
+        if (trackFile == null) {
+            throw new NotFoundException("Music not found");
+        }
+        return MusicFileResponse.from(trackFile);
+    }
+
+    @DELETE
+    @Path("/{id}")
+    @Transactional
+    public MusicFileResponse safeDelete(@PathParam("id") Long id) {
+        TrackFile trackFile = TrackFile.findById(id);
+        if (trackFile == null) {
+            throw new NotFoundException("Music not found");
+        }
+        if (DELETE_STATUS_TRASHED.equals(trackFile.deleteStatus)) {
+            throw new ConflictException("Music is already trashed");
+        }
+
+        DeletableMusicFile musicFile = resolveDeletableMusicFile(trackFile.filePath);
+        java.nio.file.Path sourcePath = musicFile.sourcePath();
+        java.nio.file.Path trashPath = uniqueTrashPath(
+                musicFile.libraryRoot(),
+                trackFile.id,
+                sourcePath.getFileName().toString()
+        );
+        try {
+            Files.createDirectories(trashPath.getParent());
+        } catch (IOException exception) {
+            throw new ConflictException("Failed to create trash directory");
+        }
+
+        trackFile.deletedAt = LocalDateTime.now();
+        trackFile.trashPath = trashPath.toAbsolutePath().normalize().toString();
+        trackFile.deleteStatus = DELETE_STATUS_TRASHED;
+        // Flush to catch DB constraint violations before the filesystem move.
+        // JTA rollback on exception protects the normal error path;
+        // an unlikely JTA commit failure after the file move would leave
+        // the file in trash without a matching DB update (acceptable for
+        // a local single-user music library).
+        trackFile.persistAndFlush();
+
+        try {
+            moveToTrash(sourcePath, trashPath);
+        } catch (IOException exception) {
+            throw new ConflictException("Failed to move music file to trash");
+        }
+
+        return MusicFileResponse.from(trackFile);
     }
 
     @PUT
@@ -330,4 +396,99 @@ public class MusicResource {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private DeletableMusicFile resolveDeletableMusicFile(String filePath) {
+        java.nio.file.Path requestedPath = java.nio.file.Path.of(filePath);
+        rejectPathTraversal(requestedPath, "Music file path");
+        java.nio.file.Path realFilePath;
+        try {
+            realFilePath = requestedPath.toRealPath();
+        } catch (IOException exception) {
+            throw new ConflictException("Music file does not exist");
+        }
+
+        if (!Files.isRegularFile(realFilePath)) {
+            throw new ConflictException("Music path must be a regular file");
+        }
+
+        java.nio.file.Path libraryRoot = config.musicDirs().stream()
+                .map(java.nio.file.Path::of)
+                .peek(path -> rejectPathTraversal(path, "Music library root"))
+                .map(this::realLibraryRoot)
+                .filter(root -> realFilePath.startsWith(root) && !realFilePath.equals(root))
+                .findFirst()
+                .orElse(null);
+        if (libraryRoot == null) {
+            throw new ConflictException("Music file is outside configured library roots");
+        }
+
+        java.nio.file.Path trashRoot = libraryRoot.resolve(TRASH_DIRECTORY_NAME).normalize();
+        if (!trashRoot.startsWith(libraryRoot) || realFilePath.startsWith(trashRoot)) {
+            throw new ConflictException("Music file is already inside the music vault trash");
+        }
+        return new DeletableMusicFile(realFilePath, libraryRoot);
+    }
+
+    private java.nio.file.Path realLibraryRoot(java.nio.file.Path root) {
+        try {
+            return root.toRealPath();
+        } catch (IOException exception) {
+            throw new ConflictException("Music library root does not exist");
+        }
+    }
+
+    private void rejectPathTraversal(java.nio.file.Path path, String label) {
+        for (java.nio.file.Path segment : path) {
+            if ("..".equals(segment.toString())) {
+                throw new ConflictException(label + " must not contain path traversal");
+            }
+        }
+    }
+
+    private java.nio.file.Path uniqueTrashPath(java.nio.file.Path libraryRoot, Long musicId, String fileName) {
+        java.nio.file.Path trashRoot = libraryRoot.resolve(TRASH_DIRECTORY_NAME).normalize();
+        if (!trashRoot.startsWith(libraryRoot)) {
+            throw new ConflictException("Trash directory is outside configured library root");
+        }
+        java.nio.file.Path directory = trashRoot.resolve(String.valueOf(musicId)).normalize();
+        if (!directory.startsWith(trashRoot)) {
+            throw new ConflictException("Trash directory is unsafe");
+        }
+        java.nio.file.Path target = directory.resolve(fileName).normalize();
+        if (!target.startsWith(directory)) {
+            throw new ConflictException("Music file name is unsafe");
+        }
+        if (!Files.exists(target)) {
+            return target;
+        }
+
+        int dotIndex = fileName.lastIndexOf('.');
+        String baseName = dotIndex <= 0 ? fileName : fileName.substring(0, dotIndex);
+        String extension = dotIndex <= 0 ? "" : fileName.substring(dotIndex);
+        int suffix = 1;
+        do {
+            target = directory.resolve(baseName + "-" + suffix + extension).normalize();
+            if (!target.startsWith(directory)) {
+                throw new ConflictException("Trash file name is unsafe");
+            }
+            suffix++;
+        } while (Files.exists(target) && suffix <= 1000);
+        if (Files.exists(target)) {
+            throw new ConflictException("Cannot allocate trash file name");
+        }
+        return target;
+    }
+
+    private void moveToTrash(java.nio.file.Path sourcePath, java.nio.file.Path trashPath) throws IOException {
+        try {
+            Files.move(sourcePath, trashPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException exception) {
+            Files.move(sourcePath, trashPath);
+        }
+    }
+
+    private record DeletableMusicFile(
+            java.nio.file.Path sourcePath,
+            java.nio.file.Path libraryRoot
+    ) {
+    }
 }

@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
   triggerMusicScan,
   updateMusicMetadata,
+  deleteMusic,
   type MusicItem,
   type MusicMetadataUpdate,
 } from '../api/music'
@@ -65,6 +66,10 @@ const editForm = reactive<MusicMetadataUpdate & { id: number }>({
   trackNo: null,
   genre: '',
 })
+
+const deleteDialogVisible = ref(false)
+const deleteLoading = ref(false)
+const deleteTarget = ref<MusicItem | null>(null)
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -331,6 +336,27 @@ async function handleEditSave() {
   }
 }
 
+function openDeleteDialog(row: MusicItem) {
+  deleteTarget.value = row
+  deleteDialogVisible.value = true
+}
+
+async function handleDeleteConfirm() {
+  if (!deleteTarget.value) return
+  deleteLoading.value = true
+  try {
+    await deleteMusic(deleteTarget.value.id)
+    ElMessage.success('已移入音乐库回收目录')
+    deleteDialogVisible.value = false
+    await loadList()
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '删除失败'
+    ElMessage.error(msg)
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
 function handlePageChange(page: number) {
   query.page = page
   loadList()
@@ -444,7 +470,7 @@ onMounted(() => {
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="260" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"
@@ -454,6 +480,15 @@ onMounted(() => {
             @click="openEditDialog(row)"
           >
             编辑
+          </el-button>
+          <el-button
+            type="danger"
+            size="small"
+            text
+            :icon="Delete"
+            @click="openDeleteDialog(row)"
+          >
+            删除
           </el-button>
           <el-button
             v-if="row.lyricStatus === 'BOUND'"
@@ -708,6 +743,37 @@ onMounted(() => {
       <el-button @click="editDialogVisible = false">取消</el-button>
       <el-button type="primary" :loading="editSaving" @click="handleEditSave">
         保存
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="deleteDialogVisible"
+    title="确认移入音乐库回收目录？"
+    width="480px"
+    destroy-on-close
+  >
+    <template v-if="deleteTarget">
+      <div style="margin-bottom: 12px; color: #e6a23c">
+        <el-icon style="vertical-align: middle; margin-right: 4px"><Delete /></el-icon>
+        该操作会将音乐文件移动到当前音乐扫描目录下的 .music-vault-trash，并从列表中隐藏。当前不会彻底删除文件。
+      </div>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="歌曲标题">
+          {{ displayTitle(deleteTarget) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="文件名">
+          {{ deleteTarget.fileName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="文件路径">
+          {{ deleteTarget.filePath }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </template>
+    <template #footer>
+      <el-button @click="deleteDialogVisible = false">取消</el-button>
+      <el-button type="danger" :loading="deleteLoading" @click="handleDeleteConfirm">
+        移入回收站
       </el-button>
     </template>
   </el-dialog>

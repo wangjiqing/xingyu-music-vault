@@ -7,13 +7,15 @@
 - **POST /api/music/scan**：异步接受扫描请求，后台执行扫描，返回 `202 Accepted` 与 `scanJobId`
 - **GET /api/music**：音乐分页列表，基于 `track_files` + `tracks` 联合视图
 - **GET /api/music/{id}**：音乐详情
+- **GET /api/music/{id}/file**：音乐文件信息与删除状态
+- **DELETE /api/music/{id}**：安全删除音乐文件，移动到音乐库根目录 `.music-vault-trash`
 - **POST /api/lyrics/scan**：扫描本地 LRC 歌词并尝试自动绑定歌曲
 - **GET /api/lyrics**：歌词管理页列表查询，支持分页、关键词、绑定状态、解析状态和来源过滤
 - **GET /api/lyrics/{id}**：歌词详情查询，返回歌词原文、来源信息和绑定歌曲摘要
 - **GET /api/songs/{songId}/lyrics**：获取音乐列表中某首歌的主歌词
 - **文件名元数据兜底**：`Artist - Title.flac` 格式自动解析为 `artist`/`title`，其余字段为 `null`
 - **重复扫描跳过**：文件大小和修改时间均未变化时跳过（1秒容差）
-- **隐藏文件跳过**：`Files.walk` 中跳过以 `.` 开头的路径节点
+- **隐藏文件和回收目录跳过**：扫描时跳过以 `.` 开头的路径节点，并显式忽略音乐库根目录下 `.music-vault-trash`
 - **默认音乐目录**：`/Users/wangjiqing/Project/Musics/Music`（`music-vault.music-dirs` 配置）
 - **默认歌词目录**：`/Users/wangjiqing/Project/Musics/Lyrics`（`music-vault.lyric-dirs` 配置）
 

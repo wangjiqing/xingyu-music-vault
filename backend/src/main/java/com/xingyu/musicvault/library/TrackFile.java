@@ -41,6 +41,15 @@ public class TrackFile extends PanacheEntityBase {
     @Column(name = "scan_job_id")
     public Long scanJobId;
 
+    @Column(name = "deleted_at")
+    public LocalDateTime deletedAt;
+
+    @Column(name = "trash_path", columnDefinition = "text")
+    public String trashPath;
+
+    @Column(name = "delete_status", nullable = false, length = 32)
+    public String deleteStatus = "active";
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt;
 
@@ -52,6 +61,9 @@ public class TrackFile extends PanacheEntityBase {
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
+        if (deleteStatus == null || deleteStatus.isBlank()) {
+            deleteStatus = "active";
+        }
     }
 
     @PreUpdate
