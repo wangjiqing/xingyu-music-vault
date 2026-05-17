@@ -161,8 +161,8 @@ public class MusicResource {
 
         Track track = trackOf(trackFile);
         String title = cleanText(request.title());
-        track.title = title == null ? titleFromFileName(trackFile.fileName) : title;
-        track.normalizedTitle = track.title.toLowerCase(Locale.ROOT);
+        track.title = title;
+        track.normalizedTitle = title == null ? null : title.toLowerCase(Locale.ROOT);
         track.artist = cleanText(request.artist());
         track.album = cleanText(request.album());
         track.year = request.year();
@@ -330,10 +330,4 @@ public class MusicResource {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private String titleFromFileName(String fileName) {
-        int dotIndex = fileName.lastIndexOf('.');
-        String title = dotIndex <= 0 ? fileName : fileName.substring(0, dotIndex);
-        title = title.trim();
-        return title.isEmpty() ? "Untitled" : title;
-    }
 }

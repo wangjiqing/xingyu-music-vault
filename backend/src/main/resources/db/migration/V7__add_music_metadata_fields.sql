@@ -1,6 +1,13 @@
+-- title is nullable so stored metadata can distinguish an explicitly maintained
+-- title from the API/display fallback derived from the file name.
+-- SQLite cannot drop the NOT NULL constraint that V2 placed on tracks.title
+-- with ALTER TABLE, so this migration rebuilds tracks while preserving the
+-- existing columns, indexes, and constraints. The new metadata columns could
+-- be added with ALTER TABLE, but rebuilding once keeps the title semantic fix
+-- and the v0.7.0 metadata fields in one consistent schema change.
 create table tracks_v7 (
     id integer primary key autoincrement,
-    title text not null default 'Untitled',
+    title text,
     normalized_title text,
     artist text,
     album text,
@@ -33,7 +40,7 @@ insert into tracks_v7 (
 )
 select
     id,
-    coalesce(title, 'Untitled'),
+    title,
     normalized_title,
     artist,
     album,

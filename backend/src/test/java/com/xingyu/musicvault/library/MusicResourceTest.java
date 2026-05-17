@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -212,6 +213,13 @@ class MusicResourceTest {
                 .body("year", nullValue())
                 .body("trackNo", nullValue())
                 .body("genre", nullValue());
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            assertNull(track.title);
+            assertNull(track.normalizedTitle);
+        });
     }
 
     @Test

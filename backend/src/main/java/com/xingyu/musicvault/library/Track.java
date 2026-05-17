@@ -20,7 +20,7 @@ public class Track extends PanacheEntityBase {
     @Column(columnDefinition = "integer")
     public Long id;
 
-    @Column(nullable = false)
+    @Column
     public String title;
 
     @Column(name = "normalized_title")
