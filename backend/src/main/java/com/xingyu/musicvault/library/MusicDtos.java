@@ -208,6 +208,8 @@ public final class MusicDtos {
                     originalPath,
                     trackFile.trashPath,
                     trackFile.deletedAt,
+                    // trashPath is written by safeDelete() under a validated root;
+                    // the existence check is read-only, so bare Path.of() is acceptable.
                     trackFile.trashPath != null && Files.isRegularFile(Path.of(trackFile.trashPath)),
                     trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus
             );
