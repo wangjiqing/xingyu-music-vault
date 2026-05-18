@@ -164,6 +164,8 @@ public class MusicResource {
         if (trackFile == null) {
             throw new NotFoundException("Music not found");
         }
+        // Trashed and deleted records are intentionally reachable by ID
+        // so callers can inspect file-level details (trashPath etc.).
         return toMusicResponse(trackFile);
     }
 
@@ -234,10 +236,12 @@ public class MusicResource {
         if (Files.exists(originalPath)) {
             throw new ConflictException("Original music file path already exists");
         }
+        // Validate the deepest existing ancestor before creating any
+        // directories, so symlink escapes are caught early.
+        verifyExistingAncestorInsideLibrary(originalPath, trashFile.libraryRoot());
 
         try {
             Files.createDirectories(originalPath.getParent());
-            ensureRestoreParentInsideLibrary(originalPath, trashFile.libraryRoot());
             moveFromTrash(trashFile.trashPath(), originalPath);
         } catch (IOException exception) {
             throw new ConflictException("Failed to restore music file");
@@ -602,6 +606,24 @@ public class MusicResource {
             throw new ConflictException("Original music file path is invalid");
         }
         return target;
+    }
+
+    private void verifyExistingAncestorInsideLibrary(java.nio.file.Path target, java.nio.file.Path libraryRoot) {
+        java.nio.file.Path parent = target.getParent();
+        while (parent != null && !Files.exists(parent)) {
+            parent = parent.getParent();
+        }
+        if (parent == null) {
+            throw new ConflictException("Original music file path is invalid");
+        }
+        try {
+            java.nio.file.Path realParent = parent.toRealPath();
+            if (!realParent.startsWith(libraryRoot)) {
+                throw new ConflictException("Original music file directory is outside configured library root");
+            }
+        } catch (IOException exception) {
+            throw new ConflictException("Original music file directory cannot be resolved");
+        }
     }
 
     private void ensureRestoreParentInsideLibrary(java.nio.file.Path originalPath, java.nio.file.Path libraryRoot) throws IOException {
