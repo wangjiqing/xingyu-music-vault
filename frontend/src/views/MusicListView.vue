@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit, Delete } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
   triggerMusicScan,
   updateMusicMetadata,
   deleteMusic,
+  fetchTrashList,
+  restoreMusic,
+  permanentlyDeleteMusic,
   type MusicItem,
   type MusicMetadataUpdate,
+  type MusicTrashItem,
 } from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
 import {
@@ -70,6 +74,17 @@ const editForm = reactive<MusicMetadataUpdate & { id: number }>({
 const deleteDialogVisible = ref(false)
 const deleteLoading = ref(false)
 const deleteTarget = ref<MusicItem | null>(null)
+
+const trashVisible = ref(false)
+const trashLoading = ref(false)
+const trashList = ref<MusicTrashItem[]>([])
+const trashOperationLoading = ref(false)
+
+const restoreConfirmVisible = ref(false)
+const restoreTarget = ref<MusicTrashItem | null>(null)
+
+const permDeleteConfirmVisible = ref(false)
+const permDeleteTarget = ref<MusicTrashItem | null>(null)
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -357,6 +372,69 @@ async function handleDeleteConfirm() {
   }
 }
 
+async function openTrash() {
+  trashVisible.value = true
+  await loadTrashList()
+}
+
+async function loadTrashList() {
+  trashLoading.value = true
+  try {
+    trashList.value = await fetchTrashList()
+  } catch {
+    ElMessage.error('加载回收站失败')
+  } finally {
+    trashLoading.value = false
+  }
+}
+
+function openRestoreConfirm(row: MusicTrashItem) {
+  restoreTarget.value = row
+  restoreConfirmVisible.value = true
+}
+
+async function handleRestore() {
+  if (!restoreTarget.value) return
+  trashOperationLoading.value = true
+  try {
+    await restoreMusic(restoreTarget.value.id)
+    ElMessage.success('已恢复到音乐列表')
+    restoreConfirmVisible.value = false
+    await loadTrashList()
+    await loadList()
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '恢复失败'
+    ElMessage.error(msg)
+  } finally {
+    trashOperationLoading.value = false
+  }
+}
+
+function openPermDeleteConfirm(row: MusicTrashItem) {
+  permDeleteTarget.value = row
+  permDeleteConfirmVisible.value = true
+}
+
+async function handlePermanentlyDelete() {
+  if (!permDeleteTarget.value) return
+  trashOperationLoading.value = true
+  try {
+    await permanentlyDeleteMusic(permDeleteTarget.value.id)
+    ElMessage.success('已彻底删除')
+    permDeleteConfirmVisible.value = false
+    await loadTrashList()
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '彻底删除失败'
+    ElMessage.error(msg)
+  } finally {
+    trashOperationLoading.value = false
+  }
+}
+
+function trashDisplayTitle(row: MusicTrashItem): string {
+  return row.title || row.fileName || '--'
+}
+
 function handlePageChange(page: number) {
   query.page = page
   loadList()
@@ -386,6 +464,7 @@ onMounted(() => {
             扫描歌词
           </el-button>
           <el-button size="small" @click="loadList">刷新</el-button>
+          <el-button size="small" @click="openTrash">回收站</el-button>
         </div>
       </div>
     </template>
@@ -774,6 +853,135 @@ onMounted(() => {
       <el-button @click="deleteDialogVisible = false">取消</el-button>
       <el-button type="danger" :loading="deleteLoading" @click="handleDeleteConfirm">
         移入回收站
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="trashVisible"
+    title="回收站"
+    width="900px"
+    destroy-on-close
+  >
+    <el-table
+      :data="trashList"
+      v-loading="trashLoading"
+      empty-text="回收站为空"
+      max-height="480"
+      style="width: 100%"
+    >
+      <el-table-column label="标题" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ trashDisplayTitle(row) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="歌手" min-width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.artist || 'Unknown' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="专辑" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.album || '--' }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="fileName" label="文件名" min-width="180" show-overflow-tooltip />
+      <el-table-column label="原路径" min-width="180" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.originalPath }}
+        </template>
+      </el-table-column>
+      <el-table-column label="回收路径" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.trashPath }}
+        </template>
+      </el-table-column>
+      <el-table-column label="删除时间" width="170">
+        <template #default="{ row }">
+          {{ row.deletedAt?.replace('T', ' ')?.substring(0, 19) || '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column label="文件" width="70" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.trashFileExists ? 'success' : 'danger'" size="small">
+            {{ row.trashFileExists ? '存在' : '缺失' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            type="primary"
+            size="small"
+            text
+            :icon="RefreshRight"
+            @click="openRestoreConfirm(row)"
+          >
+            恢复
+          </el-button>
+          <el-button
+            type="danger"
+            size="small"
+            text
+            :icon="DeleteFilled"
+            @click="openPermDeleteConfirm(row)"
+          >
+            彻底删除
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-dialog>
+
+  <el-dialog
+    v-model="restoreConfirmVisible"
+    title="确认恢复"
+    width="460px"
+    destroy-on-close
+    append-to-body
+  >
+    <template v-if="restoreTarget">
+      <div style="margin-bottom: 12px; color: #409eff">
+        该操作会将 <strong>{{ trashDisplayTitle(restoreTarget) }}</strong> 恢复到原始路径，并重新显示在音乐列表。
+      </div>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="原路径">
+          {{ restoreTarget.originalPath }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </template>
+    <template #footer>
+      <el-button @click="restoreConfirmVisible = false">取消</el-button>
+      <el-button type="primary" :loading="trashOperationLoading" @click="handleRestore">
+        确认恢复
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="permDeleteConfirmVisible"
+    title="确认彻底删除"
+    width="460px"
+    destroy-on-close
+    append-to-body
+  >
+    <template v-if="permDeleteTarget">
+      <div style="margin-bottom: 12px; color: #f56c6c">
+        此操作会 <strong>永久删除</strong> 回收目录中的文件，无法通过星语音库恢复。
+      </div>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="标题">
+          {{ trashDisplayTitle(permDeleteTarget) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="文件名">
+          {{ permDeleteTarget.fileName }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </template>
+    <template #footer>
+      <el-button @click="permDeleteConfirmVisible = false">取消</el-button>
+      <el-button type="danger" :loading="trashOperationLoading" @click="handlePermanentlyDelete">
+        彻底删除
       </el-button>
     </template>
   </el-dialog>

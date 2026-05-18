@@ -12,6 +12,7 @@ import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
+import com.xingyu.musicvault.library.MusicDtos.MusicTrashResponse;
 import com.xingyu.musicvault.lyrics.LyricService;
 import com.xingyu.musicvault.scan.LibraryScanService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
@@ -58,6 +59,7 @@ public class MusicResource {
     private static final Logger LOG = Logger.getLogger(MusicResource.class);
     private static final String DELETE_STATUS_ACTIVE = "active";
     private static final String DELETE_STATUS_TRASHED = "trashed";
+    private static final String DELETE_STATUS_DELETED = "deleted";
     private static final String TRASH_DIRECTORY_NAME = ".music-vault-trash";
 
     @Inject
@@ -142,6 +144,20 @@ public class MusicResource {
     }
 
     @GET
+    @Path("/trash")
+    public List<MusicTrashResponse> trash() {
+        List<TrackFile> trackFiles = TrackFile.list(
+                "deleteStatus",
+                Sort.descending("deletedAt"),
+                DELETE_STATUS_TRASHED
+        );
+        Map<Long, Track> tracksById = tracksById(trackFiles);
+        return trackFiles.stream()
+                .map(trackFile -> MusicTrashResponse.from(trackFile, trackOf(trackFile, tracksById)))
+                .toList();
+    }
+
+    @GET
     @Path("/{id}")
     public MusicResponse get(@PathParam("id") Long id) {
         TrackFile trackFile = TrackFile.findById(id);
@@ -188,6 +204,7 @@ public class MusicResource {
 
         trackFile.deletedAt = LocalDateTime.now();
         trackFile.trashPath = trashPath.toAbsolutePath().normalize().toString();
+        trackFile.originalPath = trackFile.filePath;
         trackFile.deleteStatus = DELETE_STATUS_TRASHED;
         // Flush to catch DB constraint violations before the filesystem move.
         // JTA rollback on exception protects the normal error path;
@@ -200,6 +217,75 @@ public class MusicResource {
             moveToTrash(sourcePath, trashPath);
         } catch (IOException exception) {
             throw new ConflictException("Failed to move music file to trash");
+        }
+
+        return MusicFileResponse.from(trackFile);
+    }
+
+    @POST
+    @Path("/{id}/restore")
+    @Transactional
+    public MusicFileResponse restore(@PathParam("id") Long id) {
+        TrackFile trackFile = findMusic(id);
+        requireTrashed(trackFile);
+
+        TrashMusicFile trashFile = resolveTrashMusicFile(trackFile);
+        java.nio.file.Path originalPath = resolveRestoreTarget(trackFile, trashFile.libraryRoot());
+        if (Files.exists(originalPath)) {
+            throw new ConflictException("Original music file path already exists");
+        }
+
+        try {
+            Files.createDirectories(originalPath.getParent());
+            ensureRestoreParentInsideLibrary(originalPath, trashFile.libraryRoot());
+            moveFromTrash(trashFile.trashPath(), originalPath);
+        } catch (IOException exception) {
+            throw new ConflictException("Failed to restore music file");
+        }
+
+        trackFile.filePath = originalPath.toAbsolutePath().normalize().toString();
+        trackFile.originalPath = trackFile.filePath;
+        trackFile.deletedAt = null;
+        trackFile.trashPath = null;
+        trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
+        try {
+            trackFile.persistAndFlush();
+        } catch (RuntimeException exception) {
+            try {
+                moveFromTrash(originalPath, trashFile.trashPath());
+            } catch (IOException rollbackException) {
+                LOG.warnf(
+                        rollbackException,
+                        "Failed to move restored file back to trash after database update failure: musicId=%d",
+                        trackFile.id
+                );
+            }
+            throw exception;
+        }
+        return MusicFileResponse.from(trackFile);
+    }
+
+    @DELETE
+    @Path("/{id}/trash")
+    @Transactional
+    public MusicFileResponse permanentlyDeleteTrashFile(@PathParam("id") Long id) {
+        TrackFile trackFile = findMusic(id);
+        requireTrashed(trackFile);
+
+        TrashMusicFile trashFile = resolveTrashMusicFile(trackFile);
+        if (trackFile.originalPath == null || trackFile.originalPath.isBlank()) {
+            trackFile.originalPath = trackFile.filePath;
+        }
+        trackFile.deleteStatus = DELETE_STATUS_DELETED;
+        if (trackFile.deletedAt == null) {
+            trackFile.deletedAt = LocalDateTime.now();
+        }
+        trackFile.persistAndFlush();
+
+        try {
+            Files.delete(trashFile.trashPath());
+        } catch (IOException exception) {
+            throw new ConflictException("Failed to permanently delete trash file");
         }
 
         return MusicFileResponse.from(trackFile);
@@ -396,6 +482,20 @@ public class MusicResource {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private TrackFile findMusic(Long id) {
+        TrackFile trackFile = TrackFile.findById(id);
+        if (trackFile == null) {
+            throw new NotFoundException("Music not found");
+        }
+        return trackFile;
+    }
+
+    private void requireTrashed(TrackFile trackFile) {
+        if (!DELETE_STATUS_TRASHED.equals(trackFile.deleteStatus)) {
+            throw new ConflictException("Music is not in trash");
+        }
+    }
+
     private DeletableMusicFile resolveDeletableMusicFile(String filePath) {
         java.nio.file.Path requestedPath = java.nio.file.Path.of(filePath);
         rejectPathTraversal(requestedPath, "Music file path");
@@ -444,6 +544,73 @@ public class MusicResource {
         }
     }
 
+    private TrashMusicFile resolveTrashMusicFile(TrackFile trackFile) {
+        if (trackFile.trashPath == null || trackFile.trashPath.isBlank()) {
+            throw new ConflictException("Trash path is empty");
+        }
+        java.nio.file.Path requestedPath = java.nio.file.Path.of(trackFile.trashPath);
+        rejectPathTraversal(requestedPath, "Trash path");
+        java.nio.file.Path realTrashPath;
+        try {
+            realTrashPath = requestedPath.toRealPath();
+        } catch (IOException exception) {
+            throw new ConflictException("Trash file does not exist");
+        }
+        if (!Files.isRegularFile(realTrashPath)) {
+            throw new ConflictException("Trash path must be a regular file");
+        }
+
+        for (String configuredRoot : config.musicDirs()) {
+            java.nio.file.Path libraryRoot = java.nio.file.Path.of(configuredRoot);
+            rejectPathTraversal(libraryRoot, "Music library root");
+            java.nio.file.Path realLibraryRoot = realLibraryRoot(libraryRoot);
+            java.nio.file.Path trashRoot = realTrashRoot(realLibraryRoot);
+            if (trashRoot != null && realTrashPath.startsWith(trashRoot) && !realTrashPath.equals(trashRoot)) {
+                return new TrashMusicFile(realTrashPath, realLibraryRoot);
+            }
+        }
+        throw new ConflictException("Trash file is outside the music vault trash");
+    }
+
+    private java.nio.file.Path realTrashRoot(java.nio.file.Path libraryRoot) {
+        java.nio.file.Path trashRoot = libraryRoot.resolve(TRASH_DIRECTORY_NAME).normalize();
+        if (!trashRoot.startsWith(libraryRoot)) {
+            throw new ConflictException("Trash directory is outside configured library root");
+        }
+        try {
+            return trashRoot.toRealPath();
+        } catch (IOException exception) {
+            return null;
+        }
+    }
+
+    private java.nio.file.Path resolveRestoreTarget(TrackFile trackFile, java.nio.file.Path libraryRoot) {
+        String originalPathValue = trackFile.originalPath == null || trackFile.originalPath.isBlank()
+                ? trackFile.filePath
+                : trackFile.originalPath;
+        java.nio.file.Path originalPath = java.nio.file.Path.of(originalPathValue);
+        rejectPathTraversal(originalPath, "Original music file path");
+        java.nio.file.Path target = originalPath.toAbsolutePath().normalize();
+        if (!target.startsWith(libraryRoot) || target.equals(libraryRoot)) {
+            throw new ConflictException("Original music file path is outside configured library root");
+        }
+        java.nio.file.Path trashRoot = libraryRoot.resolve(TRASH_DIRECTORY_NAME).normalize();
+        if (target.startsWith(trashRoot)) {
+            throw new ConflictException("Original music file path must not be inside trash");
+        }
+        if (target.getParent() == null) {
+            throw new ConflictException("Original music file path is invalid");
+        }
+        return target;
+    }
+
+    private void ensureRestoreParentInsideLibrary(java.nio.file.Path originalPath, java.nio.file.Path libraryRoot) throws IOException {
+        java.nio.file.Path realParent = originalPath.getParent().toRealPath();
+        if (!realParent.startsWith(libraryRoot)) {
+            throw new ConflictException("Original music file directory is outside configured library root");
+        }
+    }
+
     private java.nio.file.Path uniqueTrashPath(java.nio.file.Path libraryRoot, Long musicId, String fileName) {
         java.nio.file.Path trashRoot = libraryRoot.resolve(TRASH_DIRECTORY_NAME).normalize();
         if (!trashRoot.startsWith(libraryRoot)) {
@@ -486,8 +653,22 @@ public class MusicResource {
         }
     }
 
+    private void moveFromTrash(java.nio.file.Path trashPath, java.nio.file.Path originalPath) throws IOException {
+        try {
+            Files.move(trashPath, originalPath, StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException exception) {
+            Files.move(trashPath, originalPath);
+        }
+    }
+
     private record DeletableMusicFile(
             java.nio.file.Path sourcePath,
+            java.nio.file.Path libraryRoot
+    ) {
+    }
+
+    private record TrashMusicFile(
+            java.nio.file.Path trashPath,
             java.nio.file.Path libraryRoot
     ) {
     }

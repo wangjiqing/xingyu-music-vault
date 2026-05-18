@@ -89,3 +89,31 @@ export async function deleteMusic(id: number): Promise<MusicFileInfo> {
   const { data } = await http.delete(`/api/music/${id}`)
   return data
 }
+
+export interface MusicTrashItem {
+  id: number
+  title: string
+  artist: string
+  album: string | null
+  fileName: string
+  originalPath: string
+  trashPath: string
+  deletedAt: string
+  trashFileExists: boolean
+  deleteStatus: string
+}
+
+export async function fetchTrashList(): Promise<MusicTrashItem[]> {
+  const { data } = await http.get('/api/music/trash')
+  return data
+}
+
+export async function restoreMusic(id: number): Promise<MusicFileInfo> {
+  const { data } = await http.post(`/api/music/${id}/restore`)
+  return data
+}
+
+export async function permanentlyDeleteMusic(id: number): Promise<MusicFileInfo> {
+  const { data } = await http.delete(`/api/music/${id}/trash`)
+  return data
+}

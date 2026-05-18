@@ -47,6 +47,9 @@ public class TrackFile extends PanacheEntityBase {
     @Column(name = "trash_path", columnDefinition = "text")
     public String trashPath;
 
+    @Column(name = "original_path", columnDefinition = "text")
+    public String originalPath;
+
     @Column(name = "delete_status", nullable = false, length = 32)
     public String deleteStatus = "active";
 

@@ -263,7 +263,10 @@ Authorization: Bearer change-me
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
 | GET | `/api/music/{id}/file` | 音乐文件信息和安全删除状态 |
+| GET | `/api/music/trash` | 回收站音乐列表 |
 | DELETE | `/api/music/{id}` | 安全删除音乐文件，移动到音乐库根目录下的 `.music-vault-trash` |
+| POST | `/api/music/{id}/restore` | 从回收站恢复音乐文件 |
+| DELETE | `/api/music/{id}/trash` | 彻底删除回收站中的音乐文件 |
 | PUT | `/api/music/{musicId}/artwork` | 绑定音乐主封面 |
 | POST | `/api/music/{musicId}/artwork/import` | 上传本地图片、入库并绑定为音乐主封面 |
 | DELETE | `/api/music/{musicId}/artwork` | 取消音乐主封面绑定 |
@@ -325,6 +328,7 @@ Authorization: Bearer change-me
       "lastModifiedTime": "2026-05-14T06:40:00",
       "deletedAt": null,
       "trashPath": null,
+      "originalPath": null,
       "deleteStatus": "active",
       "createdAt": "2026-05-14T06:40:00",
       "updatedAt": "2026-05-14T06:40:00"
@@ -352,7 +356,7 @@ GET /api/music/1/file
 Authorization: Bearer change-me
 ```
 
-响应包含 `filePath`、`fileName`、`fileExtension`、`fileSize`、`lastModifiedTime`、`deletedAt`、`trashPath`、`deleteStatus` 等字段。
+响应包含 `filePath`、`fileName`、`fileExtension`、`fileSize`、`lastModifiedTime`、`deletedAt`、`trashPath`、`originalPath`、`deleteStatus` 等字段。
 
 安全删除：
 
@@ -367,7 +371,51 @@ Authorization: Bearer change-me
 {musicRoot}/.music-vault-trash/{musicId}/{originalFileName}
 ```
 
-如果目标文件名冲突，会自动生成唯一文件名。数据库会记录 `deletedAt`、`trashPath`、`deleteStatus = "trashed"`，`GET /api/music` 默认不再返回该音乐。`.music-vault-trash` 会被音乐扫描器忽略，避免回收文件再次入库。
+如果目标文件名冲突，会自动生成唯一文件名。数据库会记录 `deletedAt`、`trashPath`、`originalPath`、`deleteStatus = "trashed"`，`GET /api/music` 默认不再返回该音乐。`.music-vault-trash` 会被音乐扫描器忽略，避免回收文件再次入库。
+
+查询回收站：
+
+```http
+GET /api/music/trash
+Authorization: Bearer change-me
+```
+
+仅返回 `deleteStatus = "trashed"` 的记录。响应示例：
+
+```json
+[
+  {
+    "id": 1,
+    "title": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "fileName": "周杰伦 - 晴天.flac",
+    "originalPath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+    "trashPath": "/Users/wangjiqing/Project/Musics/.music-vault-trash/1/周杰伦 - 晴天.flac",
+    "deletedAt": "2026-05-18T07:30:00",
+    "trashFileExists": true,
+    "deleteStatus": "trashed"
+  }
+]
+```
+
+恢复回收站音乐：
+
+```http
+POST /api/music/1/restore
+Authorization: Bearer change-me
+```
+
+仅允许恢复 `deleteStatus = "trashed"` 的记录。后端会校验 `trashPath` 存在、是普通文件，并且真实路径位于当前音乐库根目录下的 `.music-vault-trash`；恢复目标 `originalPath` 必须位于音乐库根目录下且不能位于 `.music-vault-trash`。如果原路径目录不存在会自动创建；如果原路径已有文件，返回 `409 conflict`，不会覆盖。恢复成功后，文件移回 `originalPath`，`deleteStatus` 改为 `active`，`deletedAt` 和 `trashPath` 清空，默认音乐列表重新可见。
+
+彻底删除回收站文件：
+
+```http
+DELETE /api/music/1/trash
+Authorization: Bearer change-me
+```
+
+仅允许处理 `deleteStatus = "trashed"` 的记录。后端会校验 `trashPath` 位于 `.music-vault-trash` 下且是普通文件，然后物理删除该回收站文件。成功后数据库记录保留，`deleteStatus` 改为 `deleted`，`deletedAt` 和 `trashPath` 可继续用于审计最后删除时间和位置；不会删除歌词、封面或其他关联资源。
 
 绑定音乐主封面：
 

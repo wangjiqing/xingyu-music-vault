@@ -17,6 +17,7 @@ public final class TrackFileDtos {
             Long scanJobId,
             LocalDateTime deletedAt,
             String trashPath,
+            String originalPath,
             String deleteStatus,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -33,6 +34,7 @@ public final class TrackFileDtos {
                     trackFile.scanJobId,
                     trackFile.deletedAt,
                     trackFile.trashPath,
+                    trackFile.originalPath,
                     trackFile.deleteStatus,
                     trackFile.createdAt,
                     trackFile.updatedAt

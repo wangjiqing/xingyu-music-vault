@@ -2,6 +2,8 @@ package com.xingyu.musicvault.library;
 
 import com.xingyu.musicvault.job.ScanJob;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 
 public final class MusicDtos {
@@ -46,6 +48,7 @@ public final class MusicDtos {
             LocalDateTime lastModifiedTime,
             LocalDateTime deletedAt,
             String trashPath,
+            String originalPath,
             String deleteStatus,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -114,6 +117,7 @@ public final class MusicDtos {
                     trackFile.lastModifiedAt,
                     trackFile.deletedAt,
                     trackFile.trashPath,
+                    trackFile.originalPath,
                     trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus,
                     trackFile.createdAt,
                     trackFile.updatedAt
@@ -158,6 +162,7 @@ public final class MusicDtos {
             LocalDateTime lastModifiedTime,
             LocalDateTime deletedAt,
             String trashPath,
+            String originalPath,
             String deleteStatus,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -172,10 +177,58 @@ public final class MusicDtos {
                     trackFile.lastModifiedAt,
                     trackFile.deletedAt,
                     trackFile.trashPath,
+                    trackFile.originalPath,
                     trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus,
                     trackFile.createdAt,
                     trackFile.updatedAt
             );
+        }
+    }
+
+    public record MusicTrashResponse(
+            Long id,
+            String title,
+            String artist,
+            String album,
+            String fileName,
+            String originalPath,
+            String trashPath,
+            LocalDateTime deletedAt,
+            boolean trashFileExists,
+            String deleteStatus
+    ) {
+        public static MusicTrashResponse from(TrackFile trackFile, Track track) {
+            String originalPath = trackFile.originalPath == null ? trackFile.filePath : trackFile.originalPath;
+            return new MusicTrashResponse(
+                    trackFile.id,
+                    titleOf(track, trackFile),
+                    artistOf(track),
+                    track == null ? null : track.album,
+                    trackFile.fileName,
+                    originalPath,
+                    trackFile.trashPath,
+                    trackFile.deletedAt,
+                    trackFile.trashPath != null && Files.isRegularFile(Path.of(trackFile.trashPath)),
+                    trackFile.deleteStatus == null ? "active" : trackFile.deleteStatus
+            );
+        }
+
+        private static String titleOf(Track track, TrackFile trackFile) {
+            if (track != null && track.title != null) {
+                return track.title;
+            }
+            int dotIndex = trackFile.fileName.lastIndexOf('.');
+            if (dotIndex <= 0) {
+                return trackFile.fileName;
+            }
+            return trackFile.fileName.substring(0, dotIndex);
+        }
+
+        private static String artistOf(Track track) {
+            if (track == null || track.artist == null || track.artist.isBlank()) {
+                return "Unknown";
+            }
+            return track.artist;
         }
     }
 }

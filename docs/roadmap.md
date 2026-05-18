@@ -154,17 +154,21 @@
 
 **非目标**：联网刮削、AI 自动补全、批量编辑、音频标签写回、上传/删除文件、播放器。
 
-## v0.7.2 — 文件管理与安全删除
+## v0.7.2 — 文件管理、安全删除与回收站
 
-> 阶段目标：支持单首音乐文件信息查看和安全删除。
+> 阶段目标：支持单首音乐文件信息查看、安全删除和基础回收站管理。
 
 - [x] `GET /api/music/{id}/file`：查看文件路径、大小、删除状态等信息
 - [x] `DELETE /api/music/{id}`：安全删除，移动到音乐库根目录下 `.music-vault-trash/{musicId}/原文件名`
 - [x] 删除前校验文件位于配置音乐库根目录内，拒绝目录、路径穿越和已在回收目录内的文件
 - [x] `GET /api/music` 默认隐藏 `deleteStatus = trashed` 的音乐
 - [x] 音乐扫描器忽略 `.music-vault-trash`，避免回收文件再次入库
+- [x] `GET /api/music/trash`：查看回收站音乐记录和回收文件存在状态
+- [x] `POST /api/music/{id}/restore`：从 `.music-vault-trash` 恢复到 `originalPath`
+- [x] `DELETE /api/music/{id}/trash`：彻底删除回收站文件，数据库记录保留为 `deleteStatus = deleted`
+- [x] `originalPath` 入库，支持安全恢复原路径
 
-**非目标**：恢复功能、彻底删除、批量删除、上传、文件重命名、复杂回收站 UI。
+**非目标**：批量恢复、批量彻底删除、自动清理策略、上传、文件重命名、复杂回收站 UI。
 
 ## v0.7.3 — 管理后台 UI 体验优化
 
