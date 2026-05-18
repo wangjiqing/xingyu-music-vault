@@ -416,6 +416,7 @@ class MusicResourceTest {
                 .body("deleteStatus", equalTo("trashed"))
                 .body("deletedAt", notNullValue())
                 .body("trashPath", notNullValue())
+                .body("originalPath", equalTo(originalPath.toString()))
                 .extract()
                 .path("trashPath");
 
@@ -429,6 +430,7 @@ class MusicResourceTest {
         assertEquals("trashed", trashed.deleteStatus);
         assertNotNull(trashed.deletedAt);
         assertEquals(trashPath, trashed.trashPath);
+        assertEquals(originalPath.toString(), trashed.originalPath);
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -438,6 +440,208 @@ class MusicResourceTest {
                 .statusCode(200)
                 .body("items", hasSize(0))
                 .body("total", equalTo(0));
+    }
+
+    @Test
+    void trashListReturnsTrashedMusicRecords() throws IOException {
+        Long musicId = createMusicWithFile("trash-list.flac", "Trash List", "Tester", "audio");
+        Path originalPath = musicDir.resolve("trash-list.flac").toAbsolutePath().normalize();
+
+        String trashPath = trashMusic(musicId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/trash")
+                .then()
+                .statusCode(200)
+                .body("", hasSize(1))
+                .body("[0].id", equalTo(musicId.intValue()))
+                .body("[0].title", equalTo("Trash List"))
+                .body("[0].artist", equalTo("Tester"))
+                .body("[0].fileName", equalTo("trash-list.flac"))
+                .body("[0].originalPath", equalTo(originalPath.toString()))
+                .body("[0].trashPath", equalTo(trashPath))
+                .body("[0].deletedAt", notNullValue())
+                .body("[0].trashFileExists", equalTo(true))
+                .body("[0].deleteStatus", equalTo("trashed"));
+    }
+
+    @Test
+    void restoreMusicMovesFileBackAndMakesListVisible() throws IOException {
+        Long musicId = createMusicWithFile("restore-me.flac", "Restore Me", "Tester", "audio");
+        Path originalPath = musicDir.resolve("restore-me.flac").toAbsolutePath().normalize();
+        String trashPath = trashMusic(musicId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(musicId.intValue()))
+                .body("deleteStatus", equalTo("active"))
+                .body("deletedAt", nullValue())
+                .body("trashPath", nullValue())
+                .body("originalPath", equalTo(originalPath.toString()));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(originalPath));
+        org.junit.jupiter.api.Assertions.assertFalse(Files.exists(Path.of(trashPath)));
+
+        TrackFile restored = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("active", restored.deleteStatus);
+        assertNull(restored.deletedAt);
+        assertNull(restored.trashPath);
+        assertEquals(originalPath.toString(), restored.originalPath);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(musicId.intValue()))
+                .body("total", equalTo(1));
+    }
+
+    @Test
+    void restoreMusicCreatesMissingOriginalDirectory() throws IOException {
+        Path nestedPath = musicDir.resolve("nested").resolve("restore-nested.flac");
+        Files.createDirectories(nestedPath.getParent());
+        Files.writeString(nestedPath, "audio");
+        Long musicId = createMusicRecordForPath(nestedPath, "Restore Nested", "Tester");
+
+        trashMusic(musicId);
+        Files.delete(nestedPath.getParent());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(200)
+                .body("deleteStatus", equalTo("active"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(nestedPath));
+    }
+
+    @Test
+    void restoreMusicReturnsConflictWhenOriginalPathExists() throws IOException {
+        Long musicId = createMusicWithFile("restore-conflict.flac", "Restore Conflict", "Tester", "audio");
+        Path originalPath = musicDir.resolve("restore-conflict.flac").toAbsolutePath().normalize();
+        String trashPath = trashMusic(musicId);
+        Files.writeString(originalPath, "new file");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(originalPath));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(Path.of(trashPath)));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("trashed", trackFile.deleteStatus);
+        assertNotNull(trackFile.deletedAt);
+        assertEquals(trashPath, trackFile.trashPath);
+    }
+
+    @Test
+    void restoreMusicReturnsConflictWhenTrashFileMissing() throws IOException {
+        Long musicId = createMusicWithFile("restore-missing.flac", "Restore Missing", "Tester", "audio");
+        String trashPath = trashMusic(musicId);
+        Files.delete(Path.of(trashPath));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("trashed", trackFile.deleteStatus);
+        assertEquals(trashPath, trackFile.trashPath);
+    }
+
+    @Test
+    void restoreActiveMusicReturnsConflict() {
+        Long musicId = createMusic("restore-active.flac", "Restore Active", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+    }
+
+    @Test
+    void permanentDeleteTrashFileRemovesFileAndMarksDeleted() throws IOException {
+        Long musicId = createMusicWithFile("delete-trash.flac", "Delete Trash", "Tester", "audio");
+        String trashPath = trashMusic(musicId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}/trash", musicId)
+                .then()
+                .statusCode(200)
+                .body("id", equalTo(musicId.intValue()))
+                .body("deleteStatus", equalTo("deleted"))
+                .body("deletedAt", notNullValue())
+                .body("trashPath", equalTo(trashPath));
+
+        org.junit.jupiter.api.Assertions.assertFalse(Files.exists(Path.of(trashPath)));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("deleted", trackFile.deleteStatus);
+        assertNotNull(trackFile.deletedAt);
+        assertEquals(trashPath, trackFile.trashPath);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/trash")
+                .then()
+                .statusCode(200)
+                .body("", hasSize(0));
+    }
+
+    @Test
+    void permanentDeleteActiveMusicReturnsConflict() {
+        Long musicId = createMusic("delete-active-trash.flac", "Delete Active Trash", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}/trash", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+    }
+
+    @Test
+    void permanentDeleteRejectsTrashPathOutsideMusicVaultTrash() throws IOException {
+        Path outsideTrashFile = musicDir.resolve("outside-trash.flac").toAbsolutePath().normalize();
+        Files.writeString(outsideTrashFile, "audio");
+        Long musicId = createTrashedMusicRecordForTrashPath(outsideTrashFile, "Outside Trash", "Tester");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}/trash", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(outsideTrashFile));
+        TrackFile trackFile = QuarkusTransaction.requiringNew().call(() -> TrackFile.findById(musicId));
+        assertEquals("trashed", trackFile.deleteStatus);
     }
 
     @Test
@@ -642,6 +846,42 @@ class MusicResourceTest {
             trackFile.persist();
             return trackFile.id;
         });
+    }
+
+    private Long createTrashedMusicRecordForTrashPath(Path trashPath, String title, String artist) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(trashPath.getFileName()).toAbsolutePath().normalize().toString();
+            trackFile.fileName = trashPath.getFileName().toString();
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.deletedAt = LocalDateTime.now();
+            trackFile.trashPath = trashPath.toString();
+            trackFile.originalPath = trackFile.filePath;
+            trackFile.deleteStatus = "trashed";
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private String trashMusic(Long musicId) {
+        return given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}", musicId)
+                .then()
+                .statusCode(200)
+                .body("deleteStatus", equalTo("trashed"))
+                .extract()
+                .path("trashPath");
     }
 
     private BindingIds createPrimaryLyricAndArtwork(Long musicId) {

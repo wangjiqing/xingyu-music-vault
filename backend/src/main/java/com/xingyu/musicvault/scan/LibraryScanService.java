@@ -342,6 +342,7 @@ public class LibraryScanService {
     private void restoreTrackFile(ScanJob scanJob, TrackFile trackFile, String filePath) {
         trackFile.deletedAt = null;
         trackFile.trashPath = null;
+        trackFile.originalPath = filePath;
         trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
         trackFile.scanJobId = scanJob.id;
         LOG.debugf("Restored trashed track file found during scan: jobId=%d path=%s", scanJob.id, filePath);

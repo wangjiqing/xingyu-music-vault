@@ -105,10 +105,12 @@ deploy/
 
 **设计要点：**
 
-- 数据库记录 `deletedAt`（删除时间）、`trashPath`（回收目录路径）、`deleteStatus`（`active` / `trashed`）
+- 数据库记录 `deletedAt`（删除时间）、`trashPath`（回收目录路径）、`originalPath`（恢复目标原路径）、`deleteStatus`（`active` / `trashed` / `deleted`）
 - 删除前校验文件真实路径位于配置的音乐库根目录内，且必须是普通文件
 - 已在 `.music-vault-trash` 下的文件拒绝再次删除
 - 回收目录由后端自动创建，无需人工干预
+- 恢复时校验 `trashPath` 位于 `.music-vault-trash` 且 `originalPath` 位于音乐库根目录，原路径已存在时拒绝覆盖
+- 彻底删除只处理 `.music-vault-trash` 下的普通文件，数据库记录保留为 `deleteStatus = deleted`
 - 音乐扫描器在遍历时忽略 `.music-vault-trash` 目录，避免回收文件再次入库
 
-**非目标：** 恢复功能、彻底删除（物理删除）、批量删除、文件重命名。
+**非目标：** 批量恢复、批量彻底删除、自动清理策略、文件重命名。

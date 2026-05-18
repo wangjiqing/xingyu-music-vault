@@ -9,6 +9,9 @@
 - **GET /api/music/{id}**：音乐详情
 - **GET /api/music/{id}/file**：音乐文件信息与删除状态
 - **DELETE /api/music/{id}**：安全删除音乐文件，移动到音乐库根目录 `.music-vault-trash`
+- **GET /api/music/trash**：查看回收站音乐记录
+- **POST /api/music/{id}/restore**：从 `.music-vault-trash` 恢复音乐文件到原路径
+- **DELETE /api/music/{id}/trash**：彻底删除回收站文件，数据库记录保留为 `deleted`
 - **POST /api/lyrics/scan**：扫描本地 LRC 歌词并尝试自动绑定歌曲
 - **GET /api/lyrics**：歌词管理页列表查询，支持分页、关键词、绑定状态、解析状态和来源过滤
 - **GET /api/lyrics/{id}**：歌词详情查询，返回歌词原文、来源信息和绑定歌曲摘要
