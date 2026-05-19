@@ -803,6 +803,432 @@ class MusicResourceTest {
                 .body("items[0].deletedAt", nullValue());
     }
 
+    @Test
+    void statsReturnsCorrectCounts() throws IOException {
+        // music1: complete metadata + artwork
+        Long music1 = createMusicWithAlbum("stats-complete.flac", "Complete Title", "Complete Artist", "Complete Album");
+        createArtworkOnly(music1);
+
+        // music2: incomplete metadata (no album)
+        Long music2 = createMusic("stats-incomplete.flac", "Incomplete Title", "Incomplete Artist");
+
+        // music3: has lyrics
+        Long music3 = createMusicWithAlbum("stats-lyrics.flac", "Lyrics Title", "Lyrics Artist", "Lyrics Album");
+        createLyricOnly(music3);
+
+        // music4: no track at all (legacy) — metadata incomplete
+        Long music4 = QuarkusTransaction.requiringNew().call(() -> {
+            TrackFile trackFile = new TrackFile();
+            trackFile.filePath = musicDir.resolve("stats-legacy.flac").toAbsolutePath().normalize().toString();
+            trackFile.fileName = "stats-legacy.flac";
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+
+        // music5: trashed
+        Long music5 = createMusicWithFile("stats-trashed.flac", "Trashed", "Artist", "audio");
+        trashMusic(music5);
+
+        // music6: permanently deleted (deleted status)
+        Long music6 = createMusicWithFile("stats-deleted.flac", "Deleted", "Artist", "audio");
+        String deletedTrashPath = trashMusic(music6);
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}/trash", music6)
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/stats")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(4))     // music1,2,3,4
+                .body("metadataIncomplete", equalTo(2))  // music2 (no album) + music4 (no track)
+                .body("lyricsReady", equalTo(1))  // music3
+                .body("artworkReady", equalTo(1))  // music1
+                .body("trashed", equalTo(1));  // music5 (music6 is deleted, not trashed)
+    }
+
+    @Test
+    void statsReturnsAllZerosWhenNoData() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/stats")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(0))
+                .body("metadataIncomplete", equalTo(0))
+                .body("lyricsReady", equalTo(0))
+                .body("artworkReady", equalTo(0))
+                .body("trashed", equalTo(0));
+    }
+
+    @Test
+    void statsRestoredMusicDecreasesTrashedCount() throws IOException {
+        Long musicId = createMusicWithFile("stats-restore.flac", "Restore", "Artist", "audio");
+        trashMusic(musicId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/stats")
+                .then()
+                .statusCode(200)
+                .body("trashed", equalTo(1));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .post("/api/music/{id}/restore", musicId)
+                .then()
+                .statusCode(200);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/stats")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("trashed", equalTo(0));
+    }
+
+    @Test
+    void listFiltersByKeyword() throws IOException {
+        createMusicWithFile("hello-world.flac", "Hello World", "Famous Artist", "audio");
+        createMusicWithFile("famous-song.flac", "Another Title", "Famous Band", "audio");
+        createMusicWithFile("other.flac", "Other Title", "Unknown", "audio");
+
+        // "famous" matches "Famous Artist" and "Famous Band" and "famous-song.flac"
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?keyword=famous")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?keyword=unknown")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("total", equalTo(1))
+                .body("items[0].title", equalTo("Other Title"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?keyword=nonexistent")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(0))
+                .body("total", equalTo(0));
+    }
+
+    @Test
+    void listFiltersByYear() {
+        createMusicWithYear("year2024.flac", "Song A", "Artist A", 2024);
+        createMusicWithYear("year2025.flac", "Song B", "Artist B", 2025);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?year=2024")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("Song A"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?year=2099")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(0))
+                .body("total", equalTo(0));
+    }
+
+    @Test
+    void listFiltersByGenre() {
+        createMusicWithGenre("pop-song.flac", "Pop Song", "Artist", "Pop");
+        createMusicWithGenre("rock-song.flac", "Rock Song", "Artist", "Rock");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?genre=Pop")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("Pop Song"));
+    }
+
+    @Test
+    void listFiltersByMetadataCompleteness() {
+        // complete: title + artist + album
+        createMusicWithAlbum("complete.flac", "Title", "Artist", "Album");
+
+        // incomplete: missing album
+        createMusic("incomplete.flac", "Title", "Artist");
+
+        // incomplete: no track at all
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = new TrackFile();
+            trackFile.filePath = musicDir.resolve("legacy-inc.flac").toAbsolutePath().normalize().toString();
+            trackFile.fileName = "legacy-inc.flac";
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?metadata=complete")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("total", equalTo(1));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?metadata=incomplete")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?metadata=all")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(3))
+                .body("total", equalTo(3));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?metadata=invalid")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void listFiltersByHasLyrics() throws IOException {
+        Long withLyrics = createMusic("has-lyrics.flac", "Has Lyrics", "Artist");
+        createLyricOnly(withLyrics);
+
+        createMusic("no-lyrics.flac", "No Lyrics", "Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?hasLyrics=true")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("Has Lyrics"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?hasLyrics=false")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("No Lyrics"));
+    }
+
+    @Test
+    void listFiltersByHasArtwork() throws IOException {
+        Long withArtwork = createMusic("has-artwork.flac", "Has Artwork", "Artist");
+        createArtworkOnly(withArtwork);
+
+        createMusic("no-artwork.flac", "No Artwork", "Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?hasArtwork=true")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("Has Artwork"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?hasArtwork=false")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].title", equalTo("No Artwork"));
+    }
+
+    @Test
+    void listCombinesFilters() throws IOException {
+        createMusicWithFile("match.flac", "Match Title", "Match Artist", "audio");
+        createMusicWithFile("other.flac", "Other Title", "Match Artist", "audio");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?keyword=Match&size=50")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2));
+    }
+
+    @Test
+    void listFilteringDoesNotIncludeTrashedOrDeleted() throws IOException {
+        Long active = createMusicWithFile("filter-active.flac", "Active", "Artist", "audio");
+        Long trashed = createMusicWithFile("filter-trashed.flac", "Trashed", "Artist", "audio");
+        trashMusic(trashed);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?keyword=Artist")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(active.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("total", equalTo(1));
+    }
+
+    private void createLyricOnly(Long musicId) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Lyric lyric = new Lyric();
+            lyric.title = "Test Lyric";
+            lyric.artist = "Tester";
+            lyric.sourceType = "local_file";
+            lyric.sourcePath = musicDir.resolve("test.lrc").toAbsolutePath().normalize().toString();
+            lyric.content = "[00:00.00]Test";
+            lyric.contentHash = "lyric-hash-" + musicId;
+            lyric.format = "lrc";
+            lyric.parseStatus = "success";
+            lyric.persist();
+
+            SongLyric songLyric = new SongLyric();
+            songLyric.songId = musicId;
+            songLyric.lyricId = lyric.id;
+            songLyric.matchType = "manual";
+            songLyric.matchScore = 100;
+            songLyric.isPrimary = true;
+            songLyric.persist();
+        });
+    }
+
+    private void createArtworkOnly(Long musicId) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Artwork artwork = new Artwork();
+            artwork.filePath = musicDir.resolve("test.png").toAbsolutePath().normalize().toString();
+            artwork.fileName = "test.png";
+            artwork.fileExt = "png";
+            artwork.mimeType = "image/png";
+            artwork.fileSize = 1;
+            artwork.hash = "artwork-hash-" + musicId;
+            artwork.sourceType = "local";
+            artwork.persist();
+
+            MusicArtworkBinding binding = new MusicArtworkBinding();
+            binding.musicId = musicId;
+            binding.artworkId = artwork.id;
+            binding.relationType = ArtworkService.TRACK_COVER;
+            binding.isPrimary = true;
+            binding.persist();
+        });
+    }
+
+    private Long createMusicWithAlbum(String fileName, String title, String artist, String album) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.album = album;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createMusicWithYear(String fileName, String title, String artist, int year) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.year = year;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createMusicWithGenre(String fileName, String title, String artist, String genre) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.genre = genre;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
     private Long createMusic(String fileName, String title, String artist) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Track track = new Track();

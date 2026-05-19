@@ -12,6 +12,7 @@ import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
+import com.xingyu.musicvault.library.MusicDtos.MusicStatsResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicTrashResponse;
 import com.xingyu.musicvault.lyrics.LyricService;
 import com.xingyu.musicvault.scan.LibraryScanService;
@@ -45,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.Year;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -113,15 +115,22 @@ public class MusicResource {
     @GET
     public PageResponse<MusicResponse> list(
             @QueryParam("page") Integer page,
-            @QueryParam("size") Integer size
+            @QueryParam("size") Integer size,
+            @QueryParam("keyword") String keyword,
+            @QueryParam("year") Integer year,
+            @QueryParam("genre") String genre,
+            @QueryParam("metadata") String metadata,
+            @QueryParam("hasLyrics") Boolean hasLyrics,
+            @QueryParam("hasArtwork") Boolean hasArtwork
     ) {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size);
 
+        FilterQuery filter = buildFilterQuery(keyword, year, genre, metadata, hasLyrics, hasArtwork);
         PanacheQuery<TrackFile> query = TrackFile.find(
-                "deleteStatus is null or deleteStatus = ?1",
+                filter.query(),
                 Sort.descending("createdAt"),
-                DELETE_STATUS_ACTIVE
+                filter.parameters().toArray()
         );
         long total = query.count();
         List<TrackFile> trackFiles = query.page(Page.of(pageValue, sizeValue)).list();
@@ -141,6 +150,30 @@ public class MusicResource {
                 ))
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
+    }
+
+    @GET
+    @Path("/stats")
+    public MusicStatsResponse stats() {
+        long total = TrackFile.count(
+                "deleteStatus is null or deleteStatus = ?1",
+                DELETE_STATUS_ACTIVE
+        );
+        long trashed = TrackFile.count("deleteStatus", DELETE_STATUS_TRASHED);
+        long metadataIncomplete = TrackFile.count(
+                "(deleteStatus is null or deleteStatus = ?1) and (trackId is null or trackId in (select t.id from Track t where t.title is null or t.artist is null or t.album is null))",
+                DELETE_STATUS_ACTIVE
+        );
+        long lyricsReady = TrackFile.count(
+                "(deleteStatus is null or deleteStatus = ?1) and id in (select sl.songId from SongLyric sl where sl.isPrimary = true)",
+                DELETE_STATUS_ACTIVE
+        );
+        long artworkReady = TrackFile.count(
+                "(deleteStatus is null or deleteStatus = ?1) and id in (select mab.musicId from MusicArtworkBinding mab where mab.isPrimary = true and mab.relationType = ?2)",
+                DELETE_STATUS_ACTIVE,
+                ArtworkService.TRACK_COVER
+        );
+        return new MusicStatsResponse(total, metadataIncomplete, lyricsReady, artworkReady, trashed);
     }
 
     @GET
@@ -459,6 +492,73 @@ public class MusicResource {
         return size;
     }
 
+    private FilterQuery buildFilterQuery(
+            String keyword,
+            Integer year,
+            String genre,
+            String metadata,
+            Boolean hasLyrics,
+            Boolean hasArtwork
+    ) {
+        StringBuilder query = new StringBuilder("(deleteStatus is null or deleteStatus = ?1)");
+        List<Object> params = new ArrayList<>();
+        params.add(DELETE_STATUS_ACTIVE);
+
+        if (keyword != null && !keyword.isBlank()) {
+            String like = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+            int idx = params.size() + 1;
+            query.append(" and (lower(fileName) like ?").append(idx)
+                    .append(" or trackId in (select t.id from Track t where lower(t.title) like ?").append(idx)
+                    .append(" or lower(t.artist) like ?").append(idx)
+                    .append(" or lower(t.album) like ?").append(idx)
+                    .append("))");
+            params.add(like);
+        }
+
+        if (year != null) {
+            int idx = params.size() + 1;
+            query.append(" and trackId in (select t.id from Track t where t.year = ?").append(idx).append(")");
+            params.add(year);
+        }
+
+        if (genre != null && !genre.isBlank()) {
+            int idx = params.size() + 1;
+            query.append(" and trackId in (select t.id from Track t where lower(t.genre) = ?").append(idx).append(")");
+            params.add(genre.trim().toLowerCase(Locale.ROOT));
+        }
+
+        if (metadata != null && !metadata.isBlank()) {
+            String value = metadata.trim().toLowerCase(Locale.ROOT);
+            if ("incomplete".equals(value)) {
+                query.append(" and (trackId is null or trackId in (select t.id from Track t where t.title is null or t.artist is null or t.album is null))");
+            } else if ("complete".equals(value)) {
+                query.append(" and trackId is not null and trackId in (select t.id from Track t where t.title is not null and t.artist is not null and t.album is not null)");
+            } else if (!"all".equals(value)) {
+                throw new BadRequestException("metadata must be all, incomplete, or complete");
+            }
+        }
+
+        if (hasLyrics != null) {
+            if (hasLyrics) {
+                query.append(" and id in (select sl.songId from SongLyric sl where sl.isPrimary = true)");
+            } else {
+                query.append(" and id not in (select sl.songId from SongLyric sl where sl.isPrimary = true)");
+            }
+        }
+
+        if (hasArtwork != null) {
+            if (hasArtwork) {
+                query.append(" and id in (select mab.musicId from MusicArtworkBinding mab where mab.isPrimary = true and mab.relationType = '")
+                        .append(ArtworkService.TRACK_COVER).append("')");
+            } else {
+                query.append(" and id not in (select mab.musicId from MusicArtworkBinding mab where mab.isPrimary = true and mab.relationType = '")
+                        .append(ArtworkService.TRACK_COVER).append("')");
+            }
+        }
+
+        return new FilterQuery(query.toString(), params);
+    }
+
     private void validateYear(Integer year) {
         if (year == null) {
             return;
@@ -681,6 +781,9 @@ public class MusicResource {
         } catch (IOException exception) {
             Files.move(trashPath, originalPath);
         }
+    }
+
+    private record FilterQuery(String query, List<Object> parameters) {
     }
 
     private record DeletableMusicFile(

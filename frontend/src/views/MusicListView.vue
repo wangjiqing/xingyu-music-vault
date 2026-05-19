@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
+  fetchMusicStats,
   triggerMusicScan,
   updateMusicMetadata,
   deleteMusic,
@@ -13,6 +14,7 @@ import {
   type MusicItem,
   type MusicMetadataUpdate,
   type MusicTrashItem,
+  type MusicStats,
 } from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
 import {
@@ -34,8 +36,14 @@ const errorMessage = ref('')
 const query = reactive({
   page: 1,
   size: 20,
+  keyword: '',
+  hasLyrics: null as boolean | null,
+  hasArtwork: null as boolean | null,
+  metadata: '',
 })
 const total = ref(0)
+
+const stats = ref<MusicStats | null>(null)
 
 const lyricDialogVisible = ref(false)
 const lyricLoading = ref(false)
@@ -145,7 +153,15 @@ async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const res = await fetchMusicList({ page: query.page - 1, size: query.size })
+    const params = {
+      page: query.page - 1,
+      size: query.size,
+      keyword: query.keyword || undefined,
+      hasLyrics: query.hasLyrics ?? undefined,
+      hasArtwork: query.hasArtwork ?? undefined,
+      metadata: query.metadata || undefined,
+    }
+    const res = await fetchMusicList(params)
     list.value = res.items
     total.value = res.total
   } catch {
@@ -154,6 +170,24 @@ async function loadList() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadStats() {
+  try {
+    stats.value = await fetchMusicStats()
+  } catch {
+    // stats unavailable, silently ignore
+  }
+}
+
+function handleSearch() {
+  query.page = 1
+  loadList()
+}
+
+function handleFilterChange() {
+  query.page = 1
+  loadList()
 }
 
 async function handleScan() {
@@ -448,6 +482,7 @@ function handleSizeChange(size: number) {
 
 onMounted(() => {
   loadList()
+  loadStats()
 })
 </script>
 
@@ -479,10 +514,94 @@ onMounted(() => {
       @close="errorMessage = ''"
     />
 
+    <el-row v-if="stats" :gutter="12" style="margin-bottom: 12px">
+      <el-col :span="4">
+        <div class="stat-card">
+          <div class="stat-num">{{ stats.total }}</div>
+          <div class="stat-label">音乐总数</div>
+        </div>
+      </el-col>
+      <el-col :span="5">
+        <div class="stat-card stat-warning">
+          <div class="stat-num">{{ stats.metadataIncomplete }}</div>
+          <div class="stat-label">待整理</div>
+        </div>
+      </el-col>
+      <el-col :span="5">
+        <div class="stat-card stat-success">
+          <div class="stat-num">{{ stats.lyricsReady }}</div>
+          <div class="stat-label">有歌词</div>
+        </div>
+      </el-col>
+      <el-col :span="5">
+        <div class="stat-card stat-success">
+          <div class="stat-num">{{ stats.artworkReady }}</div>
+          <div class="stat-label">有封面</div>
+        </div>
+      </el-col>
+      <el-col :span="5">
+        <div class="stat-card stat-info">
+          <div class="stat-num">{{ stats.trashed }}</div>
+          <div class="stat-label">回收站</div>
+        </div>
+      </el-col>
+    </el-row>
+
+    <div class="search-bar">
+      <el-input
+        v-model="query.keyword"
+        placeholder="搜索标题、歌手、专辑、文件名..."
+        clearable
+        size="small"
+        style="width: 320px"
+        :prefix-icon="Search"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      />
+      <el-select
+        v-model="query.hasLyrics"
+        placeholder="歌词"
+        clearable
+        size="small"
+        style="width: 100px; margin-left: 8px"
+        @change="handleFilterChange"
+        @clear="query.hasLyrics = null"
+      >
+        <el-option label="全部" :value="null" />
+        <el-option label="有歌词" :value="true" />
+        <el-option label="无歌词" :value="false" />
+      </el-select>
+      <el-select
+        v-model="query.hasArtwork"
+        placeholder="封面"
+        clearable
+        size="small"
+        style="width: 100px; margin-left: 8px"
+        @change="handleFilterChange"
+        @clear="query.hasArtwork = null"
+      >
+        <el-option label="全部" :value="null" />
+        <el-option label="有封面" :value="true" />
+        <el-option label="无封面" :value="false" />
+      </el-select>
+      <el-select
+        v-model="query.metadata"
+        placeholder="元数据"
+        clearable
+        size="small"
+        style="width: 110px; margin-left: 8px"
+        @change="handleFilterChange"
+      >
+        <el-option label="全部" value="" />
+        <el-option label="完整" value="complete" />
+        <el-option label="待整理" value="incomplete" />
+      </el-select>
+    </div>
+
     <el-table
       :data="list"
       v-loading="loading"
-      empty-text="暂无音乐文件，请点击「扫描音乐目录」导入"
+      :empty-text="query.keyword || query.hasLyrics != null || query.hasArtwork != null || query.metadata ? '没有匹配的结果' : '暂无音乐文件，请点击「扫描音乐目录」导入'"
       style="width: 100%"
     >
       <el-table-column label="歌曲名" min-width="180" show-overflow-tooltip>
@@ -549,7 +668,7 @@ onMounted(() => {
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="260" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"
@@ -561,15 +680,6 @@ onMounted(() => {
             编辑
           </el-button>
           <el-button
-            type="danger"
-            size="small"
-            text
-            :icon="Delete"
-            @click="openDeleteDialog(row)"
-          >
-            删除
-          </el-button>
-          <el-button
             v-if="row.lyricStatus === 'BOUND'"
             type="primary"
             size="small"
@@ -579,35 +689,22 @@ onMounted(() => {
           >
             歌词
           </el-button>
-          <el-button
-            v-if="row.artworkStatus === 'BOUND'"
-            type="primary"
-            size="small"
-            text
-            :icon="PictureFilled"
-            @click="handleBindOpen(row)"
-          >
-            更换封面
-          </el-button>
-          <el-button
-            v-else
-            type="primary"
-            size="small"
-            text
-            :icon="PictureFilled"
-            @click="handleBindOpen(row)"
-          >
-            选择/导入封面
-          </el-button>
-          <el-button
-            v-if="row.artworkStatus === 'BOUND'"
-            type="danger"
-            size="small"
-            text
-            @click="handleUnbind(row)"
-          >
-            取消
-          </el-button>
+          <el-dropdown trigger="click" @command="(cmd: string) => { if (cmd === 'bind') handleBindOpen(row); if (cmd === 'unbind') handleUnbind(row); if (cmd === 'delete') openDeleteDialog(row); }">
+            <el-button size="small" text :icon="MoreFilled" />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="bind" :icon="PictureFilled">
+                  {{ row.artworkStatus === 'BOUND' ? '更换封面' : '选择/导入封面' }}
+                </el-dropdown-item>
+                <el-dropdown-item v-if="row.artworkStatus === 'BOUND'" command="unbind" divided>
+                  取消封面
+                </el-dropdown-item>
+                <el-dropdown-item command="delete" divided style="color: #f56c6c" :icon="Delete">
+                  移入回收站
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </template>
       </el-table-column>
     </el-table>
@@ -1034,5 +1131,30 @@ onMounted(() => {
 }
 .upload-file-info {
   margin-top: 12px;
+}
+.stat-card {
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  padding: 10px 14px;
+  text-align: center;
+}
+.stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+}
+.stat-label {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 2px;
+}
+.stat-warning .stat-num { color: #e6a23c; }
+.stat-success .stat-num { color: #67c23a; }
+.stat-info .stat-num { color: #409eff; }
+.search-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
 }
 </style>
