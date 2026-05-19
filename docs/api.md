@@ -259,6 +259,7 @@ Authorization: Bearer change-me
 
 | Method | Path | 说明 |
 |--------|------|------|
+| GET | `/api/music/stats` | 音乐库统计（总数、元数据不完整数、歌词就绪数、封面就绪数、回收站数） |
 | POST | `/api/music/scan` | 接受一次后台本地音乐扫描任务，默认扫描 `music.scan.default-path` |
 | GET | `/api/music?page=0&size=20` | 音乐分页列表 |
 | GET | `/api/music/{id}` | 音乐详情 |
@@ -295,14 +296,42 @@ Content-Type: application/json
 }
 ```
 
+统计：
+
+```http
+GET /api/music/stats
+Authorization: Bearer change-me
+```
+
+```json
+{
+  "total": 529,
+  "metadataIncomplete": 42,
+  "lyricsReady": 487,
+  "artworkReady": 510,
+  "trashed": 3
+}
+```
+
+所有字段均为整数，其中 `trashed` 为当前处于 `trashed` 状态的记录数量。
+
 扫描会递归读取目录，跳过隐藏文件、非音乐文件和音乐库根目录下的 `.music-vault-trash` 回收目录。当前不引入音频标签解析依赖，元数据采用文件名兜底：`周杰伦 - 晴天.flac` 会解析为 `artist = 周杰伦`、`title = 晴天`；无法解析时 `artist = Unknown`、`title = 文件名去后缀`。如果历史 `track_files` 行缺少 `track_id`，重复音乐扫描会补建 `tracks` 元数据，供歌词匹配使用。
 
 查询列表：
 
 ```http
-GET /api/music?page=0&size=20
+GET /api/music?page=0&size=20&keyword=周杰伦&hasLyrics=true&hasArtwork=true&metadata=incomplete
 Authorization: Bearer change-me
 ```
+
+| 参数 | 说明 |
+|------|------|
+| `page` | 页码，从 0 开始，默认 0 |
+| `size` | 每页条数，默认 20，最大 100 |
+| `keyword` | 模糊匹配文件名、标题、艺术家、专辑（可选） |
+| `hasLyrics` | 按歌词绑定状态过滤，`true` 为已绑定歌词（可选） |
+| `hasArtwork` | 按封面绑定状态过滤，`true` 为已有封面（可选） |
+| `metadata` | 按元数据状态过滤，允许值：`complete`、`incomplete`（可选） |
 
 ```json
 {

@@ -185,6 +185,14 @@ public final class MusicDtos {
         }
     }
 
+    public record MusicStatsResponse(
+            long total,
+            long metadataIncomplete,
+            long lyricsReady,
+            long artworkReady,
+            long trashed
+    ) {}
+
     public record MusicTrashResponse(
             Long id,
             String title,

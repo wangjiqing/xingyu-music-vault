@@ -37,6 +37,12 @@ export interface MusicScanAccepted {
 export interface MusicListQuery {
   page: number
   size: number
+  keyword?: string
+  year?: number
+  genre?: string
+  hasLyrics?: boolean | null
+  hasArtwork?: boolean | null
+  metadata?: string
 }
 
 export interface MusicMetadataUpdate {
@@ -115,5 +121,18 @@ export async function restoreMusic(id: number): Promise<MusicFileInfo> {
 
 export async function permanentlyDeleteMusic(id: number): Promise<MusicFileInfo> {
   const { data } = await http.delete(`/api/music/${id}/trash`)
+  return data
+}
+
+export interface MusicStats {
+  total: number
+  metadataIncomplete: number
+  lyricsReady: number
+  artworkReady: number
+  trashed: number
+}
+
+export async function fetchMusicStats(): Promise<MusicStats> {
+  const { data } = await http.get('/api/music/stats')
   return data
 }
