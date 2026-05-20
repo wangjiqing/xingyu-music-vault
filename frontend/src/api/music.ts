@@ -136,3 +136,22 @@ export async function fetchMusicStats(): Promise<MusicStats> {
   const { data } = await http.get('/api/music/stats')
   return data
 }
+
+export interface MusicMetadataBatchUpdate {
+  ids: number[]
+  artist?: string
+  album?: string
+  year?: number
+  genre?: string
+}
+
+export interface MusicMetadataBatchUpdateResponse {
+  updated: number
+}
+
+export async function batchUpdateMusicMetadata(
+  payload: MusicMetadataBatchUpdate,
+): Promise<MusicMetadataBatchUpdateResponse> {
+  const { data } = await http.put('/api/music/metadata/batch', payload)
+  return data
+}

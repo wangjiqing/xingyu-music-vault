@@ -271,6 +271,7 @@ Authorization: Bearer change-me
 | PUT | `/api/music/{musicId}/artwork` | 绑定音乐主封面 |
 | POST | `/api/music/{musicId}/artwork/import` | 上传本地图片、入库并绑定为音乐主封面 |
 | DELETE | `/api/music/{musicId}/artwork` | 取消音乐主封面绑定 |
+| PUT | `/api/music/metadata/batch` | 批量更新多个音乐的共同元数据字段（v0.7.4） |
 
 `POST /api/music/scan` 可传空对象使用默认目录，也可传入 `path` 覆盖本次扫描目录：
 
@@ -507,6 +508,50 @@ Content-Type: multipart/form-data
 错误处理：歌曲不存在时返回 `404`；文件类型不符、超过 10MB、无法识别为支持的图片、图片损坏、Artworks 目录不可写或配置路径不是目录时返回 `400`。
 
 后续可考虑 `POST /api/music/{musicId}/artwork/import-url`，但本轮不实现。URL 导入需要额外处理：SSRF 防护、文件大小限制、Content-Type 校验、下载超时、重定向限制、域名/IP 限制、来源记录。
+
+#### 批量更新元数据（v0.7.4）
+
+```http
+PUT /api/music/metadata/batch
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "ids": [1, 2, 3],
+  "artist": "周杰伦",
+  "album": "叶惠美",
+  "year": 2003,
+  "genre": "流行"
+}
+```
+
+请求字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `ids` | number[] | 必填，待更新的音乐 ID 列表 |
+| `artist` | string | 可选，歌手，空字符串不更新 |
+| `album` | string | 可选，专辑，空字符串不更新 |
+| `year` | number | 可选，年份，必须为 1900–当前年份+1 之间的整数，空值不更新 |
+| `genre` | string | 可选，流派，空字符串不更新 |
+
+**不支持批量编辑 `title` 和 `trackNo`**，这两个字段仍建议单首编辑。
+
+响应示例：
+
+```json
+{
+  "updated": 3
+}
+```
+
+**设计说明：**
+- 只更新用户实际填写的字段，空字段（不传或传 `null`）不更新
+- 元数据只保存到 SQLite，不读取、不写回真实音频文件标签
+- 不会联网刮削或 AI 自动补全
+- 保存前前端会提示本次操作将影响多少首音乐
 
  取消绑定：
 

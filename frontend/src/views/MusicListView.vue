@@ -7,6 +7,7 @@ import {
   fetchMusicStats,
   triggerMusicScan,
   updateMusicMetadata,
+  batchUpdateMusicMetadata,
   deleteMusic,
   fetchTrashList,
   restoreMusic,
@@ -44,6 +45,17 @@ const query = reactive({
 const total = ref(0)
 
 const stats = ref<MusicStats | null>(null)
+
+const selectedRows = ref<MusicItem[]>([])
+const batchDialogVisible = ref(false)
+const batchSaving = ref(false)
+const batchForm = reactive({
+  artist: '',
+  album: '',
+  year: null as number | null,
+  genre: '',
+})
+const batchConfirmVisible = ref(false)
 
 const lyricDialogVisible = ref(false)
 const lyricLoading = ref(false)
@@ -385,6 +397,62 @@ async function handleEditSave() {
   }
 }
 
+function handleSelectionChange(rows: MusicItem[]) {
+  selectedRows.value = rows
+}
+
+function openBatchDialog() {
+  batchForm.artist = ''
+  batchForm.album = ''
+  batchForm.year = null
+  batchForm.genre = ''
+  batchDialogVisible.value = true
+}
+
+function submitBatchForm() {
+  const artist = batchForm.artist.trim()
+  const album = batchForm.album.trim()
+  const genre = batchForm.genre.trim()
+  if (!artist && !album && batchForm.year == null && !genre) {
+    ElMessage.warning('请至少填写一个字段')
+    return
+  }
+  if (batchForm.year != null) {
+    const maxYear = new Date().getFullYear() + 1
+    if (batchForm.year < 1900 || batchForm.year > maxYear) {
+      ElMessage.warning(`年份需在 1900 ~ ${maxYear} 之间`)
+      return
+    }
+  }
+  batchConfirmVisible.value = true
+}
+
+async function handleBatchSave() {
+  batchSaving.value = true
+  try {
+    const artist = batchForm.artist.trim()
+    const album = batchForm.album.trim()
+    const genre = batchForm.genre.trim()
+    const payload: Record<string, unknown> = { ids: selectedRows.value.map((r) => r.id) }
+    if (artist) payload.artist = artist
+    if (album) payload.album = album
+    if (batchForm.year != null) payload.year = batchForm.year
+    if (genre) payload.genre = genre
+    const res = await batchUpdateMusicMetadata(payload as any)
+    ElMessage.success(`已批量更新 ${res.updated} 首音乐`)
+    batchDialogVisible.value = false
+    batchConfirmVisible.value = false
+    selectedRows.value = []
+    await loadList()
+    await loadStats()
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '批量编辑失败'
+    ElMessage.error(msg)
+  } finally {
+    batchSaving.value = false
+  }
+}
+
 function openDeleteDialog(row: MusicItem) {
   deleteTarget.value = row
   deleteDialogVisible.value = true
@@ -500,6 +568,14 @@ onMounted(() => {
           </el-button>
           <el-button size="small" @click="loadList">刷新</el-button>
           <el-button size="small" @click="openTrash">回收站</el-button>
+          <el-button
+            v-if="selectedRows.length > 0"
+            type="primary"
+            size="small"
+            @click="openBatchDialog"
+          >
+            批量编辑 ({{ selectedRows.length }})
+          </el-button>
         </div>
       </div>
     </template>
@@ -593,17 +669,20 @@ onMounted(() => {
         @change="handleFilterChange"
       >
         <el-option label="全部" value="" />
-        <el-option label="完整" value="complete" />
+        <el-option label="已整理" value="complete" />
         <el-option label="待整理" value="incomplete" />
       </el-select>
     </div>
 
     <el-table
+      ref="tableRef"
       :data="list"
       v-loading="loading"
+      @selection-change="handleSelectionChange"
       :empty-text="query.keyword || query.hasLyrics != null || query.hasArtwork != null || query.metadata ? '没有匹配的结果' : '暂无音乐文件，请点击「扫描音乐目录」导入'"
       style="width: 100%"
     >
+      <el-table-column type="selection" width="40" />
       <el-table-column label="歌曲名" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
           {{ displayTitle(row) }}
@@ -1079,6 +1158,72 @@ onMounted(() => {
       <el-button @click="permDeleteConfirmVisible = false">取消</el-button>
       <el-button type="danger" :loading="trashOperationLoading" @click="handlePermanentlyDelete">
         彻底删除
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="batchDialogVisible"
+    title="批量编辑元数据"
+    width="480px"
+    destroy-on-close
+  >
+    <el-form label-width="72px" :disabled="batchSaving">
+      <el-form-item label="歌手">
+        <el-input v-model="batchForm.artist" placeholder="留空则跳过" />
+      </el-form-item>
+      <el-form-item label="专辑">
+        <el-input v-model="batchForm.album" placeholder="留空则跳过" />
+      </el-form-item>
+      <el-form-item label="年份">
+        <el-input-number
+          v-model="batchForm.year"
+          :min="1900"
+          :max="new Date().getFullYear() + 1"
+          placeholder="留空则跳过"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="流派">
+        <el-input v-model="batchForm.genre" placeholder="留空则跳过" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="batchDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="submitBatchForm">
+        保存
+      </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="batchConfirmVisible"
+    title="确认批量编辑"
+    width="460px"
+    destroy-on-close
+    append-to-body
+  >
+    <div style="margin-bottom: 12px; color: #e6a23c">
+      将对 {{ selectedRows.length }} 首音乐批量设置元数据，请确认。
+    </div>
+    <el-descriptions :column="1" border size="small">
+      <el-descriptions-item label="歌手" v-if="batchForm.artist">
+        {{ batchForm.artist }}
+      </el-descriptions-item>
+      <el-descriptions-item label="专辑" v-if="batchForm.album">
+        {{ batchForm.album }}
+      </el-descriptions-item>
+      <el-descriptions-item label="年份" v-if="batchForm.year != null">
+        {{ batchForm.year }}
+      </el-descriptions-item>
+      <el-descriptions-item label="流派" v-if="batchForm.genre">
+        {{ batchForm.genre }}
+      </el-descriptions-item>
+    </el-descriptions>
+    <template #footer>
+      <el-button @click="batchConfirmVisible = false">取消</el-button>
+      <el-button type="primary" :loading="batchSaving" @click="handleBatchSave">
+        确认
       </el-button>
     </template>
   </el-dialog>
