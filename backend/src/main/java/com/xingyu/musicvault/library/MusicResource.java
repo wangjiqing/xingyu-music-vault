@@ -8,6 +8,8 @@ import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.MusicDtos.MusicFileResponse;
+import com.xingyu.musicvault.library.MusicDtos.MusicMetadataBatchUpdateRequest;
+import com.xingyu.musicvault.library.MusicDtos.MusicMetadataBatchUpdateResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicScanAccepted;
@@ -52,6 +54,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -63,6 +66,7 @@ public class MusicResource {
     private static final String DELETE_STATUS_TRASHED = "trashed";
     private static final String DELETE_STATUS_DELETED = "deleted";
     private static final String TRASH_DIRECTORY_NAME = ".music-vault-trash";
+    private static final int MAX_BATCH_METADATA_UPDATE_IDS = 500;
 
     @Inject
     MusicVaultConfig config;
@@ -329,6 +333,86 @@ public class MusicResource {
     }
 
     @PUT
+    @Path("/metadata/batch")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Transactional
+    public MusicMetadataBatchUpdateResponse batchUpdateMetadata(MusicMetadataBatchUpdateRequest request) {
+        if (request == null) {
+            throw new BadRequestException("Request body is required");
+        }
+        if (request.ids() == null || request.ids().isEmpty()) {
+            throw new BadRequestException("ids must not be empty");
+        }
+        if (request.ids().stream().anyMatch(Objects::isNull)) {
+            throw new BadRequestException("ids must not contain null");
+        }
+        if (request.ids().size() > MAX_BATCH_METADATA_UPDATE_IDS) {
+            throw new BadRequestException("ids size must be less than or equal to " + MAX_BATCH_METADATA_UPDATE_IDS);
+        }
+
+        List<Long> ids = request.ids().stream().distinct().toList();
+        String artist = cleanText(request.artist());
+        String album = cleanText(request.album());
+        String genre = cleanText(request.genre());
+        boolean hasArtist = artist != null;
+        boolean hasAlbum = album != null;
+        boolean hasYear = request.year() != null;
+        boolean hasGenre = genre != null;
+        if (!hasArtist && !hasAlbum && !hasYear && !hasGenre) {
+            throw new BadRequestException("At least one updatable metadata field is required");
+        }
+        validateYear(request.year());
+
+        List<TrackFile> trackFiles = TrackFile.list("id in ?1", ids);
+        Set<Long> foundIds = trackFiles.stream()
+                .map(trackFile -> trackFile.id)
+                .collect(Collectors.toSet());
+        List<Long> missingIds = ids.stream()
+                .filter(id -> !foundIds.contains(id))
+                .toList();
+        if (!missingIds.isEmpty()) {
+            throw new NotFoundException("Music not found: " + missingIds);
+        }
+
+        List<Long> inactiveIds = trackFiles.stream()
+                .filter(trackFile -> !isActive(trackFile))
+                .map(trackFile -> trackFile.id)
+                .toList();
+        if (!inactiveIds.isEmpty()) {
+            throw new ConflictException("Only active music can be updated: " + inactiveIds);
+        }
+
+        Map<Long, Track> tracksById = tracksById(trackFiles);
+        LocalDateTime updatedAt = LocalDateTime.now();
+        for (TrackFile trackFile : trackFiles) {
+            Track track = trackOf(trackFile, tracksById);
+            if (track == null) {
+                track = new Track();
+            }
+            if (hasArtist) {
+                track.artist = artist;
+            }
+            if (hasAlbum) {
+                track.album = album;
+            }
+            if (hasYear) {
+                track.year = request.year();
+            }
+            if (hasGenre) {
+                track.genre = genre;
+            }
+            track.metadataUpdatedAt = updatedAt;
+
+            if (!track.isPersistent()) {
+                track.persist();
+                trackFile.trackId = track.id;
+            }
+        }
+
+        return new MusicMetadataBatchUpdateResponse(trackFiles.size());
+    }
+
+    @PUT
     @Path("/{id}/metadata")
     @Consumes(MediaType.APPLICATION_JSON)
     @Transactional
@@ -530,9 +614,13 @@ public class MusicResource {
         if (metadata != null && !metadata.isBlank()) {
             String value = metadata.trim().toLowerCase(Locale.ROOT);
             if ("incomplete".equals(value)) {
-                query.append(" and (trackId is null or trackId in (select t.id from Track t where t.title is null or t.artist is null or t.album is null))");
+                query.append(" and (trackId is null or trackId in (select t.id from Track t where ")
+                        .append(metadataIncompletePredicate("t"))
+                        .append("))");
             } else if ("complete".equals(value)) {
-                query.append(" and trackId is not null and trackId in (select t.id from Track t where t.title is not null and t.artist is not null and t.album is not null)");
+                query.append(" and trackId is not null and trackId in (select t.id from Track t where ")
+                        .append(metadataCompletePredicate("t"))
+                        .append(")");
             } else if (!"all".equals(value)) {
                 throw new BadRequestException("metadata must be all, incomplete, or complete");
             }
@@ -557,6 +645,20 @@ public class MusicResource {
         }
 
         return new FilterQuery(query.toString(), params);
+    }
+
+    private boolean isActive(TrackFile trackFile) {
+        return trackFile.deleteStatus == null || DELETE_STATUS_ACTIVE.equals(trackFile.deleteStatus);
+    }
+
+    private String metadataIncompletePredicate(String alias) {
+        return "%s.title is null or length(trim(%s.title)) = 0 or %s.artist is null or length(trim(%s.artist)) = 0 or %s.album is null or length(trim(%s.album)) = 0"
+                .formatted(alias, alias, alias, alias, alias, alias);
+    }
+
+    private String metadataCompletePredicate(String alias) {
+        return "%s.title is not null and length(trim(%s.title)) > 0 and %s.artist is not null and length(trim(%s.artist)) > 0 and %s.album is not null and length(trim(%s.album)) > 0"
+                .formatted(alias, alias, alias, alias, alias, alias);
     }
 
     private void validateYear(Integer year) {

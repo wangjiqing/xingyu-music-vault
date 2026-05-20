@@ -5,6 +5,7 @@ import com.xingyu.musicvault.job.ScanJob;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class MusicDtos {
     private MusicDtos() {
@@ -151,6 +152,18 @@ public final class MusicDtos {
             Integer trackNo,
             String genre
     ) {
+    }
+
+    public record MusicMetadataBatchUpdateRequest(
+            List<Long> ids,
+            String artist,
+            String album,
+            Integer year,
+            String genre
+    ) {
+    }
+
+    public record MusicMetadataBatchUpdateResponse(long updated) {
     }
 
     public record MusicFileResponse(

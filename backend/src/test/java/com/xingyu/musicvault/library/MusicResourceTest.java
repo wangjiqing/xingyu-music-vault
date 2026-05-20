@@ -24,6 +24,7 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
@@ -314,6 +315,269 @@ class MusicResourceTest {
                 .body("fileName", equalTo("preserve.flac"))
                 .body("lyricId", equalTo(bindingIds.lyricId().intValue()))
                 .body("artworkId", equalTo(bindingIds.artworkId().intValue()));
+    }
+
+    @Test
+    void batchUpdateMetadataUpdatesSharedFields() {
+        Long first = createMusic("batch-first.flac", "First", "Old Artist");
+        Long second = createMusic("batch-second.flac", "Second", "Old Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d, %d],
+                          "artist": "  周杰伦 ",
+                          "album": " 叶惠美 ",
+                          "year": 2003,
+                          "genre": " Pop "
+                        }
+                        """.formatted(first, second))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(200)
+                .body("updated", equalTo(2));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?size=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("items.find { it.id == %d }.artist".formatted(first), equalTo("周杰伦"))
+                .body("items.find { it.id == %d }.album".formatted(first), equalTo("叶惠美"))
+                .body("items.find { it.id == %d }.year".formatted(first), equalTo(2003))
+                .body("items.find { it.id == %d }.genre".formatted(first), equalTo("Pop"))
+                .body("items.find { it.id == %d }.artist".formatted(second), equalTo("周杰伦"))
+                .body("items.find { it.id == %d }.album".formatted(second), equalTo("叶惠美"))
+                .body("items.find { it.id == %d }.year".formatted(second), equalTo(2003))
+                .body("items.find { it.id == %d }.genre".formatted(second), equalTo("Pop"));
+    }
+
+    @Test
+    void batchUpdateMetadataRefreshesMetadataUpdatedAt() {
+        Long musicId = createMusic("batch-time.flac", "Time", "Old Artist");
+        LocalDateTime oldUpdatedAt = LocalDateTime.now().minusDays(1);
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            track.metadataUpdatedAt = oldUpdatedAt;
+            track.metadataStatus = "pending";
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d],
+                          "artist": "New Artist"
+                        }
+                        """.formatted(musicId))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(200)
+                .body("updated", equalTo(1));
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            assertNotNull(track.metadataUpdatedAt);
+            assertTrue(track.metadataUpdatedAt.isAfter(oldUpdatedAt));
+            assertEquals("pending", track.metadataStatus);
+        });
+    }
+
+    @Test
+    void batchUpdateMetadataRejectsEmptyIds() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [],
+                          "artist": "周杰伦"
+                        }
+                        """)
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void batchUpdateMetadataRejectsTooManyIds() {
+        String ids = java.util.stream.LongStream.rangeClosed(1, 501)
+                .mapToObj(Long::toString)
+                .collect(java.util.stream.Collectors.joining(","));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%s],
+                          "artist": "周杰伦"
+                        }
+                        """.formatted(ids))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void batchUpdateMetadataRejectsNoUpdatableFields() {
+        Long musicId = createMusic("batch-no-fields.flac", "No Fields", "Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d],
+                          "title": "Ignored Title",
+                          "trackNo": 7
+                        }
+                        """.formatted(musicId))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void batchUpdateMetadataRejectsInvalidYear() {
+        Long musicId = createMusic("batch-invalid-year.flac", "Invalid Year", "Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d],
+                          "year": 1899
+                        }
+                        """.formatted(musicId))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"));
+    }
+
+    @Test
+    void batchUpdateMetadataMissingIdReturnsNotFound() {
+        Long musicId = createMusic("batch-missing-id.flac", "Missing Id", "Artist");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d, 999999],
+                          "artist": "New Artist"
+                        }
+                        """.formatted(musicId))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(404)
+                .body("error", equalTo("not_found"));
+    }
+
+    @Test
+    void batchUpdateMetadataRejectsTrashedAndDeletedMusic() throws IOException {
+        Long active = createMusic("batch-active.flac", "Active", "Artist");
+        Long trashed = createMusicWithFile("batch-trashed.flac", "Trashed", "Artist", "audio");
+        Long deleted = createMusicWithFile("batch-deleted.flac", "Deleted", "Artist", "audio");
+        trashMusic(trashed);
+        trashMusic(deleted);
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/music/{id}/trash", deleted)
+                .then()
+                .statusCode(200)
+                .body("deleteStatus", equalTo("deleted"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d, %d],
+                          "artist": "New Artist"
+                        }
+                        """.formatted(active, trashed))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d],
+                          "artist": "New Artist"
+                        }
+                        """.formatted(deleted))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+    }
+
+    @Test
+    void batchUpdateMetadataIgnoresBlankStringFields() {
+        Long musicId = createMusicWithFullMetadata(
+                "batch-blank.flac",
+                "Title",
+                "Old Artist",
+                "Old Album",
+                1999,
+                "Old Genre"
+        );
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "ids": [%d],
+                          "artist": "   ",
+                          "album": "",
+                          "year": 2001,
+                          "genre": "\\t"
+                        }
+                        """.formatted(musicId))
+                .when()
+                .put("/api/music/metadata/batch")
+                .then()
+                .statusCode(200)
+                .body("updated", equalTo(1));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{id}", musicId)
+                .then()
+                .statusCode(200)
+                .body("artist", equalTo("Old Artist"))
+                .body("album", equalTo("Old Album"))
+                .body("year", equalTo(2001))
+                .body("genre", equalTo("Old Genre"));
     }
 
     @Test
@@ -1214,6 +1478,29 @@ class MusicResourceTest {
             track.title = title;
             track.normalizedTitle = title.toLowerCase();
             track.artist = artist;
+            track.genre = genre;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createMusicWithFullMetadata(String fileName, String title, String artist, String album, int year, String genre) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.album = album;
+            track.year = year;
             track.genre = genre;
             track.persist();
 
