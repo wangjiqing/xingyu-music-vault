@@ -28,7 +28,7 @@ function clearToken() {
 <template>
   <el-card>
     <template #header>
-      <span>系统设置</span>
+      <span>设置</span>
     </template>
     <el-form label-width="120px" style="max-width: 600px">
       <el-form-item label="API Token">

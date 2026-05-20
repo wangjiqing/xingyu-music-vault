@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
   fetchMusicStats,
@@ -25,14 +25,32 @@ import {
   importArtworkFile,
   type ArtworkItem,
 } from '../api/artwork'
-
-const brokenImages = reactive(new Set<number>())
+import {
+  ARTWORK_STATUS,
+  DEFAULT_MUSIC_LIST_VIEW_MODE,
+  LYRIC_STATUS,
+  MUSIC_LIST_VIEW_MODE,
+  MUSIC_LIST_VIEW_MODE_STORAGE_KEY,
+  type MusicListViewMode,
+  lyricStatusLabel,
+  lyricStatusTagType,
+  sourceTypeLabel,
+} from '../constants/musicStatus'
+import ArtworkImage from '../components/music/ArtworkImage.vue'
+import MusicCard from '../components/music/MusicCard.vue'
 
 const list = ref<MusicItem[]>([])
 const loading = ref(false)
 const scanning = ref(false)
 const scanningLyrics = ref(false)
 const errorMessage = ref('')
+const tableRef = ref()
+
+const readInitialViewMode = (): MusicListViewMode => {
+  const saved = localStorage.getItem(MUSIC_LIST_VIEW_MODE_STORAGE_KEY)
+  return saved === MUSIC_LIST_VIEW_MODE.TABLE ? MUSIC_LIST_VIEW_MODE.TABLE : DEFAULT_MUSIC_LIST_VIEW_MODE
+}
+const viewMode = ref<MusicListViewMode>(readInitialViewMode())
 
 const query = reactive({
   page: 1,
@@ -72,6 +90,7 @@ const bindArtworkList = ref<ArtworkItem[]>([])
 const bindTargetMusic = ref<MusicItem | null>(null)
 const bindSubmitting = ref(false)
 
+// 仅作用于绑定弹窗内的封面缩略图，与 MusicCard / ArtworkImage 的兜底策略互不干扰
 const brokenBindThumbs = reactive(new Set<number>())
 
 const bindActiveTab = ref('select')
@@ -109,34 +128,17 @@ const permDeleteTarget = ref<MusicTrashItem | null>(null)
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
-const lyricStatusLabel = (status: string) => {
-  const map: Record<string, string> = {
-    BOUND: '有歌词',
-    NO_LYRIC: '无歌词',
-    UNMATCHED: '待匹配',
-    PARSE_FAILED: '解析失败',
-    MISSING_FILE: '文件缺失',
+watch(viewMode, (mode) => {
+  localStorage.setItem(MUSIC_LIST_VIEW_MODE_STORAGE_KEY, mode)
+  if (mode === MUSIC_LIST_VIEW_MODE.CARD) {
+    selectedRows.value = []
+    tableRef.value?.clearSelection?.()
   }
-  return map[status] || status
-}
+})
 
-const lyricStatusTagType = (status: string) => {
-  const map: Record<string, string> = {
-    BOUND: 'success',
-    NO_LYRIC: 'info',
-    UNMATCHED: 'warning',
-    PARSE_FAILED: 'danger',
-    MISSING_FILE: 'danger',
-  }
-  return map[status] || 'info'
-}
-
-const sourceTypeLabel = (sourceType: string) => {
-  const map: Record<string, string> = {
-    LOCAL_FILE: '本地文件',
-  }
-  return map[sourceType] || sourceType
-}
+onUnmounted(() => {
+  viewMode.value // avoid unused warning
+})
 
 function formatSize(bytes: number): string {
   if (!bytes) return '-'
@@ -322,7 +324,6 @@ async function handleUpload() {
     await importArtworkFile(bindTargetMusic.value.id, uploadFile.value)
     ElMessage.success('封面已导入并绑定')
     bindDialogVisible.value = false
-    brokenImages.delete(bindTargetMusic.value.id)
     await loadList()
   } catch {
     ElMessage.error('导入封面失败')
@@ -340,7 +341,6 @@ async function handleUnbind(row: MusicItem) {
   try {
     await unbindArtworkFromMusic(row.id)
     ElMessage.success('封面已取消绑定')
-    brokenImages.delete(row.id)
     await loadList()
   } catch {
     ElMessage.error('取消绑定失败')
@@ -537,6 +537,12 @@ function trashDisplayTitle(row: MusicTrashItem): string {
   return row.title || row.fileName || '--'
 }
 
+function emptyText(): string {
+  return query.keyword || query.hasLyrics != null || query.hasArtwork != null || query.metadata
+    ? '没有匹配的结果'
+    : '暂无音乐文件，请点击「扫描音乐目录」导入'
+}
+
 function handlePageChange(page: number) {
   query.page = page
   loadList()
@@ -558,7 +564,7 @@ onMounted(() => {
   <el-card>
     <template #header>
       <div class="card-header">
-        <span>音乐库</span>
+        <span>全部歌曲</span>
         <div class="header-actions">
           <el-button type="primary" size="small" :loading="scanning" @click="handleScan">
             扫描音乐目录
@@ -672,14 +678,34 @@ onMounted(() => {
         <el-option label="已整理" value="complete" />
         <el-option label="待整理" value="incomplete" />
       </el-select>
+      <el-segmented
+        v-model="viewMode"
+        class="view-switch"
+        :options="[
+          { label: '表格视图', value: MUSIC_LIST_VIEW_MODE.TABLE },
+          { label: '卡片视图', value: MUSIC_LIST_VIEW_MODE.CARD },
+        ]"
+      >
+        <template #default="{ item }">
+          <div class="view-switch-item">
+            <el-icon>
+              <ListIcon v-if="item.value === MUSIC_LIST_VIEW_MODE.TABLE" />
+              <Grid v-else />
+            </el-icon>
+            <span>{{ item.label }}</span>
+          </div>
+        </template>
+      </el-segmented>
     </div>
 
+    <!-- Table and card views intentionally share query/page state so filters and pagination stay in sync. -->
     <el-table
+      v-if="viewMode === MUSIC_LIST_VIEW_MODE.TABLE"
       ref="tableRef"
       :data="list"
       v-loading="loading"
       @selection-change="handleSelectionChange"
-      :empty-text="query.keyword || query.hasLyrics != null || query.hasArtwork != null || query.metadata ? '没有匹配的结果' : '暂无音乐文件，请点击「扫描音乐目录」导入'"
+      :empty-text="emptyText()"
       style="width: 100%"
     >
       <el-table-column type="selection" width="40" />
@@ -732,18 +758,14 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="封面" width="80" align="center">
         <template #default="{ row }">
-          <img
-            v-if="row.artworkStatus === 'BOUND' && row.artworkFileExists !== false && row.artworkPreviewUrl && !brokenImages.has(row.id)"
+          <ArtworkImage
+            v-if="row.artworkStatus === ARTWORK_STATUS.BOUND"
             :src="row.artworkPreviewUrl"
-            class="cover-thumb"
-            @error="brokenImages.add(row.id)"
+            :file-exists="row.artworkFileExists"
+            :alt="displayTitle(row)"
+            :size="48"
+            :radius="4"
           />
-          <el-tag v-else-if="row.artworkStatus === 'BOUND' && row.artworkFileExists === false" size="small" type="danger">
-            文件缺失
-          </el-tag>
-          <el-tag v-else-if="row.artworkStatus === 'BOUND' && brokenImages.has(row.id)" size="small" type="warning">
-            加载失败
-          </el-tag>
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
@@ -759,7 +781,7 @@ onMounted(() => {
             编辑
           </el-button>
           <el-button
-            v-if="row.lyricStatus === 'BOUND'"
+            v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
             type="primary"
             size="small"
             text
@@ -773,9 +795,9 @@ onMounted(() => {
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="bind" :icon="PictureFilled">
-                  {{ row.artworkStatus === 'BOUND' ? '更换封面' : '选择/导入封面' }}
+                  {{ row.artworkStatus === ARTWORK_STATUS.BOUND ? '更换封面' : '选择/导入封面' }}
                 </el-dropdown-item>
-                <el-dropdown-item v-if="row.artworkStatus === 'BOUND'" command="unbind" divided>
+                <el-dropdown-item v-if="row.artworkStatus === ARTWORK_STATUS.BOUND" command="unbind" divided>
                   取消封面
                 </el-dropdown-item>
                 <el-dropdown-item command="delete" divided style="color: #f56c6c" :icon="Delete">
@@ -787,6 +809,22 @@ onMounted(() => {
         </template>
       </el-table-column>
     </el-table>
+
+    <div v-else v-loading="loading" class="card-view">
+      <div v-if="list.length > 0" class="music-card-grid">
+        <MusicCard
+          v-for="item in list"
+          :key="item.id"
+          :item="item"
+          @edit="openEditDialog"
+          @lyric="handleViewLyric"
+          @bind="handleBindOpen"
+          @unbind="handleUnbind"
+          @delete="openDeleteDialog"
+        />
+      </div>
+      <el-empty v-else :description="emptyText()" />
+    </div>
 
     <div style="margin-top: 16px; display: flex; justify-content: flex-end">
       <el-pagination
@@ -1252,12 +1290,6 @@ onMounted(() => {
   overflow-y: auto;
   margin: 0;
 }
-.cover-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 4px;
-}
 .bind-filter-bar {
   display: flex;
   align-items: center;
@@ -1300,6 +1332,63 @@ onMounted(() => {
 .search-bar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 12px;
+}
+.view-switch {
+  margin-left: auto;
+}
+.view-switch-item {
+  min-width: 78px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.card-view {
+  min-height: 240px;
+}
+.music-card-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1680px) {
+  .music-card-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1360px) {
+  .music-card-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1080px) {
+  .music-card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .search-bar {
+    align-items: stretch;
+  }
+  .search-bar :deep(.el-input),
+  .search-bar :deep(.el-select) {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+  .view-switch {
+    width: 100%;
+    margin-left: 0;
+  }
+  .music-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .music-card-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
