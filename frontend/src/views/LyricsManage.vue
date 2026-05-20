@@ -9,6 +9,16 @@ import {
   type LyricListItem,
   type LyricDetail,
 } from '../api/lyrics'
+import {
+  LYRIC_BIND_STATUS,
+  LYRIC_PARSE_STATUS,
+  SOURCE_TYPE,
+  lyricBindStatusLabel,
+  lyricBindStatusTagType,
+  lyricParseStatusLabel,
+  lyricParseStatusTagType,
+  sourceTypeLabel,
+} from '../constants/musicStatus'
 
 const list = ref<LyricListItem[]>([])
 const loading = ref(false)
@@ -28,41 +38,6 @@ const total = ref(0)
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const currentLyric = ref<LyricDetail | null>(null)
-
-const sourceTypeLabel = (type: string) => {
-  const map: Record<string, string> = {
-    LOCAL_FILE: '本地文件',
-    MANUAL: '手动',
-    ONLINE: '在线',
-  }
-  return map[type] || type
-}
-
-const bindStatusLabel = (status: string) => {
-  return status === 'BOUND' ? '已绑定' : '未绑定'
-}
-
-const bindStatusTagType = (status: string) => {
-  return status === 'BOUND' ? 'success' : 'info'
-}
-
-const parseStatusLabel = (status: string) => {
-  const map: Record<string, string> = {
-    SUCCESS: '成功',
-    FAILED: '失败',
-    UNKNOWN: '未知',
-  }
-  return map[status] || status
-}
-
-const parseStatusTagType = (status: string) => {
-  const map: Record<string, string> = {
-    SUCCESS: 'success',
-    FAILED: 'danger',
-    UNKNOWN: 'warning',
-  }
-  return map[status] || 'info'
-}
 
 const matchTypeLabel = (type: string | null) => {
   const map: Record<string, string> = {
@@ -206,8 +181,8 @@ onMounted(() => {
         @change="handleSearch"
       >
         <el-option label="全部" value="" />
-        <el-option label="已绑定" value="BOUND" />
-        <el-option label="未绑定" value="UNBOUND" />
+        <el-option label="已绑定" :value="LYRIC_BIND_STATUS.BOUND" />
+        <el-option label="未绑定" :value="LYRIC_BIND_STATUS.UNBOUND" />
       </el-select>
       <el-select
         v-model="filter.parseStatus"
@@ -218,9 +193,9 @@ onMounted(() => {
         @change="handleSearch"
       >
         <el-option label="全部" value="" />
-        <el-option label="成功" value="SUCCESS" />
-        <el-option label="失败" value="FAILED" />
-        <el-option label="未知" value="UNKNOWN" />
+        <el-option label="成功" :value="LYRIC_PARSE_STATUS.SUCCESS" />
+        <el-option label="失败" :value="LYRIC_PARSE_STATUS.FAILED" />
+        <el-option label="未知" :value="LYRIC_PARSE_STATUS.UNKNOWN" />
       </el-select>
       <el-select
         v-model="filter.sourceType"
@@ -231,9 +206,9 @@ onMounted(() => {
         @change="handleSearch"
       >
         <el-option label="全部" value="" />
-        <el-option label="本地文件" value="LOCAL_FILE" />
-        <el-option label="手动（即将推出）" value="MANUAL" />
-        <el-option label="在线（即将推出）" value="ONLINE" />
+        <el-option label="本地文件" :value="SOURCE_TYPE.LOCAL_FILE" />
+        <el-option label="手动（即将推出）" :value="SOURCE_TYPE.MANUAL" />
+        <el-option label="在线（即将推出）" :value="SOURCE_TYPE.ONLINE" />
       </el-select>
       <el-button size="small" type="primary" style="margin-left: 12px" @click="handleSearch">
         查询
@@ -271,21 +246,21 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="绑定状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="bindStatusTagType(row.bindStatus)" size="small">
-            {{ bindStatusLabel(row.bindStatus) }}
+          <el-tag :type="lyricBindStatusTagType(row.bindStatus)" size="small">
+            {{ lyricBindStatusLabel(row.bindStatus) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="解析状态" width="100" align="center">
         <template #default="{ row }">
-          <el-tag :type="parseStatusTagType(row.parseStatus)" size="small">
-            {{ parseStatusLabel(row.parseStatus) }}
+          <el-tag :type="lyricParseStatusTagType(row.parseStatus)" size="small">
+            {{ lyricParseStatusLabel(row.parseStatus) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="关联歌曲" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">
-          <template v-if="row.bindStatus === 'BOUND' && row.boundSongTitle">
+          <template v-if="row.bindStatus === LYRIC_BIND_STATUS.BOUND && row.boundSongTitle">
             {{ row.boundSongTitle }}
             <span v-if="row.boundSongArtist" style="color: #909399">
               — {{ row.boundSongArtist }}
@@ -365,13 +340,13 @@ onMounted(() => {
             {{ currentLyric.format || '--' }}
           </el-descriptions-item>
           <el-descriptions-item label="解析状态">
-            <el-tag :type="parseStatusTagType(currentLyric.parseStatus)" size="small">
-              {{ parseStatusLabel(currentLyric.parseStatus) }}
+            <el-tag :type="lyricParseStatusTagType(currentLyric.parseStatus)" size="small">
+              {{ lyricParseStatusLabel(currentLyric.parseStatus) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="绑定状态">
-            <el-tag :type="bindStatusTagType(currentLyric.bindStatus)" size="small">
-              {{ bindStatusLabel(currentLyric.bindStatus) }}
+            <el-tag :type="lyricBindStatusTagType(currentLyric.bindStatus)" size="small">
+              {{ lyricBindStatusLabel(currentLyric.bindStatus) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="文件路径" :span="2" v-if="currentLyric.sourcePath">

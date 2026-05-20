@@ -6,12 +6,11 @@ import {
   Headset,
   Mic,
   Picture,
-  List,
-  VideoPlay,
   Setting,
   Expand,
   Fold,
-  FolderOpened,
+  User,
+  Collection,
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -22,14 +21,13 @@ const isCollapsed = ref(false)
 const activeMenu = computed(() => route.path)
 
 const menuItems = [
-  { path: '/dashboard', title: '仪表盘', icon: DataBoard },
-  { path: '/music', title: '音乐库', icon: Headset },
-  { path: '/lyrics', title: '歌词管理', icon: Mic },
-  { path: '/artwork', title: '封面管理', icon: Picture },
-  { path: '/review', title: '待处理队列', icon: List },
-  { path: '/scan-jobs', title: '扫描任务', icon: VideoPlay },
-  { path: '/track-files', title: '音乐文件', icon: FolderOpened },
-  { path: '/settings', title: '系统设置', icon: Setting },
+  { path: '/dashboard', title: '首页', icon: DataBoard },
+  { path: '/music', title: '全部歌曲', icon: Headset },
+  { path: '/artists', title: '歌手', icon: User },
+  { path: '/albums', title: '专辑', icon: Collection },
+  { path: '/lyrics', title: '歌词', icon: Mic },
+  { path: '/artwork', title: '封面', icon: Picture },
+  { path: '/settings', title: '设置', icon: Setting },
 ]
 
 function navigate(path: string) {
@@ -71,7 +69,7 @@ function toggleCollapse() {
         </div>
         <div class="header-right">
           <el-tag type="info" size="small">
-            {{ route.meta.title || '首页' }}
+            {{ route.meta.title || '概览' }}
           </el-tag>
         </div>
       </el-header>
