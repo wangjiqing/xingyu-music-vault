@@ -38,6 +38,7 @@ export interface MusicListQuery {
   page: number
   size: number
   keyword?: string
+  artistKey?: string
   year?: number
   genre?: string
   hasLyrics?: boolean | null
@@ -143,6 +144,34 @@ export interface ArtistListQuery {
 
 export async function fetchArtistList(query: ArtistListQuery): Promise<PageResponse<ArtistItem>> {
   const { data } = await http.get('/api/music/artists', { params: query })
+  return data
+}
+
+export interface ArtistAlbumItem {
+  album: string
+  albumKey: string
+  year: number | null
+  trackCount: number
+  lyricsCount: number
+  artworkCount: number
+  metadataIncompleteCount: number
+  coverMusicId: number | null
+  sampleMusicId: number | null
+}
+
+export interface ArtistDetailResponse {
+  artist: string
+  artistKey: string
+  trackCount: number
+  albumCount: number
+  lyricsCount: number
+  artworkCount: number
+  metadataIncompleteCount: number
+  albums: ArtistAlbumItem[]
+}
+
+export async function fetchArtistDetail(artistKey: string): Promise<ArtistDetailResponse> {
+  const { data } = await http.get(`/api/music/artists/${encodeURIComponent(artistKey)}`)
   return data
 }
 

@@ -225,6 +225,31 @@ public final class MusicDtos {
     ) {
     }
 
+    public record ArtistDetailResponse(
+            String artist,
+            String artistKey,
+            long trackCount,
+            long albumCount,
+            long lyricsCount,
+            long artworkCount,
+            long metadataIncompleteCount,
+            List<ArtistAlbumResponse> albums
+    ) {
+    }
+
+    public record ArtistAlbumResponse(
+            String album,
+            String albumKey,
+            Integer year,
+            long trackCount,
+            long lyricsCount,
+            long artworkCount,
+            long metadataIncompleteCount,
+            Long coverMusicId,
+            Long sampleMusicId
+    ) {
+    }
+
     public record MusicTrashResponse(
             Long id,
             String title,

@@ -1258,6 +1258,122 @@ class MusicResourceTest {
     }
 
     @Test
+    void artistDetailReturnsOverviewAndAlbumGroupsByArtistKey() throws IOException {
+        Long jayFirst = createMusicWithFullMetadata("detail-jay-1.flac", "晴天", " 周杰伦 ", "叶惠美", 2003, "Pop");
+        Long jaySecond = createMusicWithFullMetadata("detail-jay-2.flac", "七里香", "周杰伦", "七里香", 2004, "Pop");
+        Long jayNoAlbum = createMusic("detail-jay-no-album.flac", "无专辑", "周杰伦");
+        createLyricOnly(jayFirst);
+        createArtworkOnly(jaySecond);
+        createMusicWithFullMetadata("detail-eason.flac", "十年", "陈奕迅", "黑白灰", 2003, "Pop");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .urlEncodingEnabled(false)
+                .when()
+                .get("/api/music/artists/%E5%91%A8%E6%9D%B0%E4%BC%A6")
+                .then()
+                .statusCode(200)
+                .body("artist", equalTo("周杰伦"))
+                .body("artistKey", equalTo("%E5%91%A8%E6%9D%B0%E4%BC%A6"))
+                .body("trackCount", equalTo(3))
+                .body("albumCount", equalTo(2))
+                .body("lyricsCount", equalTo(1))
+                .body("artworkCount", equalTo(1))
+                .body("metadataIncompleteCount", equalTo(1))
+                .body("albums", hasSize(3))
+                .body("albums.find { it.album == '叶惠美' }.albumKey", equalTo("%E5%8F%B6%E6%83%A0%E7%BE%8E"))
+                .body("albums.find { it.album == '叶惠美' }.year", equalTo(2003))
+                .body("albums.find { it.album == '叶惠美' }.trackCount", equalTo(1))
+                .body("albums.find { it.album == '叶惠美' }.lyricsCount", equalTo(1))
+                .body("albums.find { it.album == '七里香' }.coverMusicId", equalTo(jaySecond.intValue()))
+                .body("albums.find { it.album == '七里香' }.sampleMusicId", equalTo(jaySecond.intValue()))
+                .body("albums.find { it.album == '未知专辑' }.albumKey", equalTo("__unknown__"))
+                .body("albums.find { it.album == '未知专辑' }.sampleMusicId", equalTo(jayNoAlbum.intValue()))
+                .body("albums.find { it.album == '未知专辑' }.metadataIncompleteCount", equalTo(1));
+    }
+
+    @Test
+    void artistDetailMatchesSlashArtistKeyAndUnknownArtist() {
+        Long acdc = createMusicWithFullMetadata("detail-acdc.flac", "Back in Black", "AC/DC", "Back in Black", 1980, "Rock");
+        Long unknownWithAlbum = createMusicWithAlbum("detail-unknown-album.flac", "空歌手", "   ", "孤儿专辑");
+        Long legacy = QuarkusTransaction.requiringNew().call(() -> {
+            TrackFile trackFile = new TrackFile();
+            trackFile.filePath = musicDir.resolve("detail-legacy.flac").toAbsolutePath().normalize().toString();
+            trackFile.fileName = "detail-legacy.flac";
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .urlEncodingEnabled(false)
+                .when()
+                .get("/api/music/artists/ac%2Fdc")
+                .then()
+                .statusCode(200)
+                .body("artist", equalTo("AC/DC"))
+                .body("artistKey", equalTo("ac%2Fdc"))
+                .body("trackCount", equalTo(1))
+                .body("albums", hasSize(1))
+                .body("albums[0].sampleMusicId", equalTo(acdc.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists/__unknown__")
+                .then()
+                .statusCode(200)
+                .body("artist", equalTo("未知歌手"))
+                .body("artistKey", equalTo("__unknown__"))
+                .body("trackCount", equalTo(2))
+                .body("metadataIncompleteCount", equalTo(2))
+                .body("albums", hasSize(2))
+                .body("albums.find { it.album == '孤儿专辑' }.sampleMusicId", equalTo(unknownWithAlbum.intValue()))
+                .body("albums.find { it.album == '未知专辑' }.sampleMusicId", equalTo(legacy.intValue()));
+    }
+
+    @Test
+    void listFiltersByArtistKeyAndCombinesWithExistingFilters() {
+        Long jayWithLyrics = createMusicWithFullMetadata("filter-jay-lyrics.flac", "晴天", "周杰伦", "叶惠美", 2003, "Pop");
+        Long jayNoLyrics = createMusicWithFullMetadata("filter-jay-no-lyrics.flac", "七里香", "周杰伦", "七里香", 2004, "Pop");
+        createLyricOnly(jayWithLyrics);
+        createMusicWithFullMetadata("filter-eason.flac", "十年", "陈奕迅", "黑白灰", 2003, "Pop");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&page=0&pageSize=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2))
+                .body("items.find { it.id == %d }.artist".formatted(jayWithLyrics), equalTo("周杰伦"))
+                .body("items.find { it.id == %d }.artist".formatted(jayNoLyrics), equalTo("周杰伦"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&hasLyrics=true&keyword=晴")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(jayWithLyrics.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&metadata=complete")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2));
+    }
+
+    @Test
     void listFiltersByKeyword() throws IOException {
         createMusicWithFile("hello-world.flac", "Hello World", "Famous Artist", "audio");
         createMusicWithFile("famous-song.flac", "Another Title", "Famous Band", "audio");

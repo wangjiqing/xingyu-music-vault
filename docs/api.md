@@ -149,11 +149,12 @@ Content-Type: application/json
 }
 ```
 
-### 歌手（v0.8.1）
+### 歌手（v0.8.1 / v0.8.2）
 
-|| Method | Path | 说明 |
+| Method | Path | 说明 |
 |--------|------|------|
-|| GET | `/api/music/artists` | 歌手聚合列表（支持搜索、排序、分页） |
+| GET | `/api/music/artists` | 歌手聚合列表（支持搜索、排序、分页） |
+| GET | `/api/music/artists/{artistKey}` | 歌手详情（含统计概览和专辑分组）（v0.8.2） |
 
 #### 歌手列表
 
@@ -178,7 +179,7 @@ Authorization: Bearer change-me
   "items": [
     {
       "artist": "周杰伦",
-      "artistKey": "周杰伦",
+      "artistKey": "%E5%91%A8%E6%9D%B0%E4%BC%A6",
       "trackCount": 15,
       "albumCount": 3,
       "lyricsCount": 14,
@@ -187,12 +188,12 @@ Authorization: Bearer change-me
     }
   ],
   "page": 1,
-  "pageSize": 24,
+  "pageSize": 20,
   "total": 1
 }
 ```
 
-`artist` 为歌手名称，`artistKey` 为小写化后的歌手标识，`metadataIncompleteCount` 为该歌手歌曲中元数据不完整的数量。
+`artist` 为歌手名称，`artistKey` 为 URL-safe 编码标识，`metadataIncompleteCount` 为该歌手歌曲中元数据不完整的数量。
 
 #### curl 验证
 
@@ -200,6 +201,51 @@ Authorization: Bearer change-me
 curl "http://localhost:8080/api/music/artists?page=1&pageSize=20" \
   -H "Authorization: Bearer change-me"
 ```
+
+#### 歌手详情
+
+```http
+GET /api/music/artists/%E5%91%A8%E6%9D%B0%E4%BC%A6
+Authorization: Bearer change-me
+```
+
+路径参数 `artistKey` 为歌手名的 URL-safe 编码标识，规则为：`trim` → `lowerCase(Locale.ROOT)` → `URLEncoder.encode(..., UTF-8)`。例如：
+
+- 周杰伦 → `%E5%91%A8%E6%9D%B0%E4%BC%A6`
+- AC/DC → `ac%2Fdc`
+- Aimer feat. chelly → `aimer+feat.+chelly`
+- 空歌手（Unknown）→ `__unknown__`
+
+歌手不存在时返回 `404`。
+
+响应示例：
+
+```json
+{
+  "artist": "周杰伦",
+  "artistKey": "%E5%91%A8%E6%9D%B0%E4%BC%A6",
+  "trackCount": 15,
+  "albumCount": 3,
+  "lyricsCount": 14,
+  "artworkCount": 12,
+  "metadataIncompleteCount": 1,
+  "albums": [
+    {
+      "album": "叶惠美",
+      "albumKey": "%E5%8F%B6%E6%83%A0%E7%BE%8E",
+      "year": 2003,
+      "trackCount": 5,
+      "lyricsCount": 5,
+      "artworkCount": 4,
+      "metadataIncompleteCount": 0,
+      "coverMusicId": 123,
+      "sampleMusicId": 45
+    }
+  ]
+}
+```
+
+`artist` 为歌手原名，`artistKey` 为 URL-safe 编码标识，`metadataIncompleteCount` 为该歌手歌曲中元数据不完整的数量。`albums` 为该歌手的专辑分组列表，按专辑名升序排列，每项含年份（取分组内第一条歌曲的年份，为空则 null）、曲目数、歌词数、封面数、待整理数量、`coverMusicId`（专辑封面歌曲 ID）、`sampleMusicId`（示例歌曲 ID）。
 
 ### 扫描任务
 
@@ -1001,12 +1047,6 @@ Authorization: Bearer change-me
 | Method | Path | 说明 |
 |--------|------|------|
 | POST | `/api/tracks/match` | 发起曲目匹配 |
-
-### 歌手
-
-| Method | Path | 说明 |
-|--------|------|------|
-| GET | `/api/music/artists/{artist}` | 歌手详情（含专辑列表、歌曲列表）（规划中，v0.8.2） |
 
 ### 专辑
 
