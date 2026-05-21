@@ -149,6 +149,58 @@ Content-Type: application/json
 }
 ```
 
+### 歌手（v0.8.1）
+
+|| Method | Path | 说明 |
+|--------|------|------|
+|| GET | `/api/music/artists` | 歌手聚合列表（支持搜索、排序、分页） |
+
+#### 歌手列表
+
+```http
+GET /api/music/artists?page=1&pageSize=20&keyword=周杰伦&sort=trackCountDesc
+Authorization: Bearer change-me
+```
+
+参数：
+
+| 参数 | 说明 |
+|------|------|
+| `page` | 页码，从 1 开始，默认 1 |
+| `pageSize` | 每页条数，默认 20，最大 100 |
+| `keyword` | 按歌手名模糊搜索（可选） |
+| `sort` | 排序方式：`trackCountDesc`（歌曲数降序，默认）、`nameAsc`（名称升序）、`albumCountDesc`（专辑数降序）、`metadataIncompleteDesc`（待整理数量降序） |
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "artist": "周杰伦",
+      "artistKey": "周杰伦",
+      "trackCount": 15,
+      "albumCount": 3,
+      "lyricsCount": 14,
+      "artworkCount": 12,
+      "metadataIncompleteCount": 1
+    }
+  ],
+  "page": 1,
+  "pageSize": 24,
+  "total": 1
+}
+```
+
+`artist` 为歌手名称，`artistKey` 为小写化后的歌手标识，`metadataIncompleteCount` 为该歌手歌曲中元数据不完整的数量。
+
+#### curl 验证
+
+```bash
+curl "http://localhost:8080/api/music/artists?page=1&pageSize=20" \
+  -H "Authorization: Bearer change-me"
+```
+
 ### 扫描任务
 
 | Method | Path | 说明 |
@@ -954,8 +1006,7 @@ Authorization: Bearer change-me
 
 | Method | Path | 说明 |
 |--------|------|------|
-| GET | `/api/artists` | 歌手列表 |
-| GET | `/api/artists/{id}` | 歌手详情（含专辑列表） |
+| GET | `/api/music/artists/{artist}` | 歌手详情（含专辑列表、歌曲列表）（规划中，v0.8.2） |
 
 ### 专辑
 

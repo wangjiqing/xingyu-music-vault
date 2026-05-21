@@ -206,6 +206,25 @@ public final class MusicDtos {
             long trashed
     ) {}
 
+    public record ArtistPageResponse(
+            List<ArtistResponse> items,
+            long total,
+            int page,
+            int pageSize
+    ) {
+    }
+
+    public record ArtistResponse(
+            String artist,
+            String artistKey,
+            long trackCount,
+            long albumCount,
+            long lyricsCount,
+            long artworkCount,
+            long metadataIncompleteCount
+    ) {
+    }
+
     public record MusicTrashResponse(
             Long id,
             String title,
