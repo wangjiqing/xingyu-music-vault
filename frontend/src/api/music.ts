@@ -124,6 +124,28 @@ export async function permanentlyDeleteMusic(id: number): Promise<MusicFileInfo>
   return data
 }
 
+export interface ArtistItem {
+  artist: string
+  artistKey: string
+  trackCount: number
+  albumCount: number
+  lyricsCount: number
+  artworkCount: number
+  metadataIncompleteCount: number
+}
+
+export interface ArtistListQuery {
+  keyword?: string
+  page: number
+  pageSize: number
+  sort?: string
+}
+
+export async function fetchArtistList(query: ArtistListQuery): Promise<PageResponse<ArtistItem>> {
+  const { data } = await http.get('/api/music/artists', { params: query })
+  return data
+}
+
 export interface MusicStats {
   total: number
   metadataIncomplete: number

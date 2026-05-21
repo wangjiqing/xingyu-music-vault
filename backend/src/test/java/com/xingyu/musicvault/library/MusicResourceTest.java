@@ -1165,6 +1165,97 @@ class MusicResourceTest {
     }
 
     @Test
+    void artistsAggregatesActiveMusicAndSupportsFilteringPagingAndSorting() throws IOException {
+        Long jayOne = createMusicWithAlbum("artist-jay-1.flac", "晴天", " 周杰伦 ", "叶惠美");
+        Long jayTwo = createMusicWithAlbum("artist-jay-2.flac", "七里香", "周杰伦", "七里香");
+        createLyricOnly(jayOne);
+        createArtworkOnly(jayTwo);
+        createMusic("artist-eason.flac", "十年", "陈奕迅");
+        createMusicWithAlbum("artist-blank.flac", "空歌手", "   ", "未知专辑");
+        Long trashed = createMusicWithFile("artist-trashed.flac", "已删除", "被删除歌手", "audio");
+        trashMusic(trashed);
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = new TrackFile();
+            trackFile.filePath = musicDir.resolve("artist-legacy.flac").toAbsolutePath().normalize().toString();
+            trackFile.fileName = "artist-legacy.flac";
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(1))
+                .body("pageSize", equalTo(20))
+                .body("total", equalTo(3))
+                .body("items", hasSize(3))
+                .body("items.find { it.artist == '周杰伦' }.artistKey", equalTo("周杰伦"))
+                .body("items.find { it.artist == '周杰伦' }.trackCount", equalTo(2))
+                .body("items.find { it.artist == '周杰伦' }.albumCount", equalTo(2))
+                .body("items.find { it.artist == '周杰伦' }.lyricsCount", equalTo(1))
+                .body("items.find { it.artist == '周杰伦' }.artworkCount", equalTo(1))
+                .body("items.find { it.artist == '周杰伦' }.metadataIncompleteCount", equalTo(0))
+                .body("items.find { it.artist == '未知歌手' }.artistKey", equalTo("__unknown__"))
+                .body("items.find { it.artist == '未知歌手' }.trackCount", equalTo(2))
+                .body("items.find { it.artist == '未知歌手' }.albumCount", equalTo(1))
+                .body("items.find { it.artist == '未知歌手' }.lyricsCount", equalTo(0))
+                .body("items.find { it.artist == '未知歌手' }.artworkCount", equalTo(0))
+                .body("items.find { it.artist == '未知歌手' }.metadataIncompleteCount", equalTo(2));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists?keyword=周")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("total", equalTo(1))
+                .body("items[0].artist", equalTo("周杰伦"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists?page=2&pageSize=1&sort=nameAsc")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(2))
+                .body("pageSize", equalTo(1))
+                .body("items", hasSize(1))
+                .body("total", equalTo(3));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists?sort=albumCountDesc")
+                .then()
+                .statusCode(200)
+                .body("items[0].artist", equalTo("周杰伦"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/artists?sort=metadataIncompleteDesc")
+                .then()
+                .statusCode(200)
+                .body("items[0].artist", equalTo("未知歌手"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?size=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(5))
+                .body("total", equalTo(5));
+    }
+
+    @Test
     void listFiltersByKeyword() throws IOException {
         createMusicWithFile("hello-world.flac", "Hello World", "Famous Artist", "audio");
         createMusicWithFile("famous-song.flac", "Another Title", "Famous Band", "audio");

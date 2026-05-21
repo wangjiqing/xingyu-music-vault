@@ -28,6 +28,12 @@ const router = createRouter({
           meta: { title: '歌手' },
         },
         {
+          path: 'artists/:artistKey',
+          name: 'ArtistDetail',
+          component: () => import('../views/ArtistDetailView.vue'),
+          meta: { title: '歌手详情', hidden: true },
+        },
+        {
           path: 'albums',
           name: 'Albums',
           component: () => import('../views/AlbumsView.vue'),

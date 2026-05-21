@@ -8,6 +8,8 @@ import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.MusicDtos.MusicFileResponse;
+import com.xingyu.musicvault.library.MusicDtos.ArtistPageResponse;
+import com.xingyu.musicvault.library.MusicDtos.ArtistResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataBatchUpdateRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataBatchUpdateResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataUpdateRequest;
@@ -49,7 +51,10 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -67,6 +72,8 @@ public class MusicResource {
     private static final String DELETE_STATUS_DELETED = "deleted";
     private static final String TRASH_DIRECTORY_NAME = ".music-vault-trash";
     private static final int MAX_BATCH_METADATA_UPDATE_IDS = 500;
+    private static final String UNKNOWN_ARTIST = "未知歌手";
+    private static final String UNKNOWN_ARTIST_KEY = "__unknown__";
 
     @Inject
     MusicVaultConfig config;
@@ -192,6 +199,61 @@ public class MusicResource {
         return trackFiles.stream()
                 .map(trackFile -> MusicTrashResponse.from(trackFile, trackOf(trackFile, tracksById)))
                 .toList();
+    }
+
+    @GET
+    @Path("/artists")
+    public ArtistPageResponse artists(
+            @QueryParam("keyword") String keyword,
+            @QueryParam("page") Integer page,
+            @QueryParam("pageSize") Integer pageSize,
+            @QueryParam("sort") String sort
+    ) {
+        int pageValue = resolveArtistPage(page);
+        int pageSizeValue = resolveArtistPageSize(pageSize);
+        String sortValue = resolveArtistSort(sort);
+
+        List<TrackFile> trackFiles = TrackFile.list(
+                "deleteStatus is null or deleteStatus = ?1",
+                DELETE_STATUS_ACTIVE
+        );
+        Map<Long, Track> tracksById = tracksById(trackFiles);
+        List<Long> musicIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
+        Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(musicIds);
+        Map<Long, ArtworkService.PrimaryArtworkSummary> artworksByMusicId = artworkService.primaryArtworkForMusicIds(musicIds);
+
+        Map<String, ArtistAggregate> aggregates = new LinkedHashMap<>();
+        for (TrackFile trackFile : trackFiles) {
+            Track track = trackOf(trackFile, tracksById);
+            String artist = artistDisplayName(track);
+            String artistKey = artistKeyOf(artist);
+            ArtistAggregate aggregate = aggregates.computeIfAbsent(artistKey, ignored -> new ArtistAggregate(artist, artistKey));
+            aggregate.trackCount++;
+            if (hasText(track == null ? null : track.album)) {
+                aggregate.albumNames.add(track.album.trim().toLowerCase(Locale.ROOT));
+            }
+            if (lyricsBySongId.containsKey(trackFile.id)) {
+                aggregate.lyricsCount++;
+            }
+            if (artworksByMusicId.containsKey(trackFile.id)) {
+                aggregate.artworkCount++;
+            }
+            if (track == null || metadataIncomplete(track)) {
+                aggregate.metadataIncompleteCount++;
+            }
+        }
+
+        String keywordValue = keyword == null ? null : keyword.trim().toLowerCase(Locale.ROOT);
+        List<ArtistResponse> allItems = aggregates.values().stream()
+                .filter(aggregate -> keywordValue == null || keywordValue.isBlank()
+                        || aggregate.artist.toLowerCase(Locale.ROOT).contains(keywordValue))
+                .map(ArtistAggregate::toResponse)
+                .sorted(artistComparator(sortValue))
+                .toList();
+
+        int fromIndex = Math.min((pageValue - 1) * pageSizeValue, allItems.size());
+        int toIndex = Math.min(fromIndex + pageSizeValue, allItems.size());
+        return new ArtistPageResponse(allItems.subList(fromIndex, toIndex), allItems.size(), pageValue, pageSizeValue);
     }
 
     @GET
@@ -576,6 +638,69 @@ public class MusicResource {
         return size;
     }
 
+    private int resolveArtistPage(Integer page) {
+        if (page == null) {
+            return 1;
+        }
+        if (page < 1) {
+            throw new BadRequestException("page must be greater than or equal to 1");
+        }
+        return page;
+    }
+
+    private int resolveArtistPageSize(Integer pageSize) {
+        if (pageSize == null) {
+            return 20;
+        }
+        if (pageSize < 1 || pageSize > 100) {
+            throw new BadRequestException("pageSize must be between 1 and 100");
+        }
+        return pageSize;
+    }
+
+    private String resolveArtistSort(String sort) {
+        if (sort == null || sort.isBlank()) {
+            return "trackCountDesc";
+        }
+        String value = sort.trim();
+        if (!Set.of("trackCountDesc", "nameAsc", "albumCountDesc", "metadataIncompleteDesc").contains(value)) {
+            throw new BadRequestException("sort must be trackCountDesc, nameAsc, albumCountDesc, or metadataIncompleteDesc");
+        }
+        return value;
+    }
+
+    private Comparator<ArtistResponse> artistComparator(String sort) {
+        Comparator<ArtistResponse> byName = Comparator.comparing(ArtistResponse::artist, String.CASE_INSENSITIVE_ORDER);
+        return switch (sort) {
+            case "nameAsc" -> byName;
+            case "albumCountDesc" -> Comparator.comparingLong(ArtistResponse::albumCount).reversed().thenComparing(byName);
+            case "metadataIncompleteDesc" -> Comparator.comparingLong(ArtistResponse::metadataIncompleteCount).reversed().thenComparing(byName);
+            default -> Comparator.comparingLong(ArtistResponse::trackCount).reversed().thenComparing(byName);
+        };
+    }
+
+    private String artistDisplayName(Track track) {
+        if (track == null || !hasText(track.artist)) {
+            return UNKNOWN_ARTIST;
+        }
+        return track.artist.trim();
+    }
+
+    private String artistKeyOf(String artist) {
+        if (UNKNOWN_ARTIST.equals(artist)) {
+            return UNKNOWN_ARTIST_KEY;
+        }
+        return artist.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean metadataIncomplete(Track track) {
+        return !hasText(track.title) || !hasText(track.artist) || !hasText(track.album);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private FilterQuery buildFilterQuery(
             String keyword,
             Integer year,
@@ -886,6 +1011,33 @@ public class MusicResource {
     }
 
     private record FilterQuery(String query, List<Object> parameters) {
+    }
+
+    private static final class ArtistAggregate {
+        private final String artist;
+        private final String artistKey;
+        private long trackCount;
+        private long lyricsCount;
+        private long artworkCount;
+        private long metadataIncompleteCount;
+        private final Set<String> albumNames = new HashSet<>();
+
+        private ArtistAggregate(String artist, String artistKey) {
+            this.artist = artist;
+            this.artistKey = artistKey;
+        }
+
+        private ArtistResponse toResponse() {
+            return new ArtistResponse(
+                    artist,
+                    artistKey,
+                    trackCount,
+                    albumNames.size(),
+                    lyricsCount,
+                    artworkCount,
+                    metadataIncompleteCount
+            );
+        }
     }
 
     private record DeletableMusicFile(
