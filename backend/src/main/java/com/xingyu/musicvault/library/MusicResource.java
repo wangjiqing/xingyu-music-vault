@@ -46,6 +46,8 @@ import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
@@ -690,7 +692,7 @@ public class MusicResource {
         if (UNKNOWN_ARTIST.equals(artist)) {
             return UNKNOWN_ARTIST_KEY;
         }
-        return artist.toLowerCase(Locale.ROOT);
+        return URLEncoder.encode(artist.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8);
     }
 
     private boolean metadataIncomplete(Track track) {

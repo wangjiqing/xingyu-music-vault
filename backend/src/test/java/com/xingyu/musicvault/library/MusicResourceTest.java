@@ -1171,6 +1171,7 @@ class MusicResourceTest {
         createLyricOnly(jayOne);
         createArtworkOnly(jayTwo);
         createMusic("artist-eason.flac", "十年", "陈奕迅");
+        createMusicWithAlbum("artist-slash.flac", "分隔符测试", "AC/DC", "Back in Black");
         createMusicWithAlbum("artist-blank.flac", "空歌手", "   ", "未知专辑");
         Long trashed = createMusicWithFile("artist-trashed.flac", "已删除", "被删除歌手", "audio");
         trashMusic(trashed);
@@ -1193,14 +1194,15 @@ class MusicResourceTest {
                 .statusCode(200)
                 .body("page", equalTo(1))
                 .body("pageSize", equalTo(20))
-                .body("total", equalTo(3))
-                .body("items", hasSize(3))
-                .body("items.find { it.artist == '周杰伦' }.artistKey", equalTo("周杰伦"))
+                .body("total", equalTo(4))
+                .body("items", hasSize(4))
+                .body("items.find { it.artist == '周杰伦' }.artistKey", equalTo("%E5%91%A8%E6%9D%B0%E4%BC%A6"))
                 .body("items.find { it.artist == '周杰伦' }.trackCount", equalTo(2))
                 .body("items.find { it.artist == '周杰伦' }.albumCount", equalTo(2))
                 .body("items.find { it.artist == '周杰伦' }.lyricsCount", equalTo(1))
                 .body("items.find { it.artist == '周杰伦' }.artworkCount", equalTo(1))
                 .body("items.find { it.artist == '周杰伦' }.metadataIncompleteCount", equalTo(0))
+                .body("items.find { it.artist == 'AC/DC' }.artistKey", equalTo("ac%2Fdc"))
                 .body("items.find { it.artist == '未知歌手' }.artistKey", equalTo("__unknown__"))
                 .body("items.find { it.artist == '未知歌手' }.trackCount", equalTo(2))
                 .body("items.find { it.artist == '未知歌手' }.albumCount", equalTo(1))
@@ -1227,7 +1229,7 @@ class MusicResourceTest {
                 .body("page", equalTo(2))
                 .body("pageSize", equalTo(1))
                 .body("items", hasSize(1))
-                .body("total", equalTo(3));
+                .body("total", equalTo(4));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -1251,8 +1253,8 @@ class MusicResourceTest {
                 .get("/api/music?size=20")
                 .then()
                 .statusCode(200)
-                .body("items", hasSize(5))
-                .body("total", equalTo(5));
+                .body("items", hasSize(6))
+                .body("total", equalTo(6));
     }
 
     @Test
