@@ -8,6 +8,8 @@ import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.MusicDtos.MusicFileResponse;
+import com.xingyu.musicvault.library.MusicDtos.ArtistAlbumResponse;
+import com.xingyu.musicvault.library.MusicDtos.ArtistDetailResponse;
 import com.xingyu.musicvault.library.MusicDtos.ArtistPageResponse;
 import com.xingyu.musicvault.library.MusicDtos.ArtistResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicMetadataBatchUpdateRequest;
@@ -28,6 +30,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.Encoded;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
@@ -46,6 +49,7 @@ import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -76,6 +80,8 @@ public class MusicResource {
     private static final int MAX_BATCH_METADATA_UPDATE_IDS = 500;
     private static final String UNKNOWN_ARTIST = "未知歌手";
     private static final String UNKNOWN_ARTIST_KEY = "__unknown__";
+    private static final String UNKNOWN_ALBUM = "未知专辑";
+    private static final String UNKNOWN_ALBUM_KEY = "__unknown__";
 
     @Inject
     MusicVaultConfig config;
@@ -129,7 +135,9 @@ public class MusicResource {
     public PageResponse<MusicResponse> list(
             @QueryParam("page") Integer page,
             @QueryParam("size") Integer size,
+            @QueryParam("pageSize") Integer pageSize,
             @QueryParam("keyword") String keyword,
+            @QueryParam("artistKey") String artistKey,
             @QueryParam("year") Integer year,
             @QueryParam("genre") String genre,
             @QueryParam("metadata") String metadata,
@@ -137,9 +145,9 @@ public class MusicResource {
             @QueryParam("hasArtwork") Boolean hasArtwork
     ) {
         int pageValue = resolvePage(page);
-        int sizeValue = resolveSize(size);
+        int sizeValue = resolveSize(size == null ? pageSize : size);
 
-        FilterQuery filter = buildFilterQuery(keyword, year, genre, metadata, hasLyrics, hasArtwork);
+        FilterQuery filter = buildFilterQuery(keyword, artistKey, year, genre, metadata, hasLyrics, hasArtwork);
         PanacheQuery<TrackFile> query = TrackFile.find(
                 filter.query(),
                 Sort.descending("createdAt"),
@@ -215,35 +223,7 @@ public class MusicResource {
         int pageSizeValue = resolveArtistPageSize(pageSize);
         String sortValue = resolveArtistSort(sort);
 
-        List<TrackFile> trackFiles = TrackFile.list(
-                "deleteStatus is null or deleteStatus = ?1",
-                DELETE_STATUS_ACTIVE
-        );
-        Map<Long, Track> tracksById = tracksById(trackFiles);
-        List<Long> musicIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
-        Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(musicIds);
-        Map<Long, ArtworkService.PrimaryArtworkSummary> artworksByMusicId = artworkService.primaryArtworkForMusicIds(musicIds);
-
-        Map<String, ArtistAggregate> aggregates = new LinkedHashMap<>();
-        for (TrackFile trackFile : trackFiles) {
-            Track track = trackOf(trackFile, tracksById);
-            String artist = artistDisplayName(track);
-            String artistKey = artistKeyOf(artist);
-            ArtistAggregate aggregate = aggregates.computeIfAbsent(artistKey, ignored -> new ArtistAggregate(artist, artistKey));
-            aggregate.trackCount++;
-            if (hasText(track == null ? null : track.album)) {
-                aggregate.albumNames.add(track.album.trim().toLowerCase(Locale.ROOT));
-            }
-            if (lyricsBySongId.containsKey(trackFile.id)) {
-                aggregate.lyricsCount++;
-            }
-            if (artworksByMusicId.containsKey(trackFile.id)) {
-                aggregate.artworkCount++;
-            }
-            if (track == null || metadataIncomplete(track)) {
-                aggregate.metadataIncompleteCount++;
-            }
-        }
+        Map<String, ArtistAggregate> aggregates = artistAggregates(activeTrackFiles());
 
         String keywordValue = keyword == null ? null : keyword.trim().toLowerCase(Locale.ROOT);
         List<ArtistResponse> allItems = aggregates.values().stream()
@@ -256,6 +236,17 @@ public class MusicResource {
         int fromIndex = Math.min((pageValue - 1) * pageSizeValue, allItems.size());
         int toIndex = Math.min(fromIndex + pageSizeValue, allItems.size());
         return new ArtistPageResponse(allItems.subList(fromIndex, toIndex), allItems.size(), pageValue, pageSizeValue);
+    }
+
+    @GET
+    @Path("/artists/{artistKey:.+}")
+    public ArtistDetailResponse artistDetail(@Encoded @PathParam("artistKey") String artistKey) {
+        String requestedArtistKey = canonicalArtistKey(artistKey);
+        ArtistAggregate aggregate = artistAggregates(activeTrackFiles()).get(requestedArtistKey);
+        if (aggregate == null) {
+            throw new NotFoundException("Artist not found");
+        }
+        return aggregate.toDetailResponse();
     }
 
     @GET
@@ -681,6 +672,33 @@ public class MusicResource {
         };
     }
 
+    private List<TrackFile> activeTrackFiles() {
+        return TrackFile.list(
+                "deleteStatus is null or deleteStatus = ?1",
+                DELETE_STATUS_ACTIVE
+        );
+    }
+
+    private Map<String, ArtistAggregate> artistAggregates(List<TrackFile> trackFiles) {
+        Map<Long, Track> tracksById = tracksById(trackFiles);
+        List<Long> musicIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
+        Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(musicIds);
+        Map<Long, ArtworkService.PrimaryArtworkSummary> artworksByMusicId = artworkService.primaryArtworkForMusicIds(musicIds);
+
+        Map<String, ArtistAggregate> aggregates = new LinkedHashMap<>();
+        for (TrackFile trackFile : trackFiles) {
+            Track track = trackOf(trackFile, tracksById);
+            String artist = artistDisplayName(track);
+            String artistKey = artistKeyOf(artist);
+            ArtistAggregate aggregate = aggregates.computeIfAbsent(artistKey, ignored -> new ArtistAggregate(artist, artistKey));
+            boolean hasLyrics = lyricsBySongId.containsKey(trackFile.id);
+            boolean hasArtwork = artworksByMusicId.containsKey(trackFile.id);
+            boolean metadataIncomplete = track == null || metadataIncomplete(track);
+            aggregate.addTrack(trackFile, track, hasLyrics, hasArtwork, metadataIncomplete);
+        }
+        return aggregates;
+    }
+
     private String artistDisplayName(Track track) {
         if (track == null || !hasText(track.artist)) {
             return UNKNOWN_ARTIST;
@@ -695,16 +713,43 @@ public class MusicResource {
         return URLEncoder.encode(artist.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8);
     }
 
+    private String canonicalArtistKey(String artistKey) {
+        if (artistKey == null || artistKey.isBlank()) {
+            throw new BadRequestException("artistKey must not be blank");
+        }
+        String value = artistKey.trim();
+        if (UNKNOWN_ARTIST_KEY.equals(value)) {
+            return UNKNOWN_ARTIST_KEY;
+        }
+        return artistKeyOf(URLDecoder.decode(value, StandardCharsets.UTF_8));
+    }
+
+    private static String albumDisplayName(Track track) {
+        if (track == null || !hasText(track.album)) {
+            return UNKNOWN_ALBUM;
+        }
+        return track.album.trim();
+    }
+
+    private static String albumKeyOf(Track track) {
+        if (track == null || !hasText(track.album)) {
+            return UNKNOWN_ALBUM_KEY;
+        }
+        String album = track.album.trim();
+        return URLEncoder.encode(album.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8);
+    }
+
     private boolean metadataIncomplete(Track track) {
         return !hasText(track.title) || !hasText(track.artist) || !hasText(track.album);
     }
 
-    private boolean hasText(String value) {
+    private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
     private FilterQuery buildFilterQuery(
             String keyword,
+            String artistKey,
             Integer year,
             String genre,
             String metadata,
@@ -724,6 +769,19 @@ public class MusicResource {
                     .append(" or lower(t.album) like ?").append(idx)
                     .append("))");
             params.add(like);
+        }
+
+        if (artistKey != null && !artistKey.isBlank()) {
+            String key = canonicalArtistKey(artistKey);
+            if (UNKNOWN_ARTIST_KEY.equals(key)) {
+                query.append(" and (trackId is null or trackId in (select t.id from Track t where t.artist is null or length(trim(t.artist)) = 0))");
+            } else {
+                int idx = params.size() + 1;
+                String artistName = URLDecoder.decode(key, StandardCharsets.UTF_8);
+                query.append(" and trackId in (select t.id from Track t where lower(trim(t.artist)) = ?")
+                        .append(idx).append(")");
+                params.add(artistName.toLowerCase(Locale.ROOT));
+            }
         }
 
         if (year != null) {
@@ -1023,10 +1081,38 @@ public class MusicResource {
         private long artworkCount;
         private long metadataIncompleteCount;
         private final Set<String> albumNames = new HashSet<>();
+        private final Map<String, AlbumAggregate> albums = new LinkedHashMap<>();
 
         private ArtistAggregate(String artist, String artistKey) {
             this.artist = artist;
             this.artistKey = artistKey;
+        }
+
+        private void addTrack(
+                TrackFile trackFile,
+                Track track,
+                boolean hasLyrics,
+                boolean hasArtwork,
+                boolean metadataIncomplete
+        ) {
+            trackCount++;
+            if (hasLyrics) {
+                lyricsCount++;
+            }
+            if (hasArtwork) {
+                artworkCount++;
+            }
+            if (metadataIncomplete) {
+                metadataIncompleteCount++;
+            }
+
+            String album = albumDisplayName(track);
+            String albumKey = albumKeyOf(track);
+            if (track != null && hasText(track.album)) {
+                albumNames.add(track.album.trim().toLowerCase(Locale.ROOT));
+            }
+            AlbumAggregate albumAggregate = albums.computeIfAbsent(albumKey, ignored -> new AlbumAggregate(album, albumKey));
+            albumAggregate.addTrack(trackFile, track, hasLyrics, hasArtwork, metadataIncomplete);
         }
 
         private ArtistResponse toResponse() {
@@ -1038,6 +1124,82 @@ public class MusicResource {
                     lyricsCount,
                     artworkCount,
                     metadataIncompleteCount
+            );
+        }
+
+        private ArtistDetailResponse toDetailResponse() {
+            List<ArtistAlbumResponse> albumItems = albums.values().stream()
+                    .map(AlbumAggregate::toResponse)
+                    .sorted(Comparator.comparing(ArtistAlbumResponse::album, String.CASE_INSENSITIVE_ORDER))
+                    .toList();
+            return new ArtistDetailResponse(
+                    artist,
+                    artistKey,
+                    trackCount,
+                    albumNames.size(),
+                    lyricsCount,
+                    artworkCount,
+                    metadataIncompleteCount,
+                    albumItems
+            );
+        }
+    }
+
+    private static final class AlbumAggregate {
+        private final String album;
+        private final String albumKey;
+        private long trackCount;
+        private long lyricsCount;
+        private long artworkCount;
+        private long metadataIncompleteCount;
+        private Integer year;
+        private Long coverMusicId;
+        private Long sampleMusicId;
+
+        private AlbumAggregate(String album, String albumKey) {
+            this.album = album;
+            this.albumKey = albumKey;
+        }
+
+        private void addTrack(
+                TrackFile trackFile,
+                Track track,
+                boolean hasLyrics,
+                boolean hasArtwork,
+                boolean metadataIncomplete
+        ) {
+            trackCount++;
+            if (sampleMusicId == null) {
+                sampleMusicId = trackFile.id;
+            }
+            if (year == null && track != null && track.year != null) {
+                year = track.year;
+            }
+            if (hasLyrics) {
+                lyricsCount++;
+            }
+            if (hasArtwork) {
+                artworkCount++;
+                if (coverMusicId == null) {
+                    coverMusicId = trackFile.id;
+                }
+            }
+            if (metadataIncomplete) {
+                metadataIncompleteCount++;
+            }
+        }
+
+        private ArtistAlbumResponse toResponse() {
+            return new ArtistAlbumResponse(
+                    album,
+                    albumKey,
+                    year,
+                    trackCount,
+                    lyricsCount,
+                    artworkCount,
+                    metadataIncompleteCount,
+                    coverMusicId == null ? sampleMusicId : coverMusicId,
+                    sampleMusicId
             );
         }
     }

@@ -74,7 +74,7 @@ function handleSizeChange(size: number) {
 
 function handleArtistClick(item: ArtistItem) {
   router.push({
-    path: `/artists/${encodeURIComponent(item.artistKey)}`,
+    path: `/artists/${item.artistKey}`,
     query: { name: item.artist || item.artistKey },
   })
 }
