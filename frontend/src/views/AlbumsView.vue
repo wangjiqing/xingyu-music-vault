@@ -1,11 +1,222 @@
 <script setup lang="ts">
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Search, RefreshRight } from '@element-plus/icons-vue'
+import { fetchAlbumList, type AlbumItem } from '../api/music'
+import AlbumCard from '../components/music/AlbumCard.vue'
+
+const router = useRouter()
+
+const list = ref<AlbumItem[]>([])
+const loading = ref(false)
+const errorMessage = ref('')
+
+const query = reactive({
+  page: 1,
+  pageSize: 20,
+  keyword: '',
+  sort: 'trackCountDesc' as string,
+})
+
+const total = ref(0)
+
+const sortOptions = [
+  { label: '曲目数 ↓', value: 'trackCountDesc' },
+  { label: '名称 A-Z', value: 'nameAsc' },
+  { label: '年份 ↓', value: 'yearDesc' },
+  { label: '待整理 ↓', value: 'metadataIncompleteDesc' },
+]
+
+async function loadList() {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const res = await fetchAlbumList({
+      page: query.page,
+      pageSize: query.pageSize,
+      keyword: query.keyword || undefined,
+      sort: query.sort,
+    })
+    list.value = res.items
+    total.value = res.total
+  } catch {
+    errorMessage.value = '加载专辑列表失败，请检查后端服务是否运行'
+    ElMessage.error('加载专辑列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleSearch() {
+  query.page = 1
+  loadList()
+}
+
+function handleSortChange() {
+  query.page = 1
+  loadList()
+}
+
+function handlePageChange(page: number) {
+  query.page = page
+  loadList()
+}
+
+function handleSizeChange(size: number) {
+  query.pageSize = size
+  query.page = 1
+  loadList()
+}
+
+function handleAlbumClick(item: AlbumItem) {
+  router.push({
+    path: '/albums/detail',
+    query: {
+      albumKey: decodeURIComponent(item.albumKey),
+      artistKey: decodeURIComponent(item.artistKey),
+    },
+  })
+}
+
+function emptyText(): string {
+  return query.keyword ? '没有匹配的专辑' : '暂无专辑数据，请先扫描音乐目录'
+}
+
+onMounted(() => {
+  loadList()
+})
 </script>
 
 <template>
   <el-card>
     <template #header>
-      <span>专辑</span>
+      <div class="card-header">
+        <span>专辑</span>
+        <div class="header-actions">
+          <el-button size="small" :icon="RefreshRight" @click="loadList">刷新</el-button>
+        </div>
+      </div>
     </template>
-    <el-empty description="专辑浏览功能将在 v0.8.3 实现" />
+
+    <el-alert
+      v-if="errorMessage"
+      :title="errorMessage"
+      type="error"
+      show-icon
+      closable
+      style="margin-bottom: 12px"
+      @close="errorMessage = ''"
+    />
+
+    <div class="search-bar">
+      <el-input
+        v-model="query.keyword"
+        placeholder="搜索专辑名或歌手..."
+        clearable
+        size="small"
+        style="width: 280px"
+        :prefix-icon="Search"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      />
+      <el-select
+        v-model="query.sort"
+        size="small"
+        style="width: 140px; margin-left: 8px"
+        @change="handleSortChange"
+      >
+        <el-option
+          v-for="opt in sortOptions"
+          :key="opt.value"
+          :label="opt.label"
+          :value="opt.value"
+        />
+      </el-select>
+    </div>
+
+    <div v-loading="loading" class="album-view">
+      <div v-if="list.length > 0" class="album-card-grid">
+        <AlbumCard
+          v-for="item in list"
+          :key="`${item.artistKey}|${item.albumKey}`"
+          :item="item"
+          @click="handleAlbumClick"
+        />
+      </div>
+      <el-empty v-else :description="emptyText()" />
+    </div>
+
+    <div style="margin-top: 16px; display: flex; justify-content: flex-end">
+      <el-pagination
+        v-model:current-page="query.page"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        @current-change="handlePageChange"
+        @size-change="handleSizeChange"
+      />
+    </div>
   </el-card>
 </template>
+
+<style scoped>
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+.search-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.album-view {
+  min-height: 240px;
+}
+.album-card-grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1680px) {
+  .album-card-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1360px) {
+  .album-card-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1080px) {
+  .album-card-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .search-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .search-bar :deep(.el-input),
+  .search-bar :deep(.el-select) {
+    width: 100% !important;
+    margin-left: 0 !important;
+  }
+  .album-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .album-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

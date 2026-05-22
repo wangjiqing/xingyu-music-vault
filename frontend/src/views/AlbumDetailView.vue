@@ -4,13 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Edit, View, Delete } from '@element-plus/icons-vue'
 import {
-  fetchArtistDetail,
+  fetchAlbumDetail,
   fetchMusicList,
   updateMusicMetadata,
   deleteMusic,
+  type AlbumItem,
   type MusicItem,
   type MusicMetadataUpdate,
-  type ArtistDetailResponse,
 } from '../api/music'
 import { fetchSongLyric, type SongLyric } from '../api/lyrics'
 import {
@@ -22,28 +22,27 @@ import {
   hasCompleteMusicMetadata,
 } from '../constants/musicStatus'
 import ArtworkImage from '../components/music/ArtworkImage.vue'
-import ArtistSummaryHeader from '../components/artist/ArtistSummaryHeader.vue'
-import ArtistAlbumCard from '../components/artist/ArtistAlbumCard.vue'
 
 const route = useRoute()
 const router = useRouter()
 
-const artistKey = computed(() => route.params.artistKey as string)
+const albumKey = computed(() => route.query.albumKey as string)
+const artistKey = computed(() => route.query.artistKey as string)
 
-const detail = ref<ArtistDetailResponse | null>(null)
+const detail = ref<AlbumItem | null>(null)
 const detailLoading = ref(false)
 const detailError = ref('')
 
-const songList = ref<MusicItem[]>([])
-const songLoading = ref(false)
-const songTotal = ref(0)
-const songQuery = reactive({
+const trackList = ref<MusicItem[]>([])
+const trackLoading = ref(false)
+const trackTotal = ref(0)
+const trackQuery = reactive({
   page: 1,
   size: 20,
 })
-const songError = ref('')
+const trackError = ref('')
 
-const activeTab = ref('songs')
+const coverUrl = ref<string | null>(null)
 
 const editDialogVisible = ref(false)
 const editSaving = ref(false)
@@ -68,50 +67,62 @@ const deleteLoading = ref(false)
 const deleteTarget = ref<MusicItem | null>(null)
 
 async function loadDetail() {
+  if (!albumKey.value || !artistKey.value) {
+    detailError.value = '缺少 albumKey 或 artistKey 参数'
+    return
+  }
   detailLoading.value = true
   detailError.value = ''
   try {
-    detail.value = await fetchArtistDetail(artistKey.value)
+    detail.value = await fetchAlbumDetail(albumKey.value, artistKey.value)
   } catch {
-    detailError.value = '加载歌手详情失败，请检查后端服务是否运行'
-    ElMessage.error('加载歌手详情失败')
+    detailError.value = '加载专辑详情失败，请检查后端服务是否运行'
+    ElMessage.error('加载专辑详情失败')
   } finally {
     detailLoading.value = false
   }
 }
 
-async function loadSongList() {
-  songLoading.value = true
-  songError.value = ''
+async function loadTrackList() {
+  if (!albumKey.value || !artistKey.value) return
+  trackLoading.value = true
+  trackError.value = ''
   try {
     const res = await fetchMusicList({
-      page: songQuery.page - 1,
-      size: songQuery.size,
+      page: trackQuery.page - 1,
+      size: trackQuery.size,
+      albumKey: albumKey.value,
       artistKey: artistKey.value,
     })
-    songList.value = res.items
-    songTotal.value = res.total
+    trackList.value = res.items
+    trackTotal.value = res.total
+    if (res.items.length > 0 && !coverUrl.value) {
+      const first = res.items[0]
+      if (first.artworkStatus === ARTWORK_STATUS.BOUND && first.artworkPreviewUrl) {
+        coverUrl.value = first.artworkPreviewUrl
+      }
+    }
   } catch {
-    songError.value = '加载歌曲列表失败'
-    ElMessage.error('加载歌曲列表失败')
+    trackError.value = '加载曲目列表失败'
+    ElMessage.error('加载曲目列表失败')
   } finally {
-    songLoading.value = false
+    trackLoading.value = false
   }
 }
 
-function handleSongPageChange(page: number) {
-  songQuery.page = page
-  loadSongList()
+function handleTrackPageChange(page: number) {
+  trackQuery.page = page
+  loadTrackList()
 }
 
-function handleSongSizeChange(size: number) {
-  songQuery.size = size
-  songQuery.page = 1
-  loadSongList()
+function handleTrackSizeChange(size: number) {
+  trackQuery.size = size
+  trackQuery.page = 1
+  loadTrackList()
 }
 
 function goBack() {
-  router.push('/artists')
+  router.push('/albums')
 }
 
 function displayTitle(row: MusicItem): string {
@@ -162,9 +173,9 @@ async function handleEditSave() {
       trackNo: editForm.trackNo ?? undefined,
       genre: editForm.genre || undefined,
     })
-    const idx = songList.value.findIndex((item) => item.id === res.id)
+    const idx = trackList.value.findIndex((item) => item.id === res.id)
     if (idx !== -1) {
-      songList.value[idx] = res
+      trackList.value[idx] = res
     }
     ElMessage.success('元数据已保存')
     editDialogVisible.value = false
@@ -204,7 +215,7 @@ async function handleDeleteConfirm() {
     await deleteMusic(deleteTarget.value.id)
     ElMessage.success('已移入音乐库回收目录')
     deleteDialogVisible.value = false
-    await loadSongList()
+    await loadTrackList()
   } catch (e: any) {
     const msg = e?.response?.data?.message || '删除失败'
     ElMessage.error(msg)
@@ -213,23 +224,9 @@ async function handleDeleteConfirm() {
   }
 }
 
-function handleAlbumClick(item: { albumKey: string }) {
-  if (!item.albumKey || !artistKey.value) {
-    ElMessage.warning('缺少必要参数，暂无法进入专辑详情')
-    return
-  }
-  router.push({
-    path: '/albums/detail',
-    query: {
-      albumKey: decodeURIComponent(item.albumKey),
-      artistKey: artistKey.value,
-    },
-  })
-}
-
 onMounted(() => {
   loadDetail()
-  loadSongList()
+  loadTrackList()
 })
 </script>
 
@@ -238,12 +235,12 @@ onMounted(() => {
     <template #header>
       <div class="card-header">
         <el-button :icon="ArrowLeft" text size="small" @click="goBack">
-          返回歌手列表
+          返回专辑列表
         </el-button>
       </div>
     </template>
 
-    <div v-loading="detailLoading" class="artist-detail">
+    <div v-loading="detailLoading" class="album-detail">
       <el-alert
         v-if="detailError"
         :title="detailError"
@@ -255,135 +252,157 @@ onMounted(() => {
       />
 
       <template v-if="detail">
-        <ArtistSummaryHeader :detail="detail" />
-
-        <el-tabs v-model="activeTab" @tab-change="() => {}">
-          <el-tab-pane label="歌曲" name="songs">
-            <el-alert
-              v-if="songError"
-              :title="songError"
-              type="error"
-              show-icon
-              closable
-              style="margin-bottom: 12px"
-              @close="songError = ''"
+        <div class="album-overview">
+          <div class="album-cover">
+            <ArtworkImage
+              v-if="coverUrl"
+              :src="coverUrl"
+              :alt="detail.album"
+              :size="180"
+              :radius="8"
             />
-
-            <el-table
-              :data="songList"
-              v-loading="songLoading"
-              empty-text="暂无歌曲"
-              style="width: 100%"
-            >
-              <el-table-column label="歌曲名" min-width="160" show-overflow-tooltip>
-                <template #default="{ row }">
-                  {{ displayTitle(row) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="专辑" min-width="120" show-overflow-tooltip>
-                <template #default="{ row }">
-                  {{ row.album || '--' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="年份" width="70" align="center">
-                <template #default="{ row }">
-                  {{ row.year ?? '--' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="时长" width="80" align="center">
-                <template #default="{ row }">
-                  {{ formatDuration(row.duration) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="歌词" width="90" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="lyricStatusTagType(row.lyricStatus)" size="small">
-                    {{ lyricStatusLabel(row.lyricStatus) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="封面" width="90" align="center">
-                <template #default="{ row }">
-                  <ArtworkImage
-                    v-if="row.artworkStatus === ARTWORK_STATUS.BOUND"
-                    :src="row.artworkPreviewUrl"
-                    :file-exists="row.artworkFileExists"
-                    :alt="displayTitle(row)"
-                    :size="40"
-                    :radius="4"
-                  />
-                  <el-tag v-else size="small" type="info">
-                    {{ artworkStatusLabel(row) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="元数据" width="80" align="center">
-                <template #default="{ row }">
-                  <el-tag :type="hasCompleteMusicMetadata(row) ? 'success' : 'warning'" size="small">
-                    {{ hasCompleteMusicMetadata(row) ? '完整' : '待完善' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="140" fixed="right">
-                <template #default="{ row }">
-                  <el-button
-                    type="primary"
-                    size="small"
-                    text
-                    :icon="Edit"
-                    @click="openEditDialog(row)"
-                  >
-                    编辑
-                  </el-button>
-                  <el-button
-                    v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
-                    type="primary"
-                    size="small"
-                    text
-                    :icon="View"
-                    @click="handleViewLyric(row)"
-                  >
-                    歌词
-                  </el-button>
-                  <el-button
-                    type="danger"
-                    size="small"
-                    text
-                    :icon="Delete"
-                    @click="openDeleteDialog(row)"
-                  />
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <div style="margin-top: 12px; display: flex; justify-content: flex-end">
-              <el-pagination
-                v-model:current-page="songQuery.page"
-                v-model:page-size="songQuery.size"
-                :total="songTotal"
-                :page-sizes="[10, 20, 50, 100]"
-                layout="total, sizes, prev, pager, next"
-                @current-change="handleSongPageChange"
-                @size-change="handleSongSizeChange"
-              />
+            <div v-else class="album-cover-placeholder">
+              <span class="album-cover-initial">{{ detail.album?.charAt(0).toUpperCase() || '?' }}</span>
             </div>
-          </el-tab-pane>
-
-          <el-tab-pane label="专辑" name="albums">
-            <div v-if="detail.albums.length > 0" class="album-card-grid">
-              <ArtistAlbumCard
-                v-for="album in detail.albums"
-                :key="album.albumKey"
-                :item="album"
-                @click="handleAlbumClick"
-              />
+          </div>
+          <div class="album-info">
+            <h2 class="album-info-name">{{ detail.album || 'Unknown' }}</h2>
+            <div class="album-info-artist">{{ detail.albumArtist || 'Unknown' }}</div>
+            <div class="album-info-year" v-if="detail.year">{{ detail.year }}</div>
+            <div class="album-info-stats">
+              <div class="info-stat-item">
+                <el-tag size="small" type="info">{{ detail.trackCount }} 曲目</el-tag>
+              </div>
+              <div class="info-stat-item">
+                <el-tag size="small" :type="detail.lyricsCount > 0 ? 'success' : 'info'">
+                  {{ detail.lyricsCount }} 歌词
+                </el-tag>
+              </div>
+              <div class="info-stat-item">
+                <el-tag size="small" :type="detail.artworkCount > 0 ? 'success' : 'info'">
+                  {{ detail.artworkCount }} 封面
+                </el-tag>
+              </div>
+              <div v-if="detail.metadataIncompleteCount > 0" class="info-stat-item">
+                <el-tag size="small" type="warning">{{ detail.metadataIncompleteCount }} 待完善</el-tag>
+              </div>
             </div>
-            <el-empty v-else description="暂无专辑" />
-          </el-tab-pane>
-        </el-tabs>
+          </div>
+        </div>
+
+        <el-alert
+          v-if="trackError"
+          :title="trackError"
+          type="error"
+          show-icon
+          closable
+          style="margin: 16px 0"
+          @close="trackError = ''"
+        />
+
+        <h3 style="margin: 16px 0 12px; font-size: 15px; color: #303133">曲目列表</h3>
+
+        <el-table
+          :data="trackList"
+          v-loading="trackLoading"
+          empty-text="暂无曲目"
+          style="width: 100%"
+        >
+          <el-table-column label="歌曲名" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ displayTitle(row) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="歌手" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.artist || 'Unknown' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="年份" width="70" align="center">
+            <template #default="{ row }">
+              {{ row.year ?? '--' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="时长" width="80" align="center">
+            <template #default="{ row }">
+              {{ formatDuration(row.duration) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="歌词" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :type="lyricStatusTagType(row.lyricStatus)" size="small">
+                {{ lyricStatusLabel(row.lyricStatus) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="封面" width="90" align="center">
+            <template #default="{ row }">
+              <ArtworkImage
+                v-if="row.artworkStatus === ARTWORK_STATUS.BOUND"
+                :src="row.artworkPreviewUrl"
+                :file-exists="row.artworkFileExists"
+                :alt="displayTitle(row)"
+                :size="40"
+                :radius="4"
+              />
+              <el-tag v-else size="small" type="info">
+                {{ artworkStatusLabel(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="元数据" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="hasCompleteMusicMetadata(row) ? 'success' : 'warning'" size="small">
+                {{ hasCompleteMusicMetadata(row) ? '完整' : '待完善' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="140" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                type="primary"
+                size="small"
+                text
+                :icon="Edit"
+                @click="openEditDialog(row)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+                type="primary"
+                size="small"
+                text
+                :icon="View"
+                @click="handleViewLyric(row)"
+              >
+                歌词
+              </el-button>
+              <el-button
+                type="danger"
+                size="small"
+                text
+                :icon="Delete"
+                @click="openDeleteDialog(row)"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div style="margin-top: 12px; display: flex; justify-content: flex-end">
+          <el-pagination
+            v-model:current-page="trackQuery.page"
+            v-model:page-size="trackQuery.size"
+            :total="trackTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            @current-change="handleTrackPageChange"
+            @size-change="handleTrackSizeChange"
+          />
+        </div>
       </template>
 
-      <el-empty v-else-if="!detailLoading" description="未找到该歌手" />
+      <el-empty v-else-if="!detailLoading" description="未找到该专辑" />
     </div>
   </el-card>
 
@@ -495,8 +514,57 @@ onMounted(() => {
   display: flex;
   align-items: center;
 }
-.artist-detail {
+.album-detail {
   min-height: 200px;
+}
+.album-overview {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.album-cover {
+  flex-shrink: 0;
+}
+.album-cover-placeholder {
+  width: 180px;
+  height: 180px;
+  background: linear-gradient(135deg, #f0f2f5 0%, #dcdfe6 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.album-cover-initial {
+  font-size: 64px;
+  font-weight: 700;
+  color: #a8abb2;
+  user-select: none;
+}
+.album-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.album-info-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+}
+.album-info-artist {
+  font-size: 15px;
+  color: #606266;
+}
+.album-info-year {
+  font-size: 14px;
+  color: #909399;
+}
+.album-info-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }
 .lyric-content {
   background: #f5f7fa;
@@ -510,35 +578,5 @@ onMounted(() => {
   max-height: 400px;
   overflow-y: auto;
   margin: 0;
-}
-.album-card-grid {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 14px;
-}
-@media (max-width: 1680px) {
-  .album-card-grid {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1360px) {
-  .album-card-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1080px) {
-  .album-card-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-@media (max-width: 760px) {
-  .album-card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 420px) {
-  .album-card-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

@@ -40,6 +40,12 @@ const router = createRouter({
           meta: { title: '专辑' },
         },
         {
+          path: 'albums/detail',
+          name: 'AlbumDetail',
+          component: () => import('../views/AlbumDetailView.vue'),
+          meta: { title: '专辑详情', hidden: true },
+        },
+        {
           path: 'lyrics',
           name: 'LyricsManage',
           component: () => import('../views/LyricsManage.vue'),

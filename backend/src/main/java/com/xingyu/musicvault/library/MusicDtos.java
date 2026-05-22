@@ -250,6 +250,28 @@ public final class MusicDtos {
     ) {
     }
 
+    public record AlbumPageResponse(
+            List<AlbumResponse> items,
+            long total,
+            int page,
+            int pageSize
+    ) {
+    }
+
+    public record AlbumResponse(
+            String album,
+            String albumKey,
+            String albumArtist,
+            String artistKey,
+            Integer year,
+            long trackCount,
+            long lyricsCount,
+            long artworkCount,
+            long metadataIncompleteCount,
+            Long coverMusicId
+    ) {
+    }
+
     public record MusicTrashResponse(
             Long id,
             String title,
