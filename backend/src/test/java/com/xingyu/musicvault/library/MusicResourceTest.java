@@ -1374,6 +1374,189 @@ class MusicResourceTest {
     }
 
     @Test
+    void albumsListSupportsSearchPagingSortingAndSpecialKeys() {
+        Long chinese = createMusicWithFullMetadata("album-chinese.flac", "晴天", "周杰伦", " 叶惠美 ", 2001, "Pop");
+        Long chineseLater = createMusicWithFullMetadata("album-chinese-2.flac", "同专辑", "周杰伦", "叶惠美", 2003, "Pop");
+        Long slash = createMusicWithFullMetadata("album-slash.flac", "Back", "AC/DC", "Live/1979", 1979, "Rock");
+        Long unknown = createMusic("album-unknown.flac", "无专辑", "周杰伦");
+        createMusicWithFullMetadata("album-same-jay.flac", "Intro", "周杰伦", "Greatest Hits", 2008, "Pop");
+        createMusicWithFullMetadata("album-same-eason.flac", "Intro", "陈奕迅", "Greatest Hits", 2010, "Pop");
+        createMusicWithAlbumArtist("album-artist.flac", "Feat", "Solo Singer", "合作专辑", "Various Artists", 2012, "Pop");
+        createLyricOnly(chinese);
+        createArtworkOnly(chineseLater);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(1))
+                .body("pageSize", equalTo(20))
+                .body("total", equalTo(6))
+                .body("items.find { it.album == '叶惠美' }.albumKey", equalTo("%E5%8F%B6%E6%83%A0%E7%BE%8E"))
+                .body("items.find { it.album == '叶惠美' }.albumArtist", equalTo("周杰伦"))
+                .body("items.find { it.album == '叶惠美' }.artistKey", equalTo("%E5%91%A8%E6%9D%B0%E4%BC%A6"))
+                .body("items.find { it.album == '叶惠美' }.year", equalTo(2001))
+                .body("items.find { it.album == '叶惠美' }.trackCount", equalTo(2))
+                .body("items.find { it.album == '叶惠美' }.lyricsCount", equalTo(1))
+                .body("items.find { it.album == '叶惠美' }.artworkCount", equalTo(1))
+                .body("items.find { it.album == '叶惠美' }.coverMusicId", equalTo(chineseLater.intValue()))
+                .body("items.find { it.album == 'Live/1979' }.albumKey", equalTo("live%2F1979"))
+                .body("items.find { it.album == '未知专辑' }.albumKey", equalTo("__unknown__"))
+                .body("items.find { it.album == '未知专辑' }.coverMusicId", equalTo(unknown.intValue()))
+                .body("items.find { it.album == '合作专辑' }.albumArtist", equalTo("Various Artists"))
+                .body("items.find { it.album == '合作专辑' }.artistKey", equalTo("various+artists"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?keyword=叶惠")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].album", equalTo("叶惠美"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?keyword=various")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].albumArtist", equalTo("Various Artists"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?page=2&pageSize=2&sort=nameAsc")
+                .then()
+                .statusCode(200)
+                .body("page", equalTo(2))
+                .body("pageSize", equalTo(2))
+                .body("items", hasSize(2))
+                .body("total", equalTo(6));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?sort=trackCountDesc")
+                .then()
+                .statusCode(200)
+                .body("items[0].album", equalTo("叶惠美"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?sort=yearDesc")
+                .then()
+                .statusCode(200)
+                .body("items[0].album", equalTo("合作专辑"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/albums?artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6")
+                .then()
+                .statusCode(200)
+                .body("items.findAll { it.album == 'Greatest Hits' }", hasSize(1))
+                .body("items.find { it.album == 'Greatest Hits' }.albumArtist", equalTo("周杰伦"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .urlEncodingEnabled(false)
+                .when()
+                .get("/api/music/albums/detail?albumKey=%E5%8F%B6%E6%83%A0%E7%BE%8E&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6")
+                .then()
+                .statusCode(200)
+                .body("album", equalTo("叶惠美"))
+                .body("trackCount", equalTo(2))
+                .body("lyricsCount", equalTo(1))
+                .body("artworkCount", equalTo(1))
+                .body("metadataIncompleteCount", equalTo(0));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .urlEncodingEnabled(false)
+                .when()
+                .get("/api/music/albums/detail?albumKey=live%2F1979&artistKey=ac%2Fdc")
+                .then()
+                .statusCode(200)
+                .body("album", equalTo("Live/1979"))
+                .body("coverMusicId", equalTo(slash.intValue()));
+    }
+
+    @Test
+    void musicListFiltersByAlbumKeyAndArtistKeyWithoutRegressingArtistKey() {
+        Long jayFirst = createMusicWithFullMetadata("album-filter-jay-1.flac", "晴天", "周杰伦", "叶惠美", 2003, "Pop");
+        Long jaySecond = createMusicWithFullMetadata("album-filter-jay-2.flac", "爱在西元前", "周杰伦", "叶惠美", 2001, "Pop");
+        Long jayOtherAlbum = createMusicWithFullMetadata("album-filter-jay-other.flac", "七里香", "周杰伦", "七里香", 2004, "Pop");
+        createMusicWithFullMetadata("album-filter-eason.flac", "十年", "陈奕迅", "叶惠美", 2003, "Pop");
+        Long slash = createMusicWithFullMetadata("album-filter-slash.flac", "Slash", "AC/DC", "Live/1979", 1979, "Rock");
+        Long unknown = createMusic("album-filter-unknown.flac", "无专辑", "周杰伦");
+        Long compilation = createMusicWithAlbumArtist("album-filter-compilation.flac", "Feat", "Solo Singer", "合作专辑", "Various Artists", 2012, "Pop");
+        createLyricOnly(jayFirst);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?albumKey=%E5%8F%B6%E6%83%A0%E7%BE%8E&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&page=0&pageSize=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("total", equalTo(2))
+                .body("items.find { it.id == %d }.title".formatted(jayFirst), equalTo("晴天"))
+                .body("items.find { it.id == %d }.title".formatted(jaySecond), equalTo("爱在西元前"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?albumKey=%E5%8F%B6%E6%83%A0%E7%BE%8E&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&hasLyrics=true&keyword=晴")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(jayFirst.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .urlEncodingEnabled(false)
+                .when()
+                .get("/api/music?albumKey=live%2F1979&artistKey=ac%2Fdc")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(slash.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?albumKey=__unknown__&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(unknown.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?albumKey=%E5%90%88%E4%BD%9C%E4%B8%93%E8%BE%91&artistKey=various+artists")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(1))
+                .body("items[0].id", equalTo(compilation.intValue()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music?artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&page=0&pageSize=20")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(4))
+                .body("total", equalTo(4))
+                .body("items.find { it.id == %d }.title".formatted(jayOtherAlbum), equalTo("七里香"));
+    }
+
+    @Test
     void listFiltersByKeyword() throws IOException {
         createMusicWithFile("hello-world.flac", "Hello World", "Famous Artist", "audio");
         createMusicWithFile("famous-song.flac", "Another Title", "Famous Band", "audio");
@@ -1709,6 +1892,30 @@ class MusicResourceTest {
             track.normalizedTitle = title.toLowerCase();
             track.artist = artist;
             track.album = album;
+            track.year = year;
+            track.genre = genre;
+            track.persist();
+
+            TrackFile trackFile = new TrackFile();
+            trackFile.trackId = track.id;
+            trackFile.filePath = musicDir.resolve(fileName).toAbsolutePath().normalize().toString();
+            trackFile.fileName = fileName;
+            trackFile.fileExt = "flac";
+            trackFile.fileSize = 1;
+            trackFile.lastModifiedAt = LocalDateTime.now();
+            trackFile.persist();
+            return trackFile.id;
+        });
+    }
+
+    private Long createMusicWithAlbumArtist(String fileName, String title, String artist, String album, String albumArtist, int year, String genre) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Track track = new Track();
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.album = album;
+            track.albumArtist = albumArtist;
             track.year = year;
             track.genre = genre;
             track.persist();

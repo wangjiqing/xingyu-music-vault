@@ -39,6 +39,7 @@ export interface MusicListQuery {
   size: number
   keyword?: string
   artistKey?: string
+  albumKey?: string
   year?: number
   genre?: string
   hasLyrics?: boolean | null
@@ -204,5 +205,38 @@ export async function batchUpdateMusicMetadata(
   payload: MusicMetadataBatchUpdate,
 ): Promise<MusicMetadataBatchUpdateResponse> {
   const { data } = await http.put('/api/music/metadata/batch', payload)
+  return data
+}
+
+export interface AlbumItem {
+  album: string
+  albumKey: string
+  albumArtist: string
+  artistKey: string
+  year: number | null
+  trackCount: number
+  lyricsCount: number
+  artworkCount: number
+  metadataIncompleteCount: number
+  coverMusicId: number | null
+}
+
+export interface AlbumListQuery {
+  keyword?: string
+  artistKey?: string
+  page: number
+  pageSize: number
+  sort?: string
+}
+
+export async function fetchAlbumList(query: AlbumListQuery): Promise<PageResponse<AlbumItem>> {
+  const { data } = await http.get('/api/music/albums', { params: query })
+  return data
+}
+
+export async function fetchAlbumDetail(albumKey: string, artistKey: string): Promise<AlbumItem> {
+  const { data } = await http.get('/api/music/albums/detail', {
+    params: { albumKey, artistKey },
+  })
   return data
 }

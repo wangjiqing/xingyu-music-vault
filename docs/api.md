@@ -247,6 +247,102 @@ Authorization: Bearer change-me
 
 `artist` 为歌手原名，`artistKey` 为 URL-safe 编码标识，`metadataIncompleteCount` 为该歌手歌曲中元数据不完整的数量。`albums` 为该歌手的专辑分组列表，按专辑名升序排列，每项含年份（取分组内第一条歌曲的年份，为空则 null）、曲目数、歌词数、封面数、待整理数量、`coverMusicId`（专辑封面歌曲 ID）、`sampleMusicId`（示例歌曲 ID）。
 
+### 专辑（v0.8.3）
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/music/albums` | 专辑聚合列表（支持搜索、排序、分页，可按歌手过滤） |
+| GET | `/api/music/albums/detail` | 专辑详情（含统计概览和曲目列表）（v0.8.3） |
+
+#### 专辑列表
+
+```http
+GET /api/music/albums?page=1&pageSize=20&keyword=叶惠美&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6&sort=trackCountDesc
+Authorization: Bearer change-me
+```
+
+参数：
+
+| 参数 | 说明 |
+|------|------|
+| `page` | 页码，从 1 开始，默认 1 |
+| `pageSize` | 每页条数，默认 20，最大 100 |
+| `keyword` | 按专辑名或专辑歌手名模糊搜索（可选） |
+| `artistKey` | 按歌手过滤，值为歌手名的 URL-safe 编码（可选） |
+| `sort` | 排序方式：`trackCountDesc`（歌曲数降序，默认）、`nameAsc`（名称升序）、`yearDesc`（年份降序）、`metadataIncompleteDesc`（待整理数量降序） |
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "album": "叶惠美",
+      "albumKey": "%E5%8F%B6%E6%83%A0%E7%BE%8E",
+      "albumArtist": "周杰伦",
+      "artistKey": "%E5%91%A8%E6%9D%B0%E4%BC%A6",
+      "year": 2003,
+      "trackCount": 5,
+      "lyricsCount": 5,
+      "artworkCount": 4,
+      "metadataIncompleteCount": 0,
+      "coverMusicId": 123
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 1
+}
+```
+
+`album` 为专辑名，`albumKey` 为 URL-safe 编码标识，`artistKey` 为专辑歌手的编码标识。`year` 为专辑内曲目最早年份（即 min(year)），可能为 null（分组内所有曲目均无年份）。`coverMusicId` 为专辑封面歌曲 ID，优先取分组内第一首有主封面的歌曲 id；若整张专辑没有任何主封面，则兜底取分组内第一首歌曲 id（即 `sampleMusicId`）。
+
+`albumKey` 生成规则：`trim(album)` → `lowerCase(Locale.ROOT)` → `URLEncoder.encode(..., UTF-8)`；`artistKey` 生成规则同歌手 `artistKey`。
+
+#### 专辑详情
+
+```http
+GET /api/music/albums/detail?albumKey=%E5%8F%B6%E6%83%A0%E7%BE%8E&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6
+Authorization: Bearer change-me
+```
+
+路径参数：
+
+| 参数 | 说明 |
+|------|------|
+| `albumKey` | 专辑名的 URL-safe 编码（必填） |
+| `artistKey` | 专辑歌手的 URL-safe 编码（必填，用于唯一定位同一专辑名下的多歌手情况） |
+
+专辑不存在时返回 `404`。
+
+响应示例：
+
+```json
+{
+  "album": "叶惠美",
+  "albumKey": "%E5%8F%B6%E6%83%A0%E7%BE%8E",
+  "albumArtist": "周杰伦",
+  "artistKey": "%E5%91%A8%E6%9D%B0%E4%BC%A6",
+  "year": 2003,
+  "trackCount": 5,
+  "lyricsCount": 5,
+  "artworkCount": 4,
+  "metadataIncompleteCount": 0,
+  "coverMusicId": 123
+}
+```
+
+专辑详情接口只返回统计概览。专辑详情页另通过 `GET /api/music?albumKey=...&artistKey=...` 获取该专辑的曲目列表。
+
+#### 歌曲列表按 albumKey + artistKey 过滤
+
+`GET /api/music` 支持 `albumKey` 和 `artistKey` 查询参数，可组合使用以精确定位某张专辑的曲目：
+
+```http
+GET /api/music?albumKey=%E5%8F%B6%E6%83%A0%E7%BE%8E&artistKey=%E5%91%A8%E6%9D%B0%E4%BC%A6
+Authorization: Bearer change-me
+```
+
 ### 扫描任务
 
 | Method | Path | 说明 |
@@ -1047,13 +1143,6 @@ Authorization: Bearer change-me
 | Method | Path | 说明 |
 |--------|------|------|
 | POST | `/api/tracks/match` | 发起曲目匹配 |
-
-### 专辑
-
-| Method | Path | 说明 |
-|--------|------|------|
-| GET | `/api/albums` | 专辑列表 |
-| GET | `/api/albums/{id}` | 专辑详情 |
 
 ### 歌词后续能力
 
