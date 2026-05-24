@@ -747,11 +747,13 @@ Content-Type: application/json
 - 不会联网刮削或 AI 自动补全
 - 保存前前端会提示本次操作将影响多少首音乐
 
-#### 元数据同步（v0.8.4）
+#### 元数据同步（v0.8.4 / v0.8.5）
 
-v0.8.4 新增音频文件内嵌 Tag 读取与数据库/文件双向同步能力，支持单曲和批量操作。
+v0.8.4 新增音频文件内嵌 Tag 读取与数据库/文件双向同步能力，v0.8.5 补充审计历史与回滚基础能力。
 
-**⚠️ 风险提示：数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。当前版本暂不提供 UI 回滚能力。**
+**⚠️ 风险提示：数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。v0.8.5 已提供审计历史页面与回滚能力。**
+
+**同步范围（v0.8.5 收敛）：** 当前仅同步 title（歌曲名）、artist（歌手）、album（专辑）三个核心字段。albumArtist、year、genre、trackNumber 等高级字段暂不参与同步，原因：不同来源文件中这些字段的可用性和含义存在差异，暂不纳入当前版本同步范围，避免误覆盖。
 
 接口列表：
 
@@ -785,22 +787,12 @@ Authorization: Bearer change-me
   "database": {
     "title": "晴天",
     "artist": "周杰伦",
-    "album": "叶惠美",
-    "albumArtist": "周杰伦",
-    "year": 2003,
-    "genre": "流行",
-    "trackNumber": 4,
-    "duration": 267
+    "album": "叶惠美"
   },
   "embedded": {
     "title": "晴天",
     "artist": "Jay Chou",
-    "album": "Ye Hui Mei",
-    "albumArtist": null,
-    "year": 2003,
-    "genre": null,
-    "trackNumber": 4,
-    "duration": 267
+    "album": "Ye Hui Mei"
   },
   "diffs": [
     { "field": "artist", "databaseValue": "周杰伦", "embeddedValue": "Jay Chou" },
@@ -809,7 +801,7 @@ Authorization: Bearer change-me
 }
 ```
 
-`diffs` 为空数组时表示两者一致。字段为 `null` 时表示该来源没有该字段的值。
+`database` 表示数据库中的元数据，`embedded` 表示音频文件内嵌 Tag 中读取到的元数据，`diffs` 表示差异字段（当前仅包含 title/artist/album）。
 
 ##### 单曲文件 Tag 覆盖数据库
 
@@ -948,12 +940,20 @@ Content-Type: application/json
 每次覆盖操作均会在 `music_metadata_sync_audit` 表写入一条审计记录，包含：
 
 - 完整操作快照（`beforeDatabaseJson`、`afterDatabaseJson`、`beforeFileJson`、`afterFileJson`）
-- 变更字段列表（`changedFieldsJson`）
+- 变更字段列表（`changedFieldsJson`，当前仅包含 title/artist/album）
 - 操作方向（`file_to_db` 或 `db_to_file`）、模式（`overwrite`）
 - 操作结果状态和错误信息（失败时）
-- `rollbackStatus` 和 `rollbackOfAuditId` 字段预留给 v0.8.5 回滚能力
+- `rollbackStatus` 和 `rollbackOfAuditId` 字段预留给回滚能力
 
-审计记录为后续 v0.8.5 审计历史页面和回滚能力预留，当前版本暂无独立审计查询接口。
+**审计查询接口（v0.8.5）：**
+- `GET /api/music/metadata/audits` — 审计历史分页列表，支持 `page`、`pageSize`、`direction`、`status`、`rollbackStatus` 筛选
+- `GET /api/music/metadata/audits/{auditId}` — 审计详情，包含完整操作快照
+- `GET /api/music/metadata/audits/{auditId}/rollback-preview` — 回滚预览
+- `POST /api/music/metadata/audits/{auditId}/rollback` — 执行单条回滚（`{ "confirm": true }`）
+- `POST /api/music/metadata/audits/rollback-preview` — 批量回滚预览
+- `POST /api/music/metadata/audits/rollback` — 批量执行回滚
+
+回滚操作同样写入审计记录（`rollbackOfAuditId` 指向前序审计记录），用于追溯。
 
  取消绑定：
 

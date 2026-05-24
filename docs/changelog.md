@@ -2,6 +2,42 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.8.5 — 元数据同步审计与回滚基础能力
+
+**发布日期：** 2026-05-24
+
+### 新增
+
+- 审计历史接口（`GET /api/music/metadata/audits`）：支持分页、方向筛选、状态筛选
+- 审计详情接口（`GET /api/music/metadata/audits/{auditId}`）：查看完整操作快照
+- 单条回滚接口（`GET /api/music/metadata/audits/{auditId}/rollback-preview` 预览 + `POST` 执行）
+- 批量回滚接口（`POST /api/music/metadata/audits/rollback-preview` 预览 + `POST /api/music/metadata/audits/rollback` 执行）
+
+### 调整
+
+- 元数据同步范围收敛为歌曲名（title）、歌手（artist）、专辑（album）三个核心字段
+- `file_to_db` 方向：仅同步 title/artist/album，`applySnapshotToTrack` 不再写入 albumArtist/year/genre/trackNumber
+- `db_to_file` 方向：仅同步 title/artist/album 到音频文件 Tag
+- 差异比较（`diffs` 接口）仅返回 title/artist/album 的差异，不比较高级字段
+- `MetadataCompareSnapshot` 仅包含 title/artist/album，与实际同步范围一致
+
+### 暂不支持
+
+- 专辑歌手、年份、流派、音轨号等高级字段同步（不同来源文件的可用性和含义存在差异，暂不纳入）
+- 封面写入音频文件
+- 网络/AI 刮削元数据自动同步
+- 整库同步、按歌手一键全量同步
+
+### 后续版本规划
+
+- 高级字段同步（在 Tag 读取兼容性增强后，可考虑引入 albumArtist/year/genre/trackNumber 同步）
+- 审计记录回滚 UI
+- 网络刮削元数据（接入 MusicBrainz 等在线元数据源，复用现有同步能力写回数据库）
+- AI 元数据补全
+- 封面写入音频文件
+
+---
+
 ## v0.8.4 — 元数据提取与同步增强
 
 **发布日期：** 2026-05-23
@@ -19,15 +55,12 @@
 
 ### 风险提示
 
-**数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。当前版本暂不提供 UI 回滚能力。**
+**数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。v0.8.5 已提供审计历史页面与回滚能力。**
 
 `db_to_file`（数据库 → 文件 Tag）仅支持 jaudiotagger 3.0.1 已验证写入格式：mp3、flac、m4a、ogg（oga）、wav。aac 和 .opus 文件不支持写入，操作会返回明确失败，不会损坏文件。
 
-审计记录为后续 v0.8.5 审计历史页面与回滚能力预留。
-
 ### 后续版本规划
 
-- 审计历史页面（查看同步操作历史）
 - 元数据回滚 UI（基于 `music_metadata_sync_audit` 记录回滚）
 - 网络刮削元数据（接入 MusicBrainz 等在线元数据源）
 - AI 元数据补全
@@ -35,6 +68,8 @@
 - 整库同步
 - 按歌手一键全量同步
 - 真实 album / artist 实体表
+
+> **v0.8.5 已实现：** 审计历史页面（`GET /api/music/metadata/audits`）、单条回滚、批量回滚预览与执行。审计表结构已预留在 v0.8.4 中。高级字段（albumArtist/year/genre/trackNumber）同步暂不纳入，后续可考虑。
 
 ---
 

@@ -19,14 +19,12 @@ const emit = defineEmits<{
 }>()
 
 const FIELD_LABELS: Record<string, string> = {
-  title: '标题',
+  title: '歌曲名',
   artist: '歌手',
   album: '专辑',
-  albumArtist: '专辑歌手',
-  year: '年份',
-  genre: '流派',
-  trackNumber: '音轨号',
 }
+
+const COMPARABLE_FIELDS = ['title', 'artist', 'album']
 
 const visible = ref(false)
 const loading = ref(false)
@@ -64,9 +62,10 @@ async function open() {
   compareList.value = []
   applyResult.value = null
   try {
-    compareList.value = (await batchCompareMusicMetadata(props.musicIds)).map((item) => ({
+    const raw = await batchCompareMusicMetadata(props.musicIds)
+    compareList.value = raw.map((item) => ({
       ...item,
-      diffs: item.diffs.filter((diff) => diff.field in FIELD_LABELS),
+      diffs: item.diffs?.filter((diff) => COMPARABLE_FIELDS.includes(diff.field)) || [],
     }))
   } catch (e: any) {
     const msg = e?.response?.data?.message || '批量元数据对比失败'
@@ -80,7 +79,7 @@ async function open() {
 async function handleBatchApplyFileToDb() {
   try {
     await ElMessageBox.confirm(
-      `将使用音频文件内嵌 Tag 覆盖 ${props.musicIds.length} 首歌曲的数据库元数据。\n这会修改系统中展示的标题、歌手、专辑、年份等信息，但不会修改音频文件本身。\n是否继续？`,
+      `本次操作将使用音频文件内嵌 Tag 覆盖 ${props.musicIds.length} 首歌曲的歌曲名、歌手、专辑三个字段，请确认差异后再继续。\n这不会修改音频文件本身。\n是否继续？`,
       '确认：批量用文件覆盖数据库',
       { confirmButtonText: '确认覆盖', cancelButtonText: '取消', type: 'warning' },
     )
@@ -93,7 +92,7 @@ async function handleBatchApplyFileToDb() {
 async function handleBatchApplyDbToFile() {
   try {
     await ElMessageBox.confirm(
-      `将使用数据库中的元数据写回 ${props.musicIds.length} 首音频文件内嵌 Tag。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？`,
+      `本次操作将使用数据库中的歌曲名、歌手、专辑三个字段写回 ${props.musicIds.length} 首音频文件内嵌 Tag，请确认差异后再继续。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？`,
       '确认：批量用数据库写回文件',
       { confirmButtonText: '确认写回', cancelButtonText: '取消', type: 'warning' },
     )
@@ -140,8 +139,11 @@ defineExpose({ open })
     @closed="emit('close')"
   >
     <div v-loading="loading" style="min-height: 120px">
-      <!-- Compare summary -->
       <template v-if="compareList.length > 0 && !applyResult">
+        <div class="metadata-scope-note">
+          当前版本仅比对歌曲名、歌手、专辑三个字段。年份、流派、音轨号、专辑歌手等字段暂不参与同步。
+        </div>
+
         <el-row :gutter="16" style="margin-bottom: 20px">
           <el-col :span="6">
             <div class="batch-stat-card">
@@ -162,9 +164,6 @@ defineExpose({ open })
             </div>
           </el-col>
           <el-col :span="6">
-            <!-- 当前批量 compare 在任一歌曲失败时直接关闭弹窗并全局报错，
-                 因此此处统计始终为 0。若后续改为逐条容错（部分成功），
-                 需要从 compareList 中动态计算失败条目数。 -->
             <div class="batch-stat-card">
               <div class="batch-stat-num">0</div>
               <div class="batch-stat-label">读取失败</div>
@@ -242,7 +241,6 @@ defineExpose({ open })
         </el-table>
       </template>
 
-      <!-- Apply result -->
       <template v-if="applyResult">
         <el-result
           :icon="applyResult.failed === 0 ? 'success' : applyResult.success === 0 ? 'error' : 'warning'"
@@ -314,4 +312,10 @@ defineExpose({ open })
 }
 .batch-stat-warning .batch-stat-num { color: #e6a23c; }
 .batch-stat-success .batch-stat-num { color: #67c23a; }
+.metadata-scope-note {
+  margin-bottom: 12px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
 </style>

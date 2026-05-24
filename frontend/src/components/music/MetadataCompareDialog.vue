@@ -18,14 +18,12 @@ const emit = defineEmits<{
 }>()
 
 const FIELD_LABELS: Record<string, string> = {
-  title: '标题',
+  title: '歌曲名',
   artist: '歌手',
   album: '专辑',
-  albumArtist: '专辑歌手',
-  year: '年份',
-  genre: '流派',
-  trackNumber: '音轨号',
 }
+
+const COMPARABLE_FIELDS = ['title', 'artist', 'album']
 
 const visible = ref(false)
 const loading = ref(false)
@@ -51,7 +49,7 @@ async function open() {
     const response = await compareMusicMetadata(props.musicId)
     result.value = {
       ...response,
-      diffs: response.diffs.filter((diff) => diff.field in FIELD_LABELS),
+      diffs: response.diffs?.filter((diff) => COMPARABLE_FIELDS.includes(diff.field)) || [],
     }
   } catch (e: any) {
     const msg = e?.response?.data?.message || '加载元数据对比失败'
@@ -65,7 +63,7 @@ async function open() {
 async function handleApplyFileToDb() {
   try {
     await ElMessageBox.confirm(
-      '将使用音频文件内嵌 Tag 覆盖数据库中的歌曲元数据。\n这会修改系统中展示的标题、歌手、专辑、年份等信息，但不会修改音频文件本身。\n是否继续？',
+      '本次操作将使用音频文件内嵌 Tag 覆盖数据库中的歌曲名、歌手、专辑三个字段，请确认差异后再继续。\n这不会修改音频文件本身。\n是否继续？',
       '确认：用文件覆盖数据库',
       { confirmButtonText: '确认覆盖', cancelButtonText: '取消', type: 'warning' },
     )
@@ -93,7 +91,7 @@ async function handleApplyFileToDb() {
 async function handleApplyDbToFile() {
   try {
     await ElMessageBox.confirm(
-      '将使用数据库中的歌曲元数据写回音频文件内嵌 Tag。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？',
+      '本次操作将使用数据库中的歌曲名、歌手、专辑三个字段写回音频文件内嵌 Tag，请确认差异后再继续。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？',
       '确认：用数据库写回文件',
       { confirmButtonText: '确认写回', cancelButtonText: '取消', type: 'warning' },
     )
@@ -131,6 +129,10 @@ defineExpose({ open })
   >
     <div v-loading="loading" style="min-height: 120px">
       <template v-if="result">
+        <div class="metadata-scope-note">
+          当前版本仅比对歌曲名、歌手、专辑三个字段。年份、流派、音轨号、专辑歌手等字段暂不参与同步。
+        </div>
+
         <div v-if="!hasDifference" style="text-align: center; padding: 24px 0; color: #909399">
           <el-icon :size="40" style="color: #67c23a; margin-bottom: 12px">
             <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor"><path d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896z m-55.808 536.128l-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.4 38.4 0 0 0 54.336 0l262.144-262.144a38.4 38.4 0 1 0-54.336-54.336L456.192 600.128z" /></svg>
@@ -191,3 +193,12 @@ defineExpose({ open })
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.metadata-scope-note {
+  margin-bottom: 12px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.6;
+}
+</style>

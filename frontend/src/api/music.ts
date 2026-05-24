@@ -252,6 +252,12 @@ export interface MetadataSnapshot {
   duration: number | null
 }
 
+export interface MetadataCompareSnapshot {
+  title: string | null
+  artist: string | null
+  album: string | null
+}
+
 export interface MetadataDiffItem {
   field: string
   databaseValue: unknown
@@ -260,8 +266,8 @@ export interface MetadataDiffItem {
 
 export interface MetadataCompareResponse {
   musicId: number
-  database: MetadataSnapshot
-  embedded: MetadataSnapshot
+  database: MetadataCompareSnapshot
+  embedded: MetadataCompareSnapshot
   diffs: MetadataDiffItem[]
 }
 
@@ -327,5 +333,136 @@ export async function batchApplyFileMetadataToDatabase(musicIds: number[]): Prom
 
 export async function batchApplyDatabaseMetadataToFile(musicIds: number[]): Promise<BatchMetadataSyncResponse> {
   const { data } = await http.post('/api/music/metadata/apply-db-to-file', { musicIds } as BatchMetadataSyncRequest)
+  return data
+}
+
+export interface MetadataAuditListItem {
+  id: number
+  batchId: string | null
+  musicId: number
+  musicTitle: string
+  filePath: string
+  direction: string
+  sourceType: string
+  targetType: string
+  operationType: string
+  status: string
+  rollbackStatus: string
+  changedFields: string[]
+  createdAt: string
+  errorMessage: string | null
+}
+
+export interface MetadataAuditPageResponse {
+  items: MetadataAuditListItem[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface MetadataAuditDetailResponse {
+  id: number
+  batchId: string | null
+  musicId: number
+  musicTitle: string
+  filePath: string
+  direction: string
+  sourceType: string
+  targetType: string
+  mode: string
+  operationType: string
+  status: string
+  rollbackStatus: string
+  beforeDatabase: MetadataSnapshot | null
+  afterDatabase: MetadataSnapshot | null
+  beforeFile: MetadataSnapshot | null
+  afterFile: MetadataSnapshot | null
+  changedFields: string[]
+  errorMessage: string | null
+  rollbackOfAuditId: number | null
+  rollbackAuditId: number | null
+  createdAt: string
+  createdBy: string | null
+}
+
+export interface MetadataRollbackRequest {
+  confirm: boolean
+}
+
+export interface MetadataRollbackResult {
+  auditId: number
+  rollbackAuditId: number | null
+  success: boolean
+  message: string | null
+  errorMessage: string | null
+}
+
+export interface MetadataRollbackPreviewResponse {
+  auditId: number
+  musicId: number
+  rollbackTarget: string
+  current: MetadataSnapshot | null
+  target: MetadataSnapshot | null
+  diffs: MetadataDiffItem[]
+  canRollback: boolean
+  warnings: string[]
+  errorMessage: string | null
+}
+
+export interface BatchMetadataRollbackPreviewResponse {
+  total: number
+  canRollbackCount: number
+  cannotRollbackCount: number
+  items: MetadataRollbackPreviewResponse[]
+}
+
+export interface BatchMetadataRollbackResponse {
+  batchId: string
+  total: number
+  success: number
+  failed: number
+  items: MetadataRollbackResult[]
+}
+
+export interface MetadataAuditQuery {
+  musicId?: number
+  batchId?: string
+  direction?: string
+  status?: string
+  rollbackStatus?: string
+  keyword?: string
+  startTime?: string
+  endTime?: string
+  page?: number
+  pageSize?: number
+}
+
+export async function fetchMetadataAudits(query: MetadataAuditQuery): Promise<MetadataAuditPageResponse> {
+  const { data } = await http.get('/api/music/metadata/audits', { params: query })
+  return data
+}
+
+export async function fetchMetadataAuditDetail(auditId: number): Promise<MetadataAuditDetailResponse> {
+  const { data } = await http.get(`/api/music/metadata/audits/${auditId}`)
+  return data
+}
+
+export async function fetchMetadataRollbackPreview(auditId: number): Promise<MetadataRollbackPreviewResponse> {
+  const { data } = await http.get(`/api/music/metadata/audits/${auditId}/rollback-preview`)
+  return data
+}
+
+export async function rollbackMetadataAudit(auditId: number): Promise<MetadataRollbackResult> {
+  const { data } = await http.post(`/api/music/metadata/audits/${auditId}/rollback`, { confirm: true } as MetadataRollbackRequest)
+  return data
+}
+
+export async function batchFetchMetadataRollbackPreview(auditIds: number[]): Promise<BatchMetadataRollbackPreviewResponse> {
+  const { data } = await http.post('/api/music/metadata/audits/rollback-preview', { auditIds })
+  return data
+}
+
+export async function batchRollbackMetadataAudits(auditIds: number[]): Promise<BatchMetadataRollbackResponse> {
+  const { data } = await http.post('/api/music/metadata/audits/rollback', { auditIds, confirm: true })
   return data
 }
