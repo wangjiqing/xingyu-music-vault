@@ -46,10 +46,6 @@ public class AudioMetadataService {
             setOrDelete(tag, FieldKey.TITLE, snapshot.title());
             setOrDelete(tag, FieldKey.ARTIST, snapshot.artist());
             setOrDelete(tag, FieldKey.ALBUM, snapshot.album());
-            setOrDelete(tag, FieldKey.ALBUM_ARTIST, snapshot.albumArtist());
-            setOrDelete(tag, FieldKey.YEAR, snapshot.year() == null ? null : snapshot.year().toString());
-            setOrDelete(tag, FieldKey.GENRE, snapshot.genre());
-            setOrDelete(tag, FieldKey.TRACK, snapshot.trackNumber() == null ? null : snapshot.trackNumber().toString());
             audioFile.commit();
             return read(path);
         } catch (AudioMetadataException exception) {

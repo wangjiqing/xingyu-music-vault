@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, Edit, View, Delete, Connection } from '@element-plus/icons-vue'
@@ -231,8 +231,9 @@ function handleAlbumClick(item: { albumKey: string }) {
   })
 }
 
-function openMetadataSync(row: MusicItem) {
+async function openMetadataSync(row: MusicItem) {
   metadataSyncMusicId.value = row.id
+  await nextTick()
   metadataCompareRef.value?.open()
 }
 

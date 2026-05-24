@@ -8,6 +8,7 @@ import com.xingyu.musicvault.metadata.MetadataDtos.BatchMetadataSyncRequest;
 import com.xingyu.musicvault.metadata.MetadataDtos.BatchMetadataSyncResponse;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataAuditCreateRequest;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataCompareResponse;
+import com.xingyu.musicvault.metadata.MetadataDtos.MetadataCompareSnapshot;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataDiffItem;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataSnapshot;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataSyncResult;
@@ -36,7 +37,7 @@ public class MusicMetadataSyncService {
     private static final String STATUS_FAILED = "FAILED";
     private static final String SOURCE_EMBEDDED_TAG = "embedded_tag";
     private static final String SOURCE_DATABASE = "database";
-    private static final String OPERATION_OVERWRITE = "OVERWRITE";
+    private static final String OPERATION_APPLY = "APPLY";
 
     @Inject
     AudioMetadataService audioMetadataService;
@@ -48,7 +49,7 @@ public class MusicMetadataSyncService {
         TrackFile trackFile = findMusic(musicId);
         MetadataSnapshot database = databaseSnapshot(trackFile);
         MetadataSnapshot embedded = readFileSnapshot(trackFile);
-        return new MetadataCompareResponse(trackFile.id, database, embedded, diffs(database, embedded));
+        return new MetadataCompareResponse(trackFile.id, compareSnapshot(database), compareSnapshot(embedded), diffs(database, embedded));
     }
 
     public List<MetadataCompareResponse> compareBatch(BatchMetadataCompareRequest request) {
@@ -266,7 +267,7 @@ public class MusicMetadataSyncService {
                 sourceType,
                 targetType,
                 mode,
-                OPERATION_OVERWRITE,
+                OPERATION_APPLY,
                 beforeDatabase,
                 afterDatabase,
                 beforeFile,
@@ -274,6 +275,7 @@ public class MusicMetadataSyncService {
                 changedFields,
                 status,
                 errorMessage,
+                null,
                 LocalDateTime.now(),
                 "api"
         ));
@@ -305,10 +307,6 @@ public class MusicMetadataSyncService {
         addDiff(diffs, "title", database.title(), embedded.title());
         addDiff(diffs, "artist", database.artist(), embedded.artist());
         addDiff(diffs, "album", database.album(), embedded.album());
-        addDiff(diffs, "albumArtist", database.albumArtist(), embedded.albumArtist());
-        addDiff(diffs, "year", database.year(), embedded.year());
-        addDiff(diffs, "genre", database.genre(), embedded.genre());
-        addDiff(diffs, "trackNumber", database.trackNumber(), embedded.trackNumber());
         return diffs;
     }
 
@@ -327,11 +325,10 @@ public class MusicMetadataSyncService {
         track.normalizedTitle = track.title == null ? null : track.title.toLowerCase(java.util.Locale.ROOT);
         track.artist = clean(snapshot.artist());
         track.album = clean(snapshot.album());
-        track.albumArtist = clean(snapshot.albumArtist());
-        track.year = snapshot.year();
-        track.genre = clean(snapshot.genre());
-        track.trackNo = snapshot.trackNumber();
-        track.duration = snapshot.duration();
+    }
+
+    private MetadataCompareSnapshot compareSnapshot(MetadataSnapshot snapshot) {
+        return new MetadataCompareSnapshot(snapshot.title(), snapshot.artist(), snapshot.album());
     }
 
     private Track ensureTrack(TrackFile trackFile) {

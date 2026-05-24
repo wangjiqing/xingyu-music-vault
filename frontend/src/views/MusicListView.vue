@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection } from '@element-plus/icons-vue'
 import {
@@ -560,8 +560,9 @@ function handleSizeChange(size: number) {
   loadList()
 }
 
-function openMetadataSync(row: MusicItem) {
+async function openMetadataSync(row: MusicItem) {
   metadataComputeMusicId.value = row.id
+  await nextTick()
   metadataCompareRef.value?.open()
 }
 
@@ -771,11 +772,6 @@ onMounted(() => {
       <el-table-column label="年份" width="70" align="center">
         <template #default="{ row }">
           {{ row.year ?? '--' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="流派" width="100" show-overflow-tooltip>
-        <template #default="{ row }">
-          {{ row.genre || '--' }}
         </template>
       </el-table-column>
       <el-table-column label="格式" width="80">

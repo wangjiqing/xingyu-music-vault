@@ -81,6 +81,12 @@ const router = createRouter({
           component: () => import('../views/Settings.vue'),
           meta: { title: '设置' },
         },
+        {
+          path: 'metadata-audit',
+          name: 'MetadataAudit',
+          component: () => import('../views/MetadataAuditView.vue'),
+          meta: { title: '元数据审计', hidden: true },
+        },
       ],
     },
   ],

@@ -394,7 +394,7 @@ public class LibraryScanService {
                         firstPresent(snapshot.title(), fallback.title()),
                         firstPresent(snapshot.artist(), fallback.artist()),
                         snapshot.album(),
-                        firstPresent(snapshot.albumArtist(), snapshot.artist(), fallback.albumArtist()),
+                        firstPresent(snapshot.albumArtist(), fallback.albumArtist()),
                         snapshot.duration(),
                         snapshot.year(),
                         snapshot.genre(),
@@ -436,7 +436,7 @@ public class LibraryScanService {
         String[] parts = baseName.split("\\s+-\\s+", 2);
         if (parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank()) {
             String artist = parts[0].trim();
-            return new ParsedMetadata(parts[1].trim(), artist, null, artist, null, null, null, null, false);
+            return new ParsedMetadata(parts[1].trim(), artist, null, null, null, null, null, null, false);
         }
         return new ParsedMetadata(baseName, "Unknown", null, null, null, null, null, null, false);
     }

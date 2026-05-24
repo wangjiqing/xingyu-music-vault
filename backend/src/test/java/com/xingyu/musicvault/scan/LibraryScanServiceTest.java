@@ -212,7 +212,7 @@ class LibraryScanServiceTest {
         assertNotNull(track);
         assertEquals("晴天", track.title);
         assertEquals("周杰伦", track.artist);
-        assertEquals("周杰伦", track.albumArtist);
+        assertNull(track.albumArtist);
         assertNull(track.album);
         assertNull(track.duration);
     }

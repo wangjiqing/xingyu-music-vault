@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Clock } from '@element-plus/icons-vue'
+
+const router = useRouter()
 
 const token = ref('')
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '（默认空，使用 Vite 代理）'
@@ -56,5 +60,12 @@ function clearToken() {
         </el-tag>
       </el-descriptions-item>
     </el-descriptions>
+    <el-divider />
+    <div class="tools-section">
+      <h4 style="margin-bottom: 12px; color: #303133">工具</h4>
+      <el-button :icon="Clock" @click="router.push('/metadata-audit')">
+        元数据同步审计
+      </el-button>
+    </div>
   </el-card>
 </template>
