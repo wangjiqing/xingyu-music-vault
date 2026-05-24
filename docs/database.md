@@ -25,6 +25,7 @@
 | `match_records` | 自动匹配结果记录 | 规划中 |
 | `review_items` | 待审核项（工作流） | 规划中 |
 | `settings` | 系统配置键值对 | 规划中 |
+| `music_metadata_sync_audit` | 元数据同步审计记录（v0.8.4） | 已实现 |
 
 ## 已实现表结构
 
@@ -38,14 +39,49 @@
 | `artist` | text | 歌手名，当前为扫描解析得到的字符串 |
 | `album` | text | 专辑名，当前为扫描解析得到的字符串 |
 | `album_artist` | text | 专辑艺人，当前为扫描解析得到的字符串 |
-| `duration` | bigint | 音频时长，预留 |
+| `year` | integer | 年份 |
+| `genre` | text | 流派 |
+| `track_no` | integer | 曲目号 |
+| `duration` | bigint | 音频时长（秒） |
 | `metadata_status` | varchar(32) not null default 'pending' | 元数据状态 |
+| `metadata_updated_at` | timestamp | 元数据最近更新时间 |
+| `metadata_extracted_at` | timestamp | 最近一次从音频文件提取元数据的时间（v0.8.4） |
+| `metadata_source` | text | 元数据来源：`embedded_tag`（文件 Tag）、`database`（用户编辑/网络刮削），由同步操作写入（v0.8.4） |
 | `lyrics_status` | varchar(32) not null default 'pending' | 歌词状态 |
 | `artwork_status` | varchar(32) not null default 'pending' | 封面状态 |
 | `created_at` | timestamp not null | 创建时间 |
 | `updated_at` | timestamp not null | 更新时间 |
 
-状态字段当前允许 `pending`、`matched`、`missing`、`ignored`。
+状态字段当前允许 `pending`、`matched`、`missing`、`ignored`，`synced` 为 v0.8.4 同步操作后置状态（v0.8.4）。
+
+### music_metadata_sync_audit
+
+记录 v0.8.4 元数据同步操作的完整审计快照，用于后续回滚能力（v0.8.5）。每次覆盖操作写入一条记录，包含操作前后数据库状态和文件 Tag 状态的完整快照。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `batch_id` | text | 批量操作批次 ID，用于关联同批次内的多条审计记录 |
+| `music_id` | bigint not null | 对应的音乐记录 ID（外键关联 `track_files.id`） |
+| `file_path` | text | 被操作音频文件的绝对路径 |
+| `direction` | text not null | 同步方向：`file_to_db`（文件 Tag → 数据库）或 `db_to_file`（数据库 → 文件 Tag） |
+| `source_type` | text not null | 来源类型：`embedded_tag`（文件 Tag）或 `database`（数据库） |
+| `target_type` | text not null | 目标类型：`embedded_tag`（文件 Tag）或 `database`（数据库） |
+| `mode` | text not null | 操作模式，当前为 `overwrite` |
+| `operation_type` | text not null | 操作类型，当前为 `OVERWRITE` |
+| `before_database_json` | text | 操作前数据库元数据快照（JSON） |
+| `after_database_json` | text | 操作后数据库元数据快照（JSON） |
+| `before_file_json` | text | 操作前文件 Tag 快照（JSON） |
+| `after_file_json` | text | 操作后文件 Tag 快照（JSON） |
+| `changed_fields_json` | text | 变更字段列表（JSON 数组） |
+| `status` | text not null | 操作结果：`SUCCESS` 或 `FAILED` |
+| `error_message` | text | 失败原因（失败时） |
+| `rollback_status` | text default 'NOT_ROLLED_BACK' | 回滚状态：`NOT_ROLLED_BACK`（未回滚）、`ROLLED_BACK`（已回滚），v0.8.5 启用 |
+| `rollback_of_audit_id` | bigint | 若此记录为回滚操作，则记录被回滚的原始审计记录 ID，v0.8.5 启用 |
+| `created_at` | timestamp not null | 审计记录创建时间 |
+| `created_by` | text | 操作来源，当前固定为 `api` |
+
+索引：`idx_metadata_sync_audit_music_id`、`idx_metadata_sync_audit_batch_id`、`idx_metadata_sync_audit_created_at`。
 
 ### scan_jobs
 
@@ -173,6 +209,7 @@ lyrics 1───< lyric_versions
 tracks 1───< metadata_versions
 tracks 1───< match_records
 tracks 1───< review_items
+tracks 1───< music_metadata_sync_audit
 ```
 
 ## 索引
@@ -200,6 +237,9 @@ tracks 1───< review_items
 - `idx_music_artwork_bindings_artwork_id` — music_artwork_bindings 按封面查询
 - `idx_music_artwork_bindings_music_artwork_relation` — music_id + artwork_id + relation_type 唯一绑定
 - `idx_music_artwork_bindings_primary_music_relation` — 每首音乐每种关系最多一个主封面
+- `idx_metadata_sync_audit_music_id` — 审计记录按音乐 ID 查询（v0.8.4）
+- `idx_metadata_sync_audit_batch_id` — 审计记录按批次 ID 查询（v0.8.4）
+- `idx_metadata_sync_audit_created_at` — 审计记录按创建时间排序（v0.8.4）
 
 ## SQLite 注意事项
 

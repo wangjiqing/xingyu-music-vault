@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Edit, View, Delete } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit, View, Delete, Connection } from '@element-plus/icons-vue'
 import {
   fetchAlbumDetail,
   fetchMusicList,
@@ -22,6 +22,7 @@ import {
   hasCompleteMusicMetadata,
 } from '../constants/musicStatus'
 import ArtworkImage from '../components/music/ArtworkImage.vue'
+import MetadataCompareDialog from '../components/music/MetadataCompareDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,6 +66,9 @@ const currentSongArtist = ref('')
 const deleteDialogVisible = ref(false)
 const deleteLoading = ref(false)
 const deleteTarget = ref<MusicItem | null>(null)
+
+const metadataCompareRef = ref<InstanceType<typeof MetadataCompareDialog>>()
+const metadataSyncMusicId = ref(0)
 
 async function loadDetail() {
   if (!albumKey.value || !artistKey.value) {
@@ -224,6 +228,16 @@ async function handleDeleteConfirm() {
   }
 }
 
+function openMetadataSync(row: MusicItem) {
+  metadataSyncMusicId.value = row.id
+  metadataCompareRef.value?.open()
+}
+
+function onMetadataSyncDone() {
+  loadTrackList()
+  loadDetail()
+}
+
 onMounted(() => {
   loadDetail()
   loadTrackList()
@@ -357,7 +371,7 @@ onMounted(() => {
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
+          <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
               <el-button
                 type="primary"
@@ -367,6 +381,15 @@ onMounted(() => {
                 @click="openEditDialog(row)"
               >
                 编辑
+              </el-button>
+              <el-button
+                type="primary"
+                size="small"
+                text
+                :icon="Connection"
+                @click="openMetadataSync(row)"
+              >
+                同步
               </el-button>
               <el-button
                 v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
@@ -507,6 +530,12 @@ onMounted(() => {
       </el-button>
     </template>
   </el-dialog>
+
+  <MetadataCompareDialog
+    ref="metadataCompareRef"
+    :music-id="metadataSyncMusicId"
+    @done="onMetadataSyncDone"
+  />
 </template>
 
 <style scoped>

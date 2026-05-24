@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
   fetchMusicStats,
@@ -38,6 +38,8 @@ import {
 } from '../constants/musicStatus'
 import ArtworkImage from '../components/music/ArtworkImage.vue'
 import MusicCard from '../components/music/MusicCard.vue'
+import MetadataCompareDialog from '../components/music/MetadataCompareDialog.vue'
+import MetadataBatchCompareDialog from '../components/music/MetadataBatchCompareDialog.vue'
 
 const list = ref<MusicItem[]>([])
 const loading = ref(false)
@@ -124,6 +126,10 @@ const restoreTarget = ref<MusicTrashItem | null>(null)
 
 const permDeleteConfirmVisible = ref(false)
 const permDeleteTarget = ref<MusicTrashItem | null>(null)
+
+const metadataCompareRef = ref<InstanceType<typeof MetadataCompareDialog>>()
+const metadataComputeMusicId = ref(0)
+const metadataBatchCompareRef = ref<InstanceType<typeof MetadataBatchCompareDialog>>()
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -554,6 +560,36 @@ function handleSizeChange(size: number) {
   loadList()
 }
 
+function openMetadataSync(row: MusicItem) {
+  metadataComputeMusicId.value = row.id
+  metadataCompareRef.value?.open()
+}
+
+function onMetadataSyncDone() {
+  loadList()
+  loadStats()
+}
+
+const MAX_BATCH_SYNC = 20
+
+function openBatchMetadataSync() {
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选择要同步的歌曲')
+    return
+  }
+  if (selectedRows.value.length > MAX_BATCH_SYNC) {
+    ElMessage.warning(`一次最多处理 ${MAX_BATCH_SYNC} 首，当前已选择 ${selectedRows.value.length} 首`)
+    return
+  }
+  metadataBatchCompareRef.value?.open()
+}
+
+function onBatchMetadataSyncDone() {
+  selectedRows.value = []
+  loadList()
+  loadStats()
+}
+
 onMounted(() => {
   loadList()
   loadStats()
@@ -581,6 +617,14 @@ onMounted(() => {
             @click="openBatchDialog"
           >
             批量编辑 ({{ selectedRows.length }})
+          </el-button>
+          <el-button
+            v-if="selectedRows.length > 0"
+            type="primary"
+            size="small"
+            @click="openBatchMetadataSync"
+          >
+            批量元数据同步 ({{ selectedRows.length }})
           </el-button>
         </div>
       </div>
@@ -790,11 +834,14 @@ onMounted(() => {
           >
             歌词
           </el-button>
-          <el-dropdown trigger="click" @command="(cmd: string) => { if (cmd === 'bind') handleBindOpen(row); if (cmd === 'unbind') handleUnbind(row); if (cmd === 'delete') openDeleteDialog(row); }">
+          <el-dropdown trigger="click" @command="(cmd: string) => { if (cmd === 'sync') openMetadataSync(row); if (cmd === 'bind') handleBindOpen(row); if (cmd === 'unbind') handleUnbind(row); if (cmd === 'delete') openDeleteDialog(row); }">
             <el-button size="small" text :icon="MoreFilled" />
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="bind" :icon="PictureFilled">
+                <el-dropdown-item command="sync" :icon="Connection">
+                  元数据同步
+                </el-dropdown-item>
+                <el-dropdown-item command="bind" :icon="PictureFilled" divided>
                   {{ row.artworkStatus === ARTWORK_STATUS.BOUND ? '更换封面' : '选择/导入封面' }}
                 </el-dropdown-item>
                 <el-dropdown-item v-if="row.artworkStatus === ARTWORK_STATUS.BOUND" command="unbind" divided>
@@ -821,6 +868,7 @@ onMounted(() => {
           @bind="handleBindOpen"
           @unbind="handleUnbind"
           @delete="openDeleteDialog"
+          @sync="openMetadataSync"
         />
       </div>
       <el-empty v-else :description="emptyText()" />
@@ -1265,6 +1313,18 @@ onMounted(() => {
       </el-button>
     </template>
   </el-dialog>
+
+  <MetadataCompareDialog
+    ref="metadataCompareRef"
+    :music-id="metadataComputeMusicId"
+    @done="onMetadataSyncDone"
+  />
+
+  <MetadataBatchCompareDialog
+    ref="metadataBatchCompareRef"
+    :music-ids="selectedRows.map(r => r.id)"
+    @done="onBatchMetadataSyncDone"
+  />
 </template>
 
 <style scoped>

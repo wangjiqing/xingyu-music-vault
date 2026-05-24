@@ -5,6 +5,9 @@ import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
+import com.xingyu.musicvault.metadata.AudioMetadataException;
+import com.xingyu.musicvault.metadata.AudioMetadataService;
+import com.xingyu.musicvault.metadata.MetadataDtos.MetadataSnapshot;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -45,6 +48,9 @@ public class LibraryScanService {
 
     @Inject
     MusicVaultConfig config;
+
+    @Inject
+    AudioMetadataService audioMetadataService;
 
     @Transactional
     public ScanJob run(Long scanJobId) {
@@ -324,7 +330,7 @@ public class LibraryScanService {
         trackFile.fileSize = fileSize;
         trackFile.lastModifiedAt = lastModifiedAt;
         trackFile.scanJobId = scanJob.id;
-        trackFile.trackId = upsertTrack(trackFile.trackId, fileName).id;
+        trackFile.trackId = upsertTrack(trackFile.trackId, fileName, path, isNew).id;
         trackFile.deletedAt = null;
         trackFile.trashPath = null;
         trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
@@ -348,9 +354,12 @@ public class LibraryScanService {
         LOG.debugf("Restored trashed track file found during scan: jobId=%d path=%s", scanJob.id, filePath);
     }
 
-    private Track upsertTrack(Long trackId, String fileName) {
-        ParsedMetadata metadata = parseMetadata(fileName);
+    private Track upsertTrack(Long trackId, String fileName, Path path, boolean isNew) {
         Track track = trackId == null ? null : Track.findById(trackId);
+        if (track != null && !isNew) {
+            return track;
+        }
+        ParsedMetadata metadata = isNew ? embeddedMetadataOrFallback(path, fileName) : parseMetadata(fileName);
         if (track == null) {
             track = new Track();
         }
@@ -361,6 +370,14 @@ public class LibraryScanService {
         track.album = metadata.album();
         track.albumArtist = metadata.albumArtist();
         track.duration = metadata.duration();
+        track.year = metadata.year();
+        track.genre = metadata.genre();
+        track.trackNo = metadata.trackNo();
+        if (metadata.extractedFromEmbeddedTag()) {
+            track.metadataExtractedAt = LocalDateTime.now();
+            track.metadataSource = "embedded_tag";
+            track.metadataStatus = "synced";
+        }
 
         if (!track.isPersistent()) {
             track.persist();
@@ -368,18 +385,60 @@ public class LibraryScanService {
         return track;
     }
 
+    private ParsedMetadata embeddedMetadataOrFallback(Path path, String fileName) {
+        ParsedMetadata fallback = parseMetadata(fileName);
+        try {
+            MetadataSnapshot snapshot = audioMetadataService.read(path);
+            if (hasEmbeddedMetadata(snapshot)) {
+                return new ParsedMetadata(
+                        firstPresent(snapshot.title(), fallback.title()),
+                        firstPresent(snapshot.artist(), fallback.artist()),
+                        snapshot.album(),
+                        firstPresent(snapshot.albumArtist(), snapshot.artist(), fallback.albumArtist()),
+                        snapshot.duration(),
+                        snapshot.year(),
+                        snapshot.genre(),
+                        snapshot.trackNumber(),
+                        true
+                );
+            }
+        } catch (AudioMetadataException exception) {
+            LOG.warnf("Failed to extract embedded metadata during scan: path=%s message=%s", path, exception.getMessage());
+        }
+        return fallback;
+    }
+
+    private boolean hasEmbeddedMetadata(MetadataSnapshot snapshot) {
+        return hasText(snapshot.title())
+                || hasText(snapshot.artist())
+                || hasText(snapshot.album())
+                || hasText(snapshot.albumArtist())
+                || snapshot.year() != null
+                || hasText(snapshot.genre())
+                || snapshot.trackNumber() != null;
+    }
+
+    private String firstPresent(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
     private ParsedMetadata parseMetadata(String fileName) {
         String baseName = stripExtension(fileName).trim();
         if (baseName.isEmpty()) {
-            return new ParsedMetadata("Untitled", "Unknown", null, null, null);
+            return new ParsedMetadata("Untitled", "Unknown", null, null, null, null, null, null, false);
         }
 
         String[] parts = baseName.split("\\s+-\\s+", 2);
         if (parts.length == 2 && !parts[0].isBlank() && !parts[1].isBlank()) {
             String artist = parts[0].trim();
-            return new ParsedMetadata(parts[1].trim(), artist, null, artist, null);
+            return new ParsedMetadata(parts[1].trim(), artist, null, artist, null, null, null, null, false);
         }
-        return new ParsedMetadata(baseName, "Unknown", null, null, null);
+        return new ParsedMetadata(baseName, "Unknown", null, null, null, null, null, null, false);
     }
 
     private String stripExtension(String fileName) {
@@ -411,6 +470,10 @@ public class LibraryScanService {
         return false;
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private boolean sameTime(LocalDateTime left, LocalDateTime right) {
         if (left == null || right == null) {
             return false;
@@ -434,7 +497,11 @@ public class LibraryScanService {
             String artist,
             String album,
             String albumArtist,
-            Long duration
+            Long duration,
+            Integer year,
+            String genre,
+            Integer trackNo,
+            boolean extractedFromEmbeddedTag
     ) {
     }
 }

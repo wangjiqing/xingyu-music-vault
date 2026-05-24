@@ -747,6 +747,214 @@ Content-Type: application/json
 - 不会联网刮削或 AI 自动补全
 - 保存前前端会提示本次操作将影响多少首音乐
 
+#### 元数据同步（v0.8.4）
+
+v0.8.4 新增音频文件内嵌 Tag 读取与数据库/文件双向同步能力，支持单曲和批量操作。
+
+**⚠️ 风险提示：数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。当前版本暂不提供 UI 回滚能力。**
+
+接口列表：
+
+|| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/music/{id}/metadata/compare` | 单曲：比较数据库与文件 Tag 差异 |
+| POST | `/api/music/{id}/metadata/apply-file-to-db` | 单曲：将文件 Tag 覆盖到数据库 |
+| POST | `/api/music/{id}/metadata/apply-db-to-file` | 单曲：将数据库元数据写回音频文件 Tag |
+| POST | `/api/music/metadata/compare` | 批量：比较多个音乐的差异（最多 20 条） |
+| POST | `/api/music/metadata/apply-file-to-db` | 批量：将文件 Tag 覆盖到数据库（最多 20 条） |
+| POST | `/api/music/metadata/apply-db-to-file` | 批量：将数据库元数据写回音频文件（最多 20 条） |
+
+**支持的音频格式（读取）：** mp3、flac、wav、m4a、aac、ogg、opus（基于 jaudiotagger 3.0.1 读取）。
+
+**db_to_file 写入限制：** jaudiotagger 3.0.1 注册的 writer 支持 ogg/oga、flac、mp3、mp4/m4a/m4b、wav、wma、aif/aiff/aifc、dsf。当前扫描包含的 aac、opus 格式无对应 writer 支持，其中 .opus 文件不应等同于 Ogg Vorbis 处理。`db_to_file` 操作对不支持写入的格式会返回明确失败结果，不会未捕获异常。建议生产使用中将 `db_to_file` 限制在已验证格式（mp3/flac/m4a/ogg/wav）范围内，后续版本将补充显式写入 allowlist。
+
+**批量同步限制：** 每次最多 20 条，超出返回 `400 Bad Request`。
+
+##### 单曲差异比较
+
+```http
+GET /api/music/1/metadata/compare
+Authorization: Bearer change-me
+```
+
+响应示例：
+
+```json
+{
+  "musicId": 1,
+  "database": {
+    "title": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "albumArtist": "周杰伦",
+    "year": 2003,
+    "genre": "流行",
+    "trackNumber": 4,
+    "duration": 267
+  },
+  "embedded": {
+    "title": "晴天",
+    "artist": "Jay Chou",
+    "album": "Ye Hui Mei",
+    "albumArtist": null,
+    "year": 2003,
+    "genre": null,
+    "trackNumber": 4,
+    "duration": 267
+  },
+  "diffs": [
+    { "field": "artist", "databaseValue": "周杰伦", "embeddedValue": "Jay Chou" },
+    { "field": "album", "databaseValue": "叶惠美", "embeddedValue": "Ye Hui Mei" }
+  ]
+}
+```
+
+`diffs` 为空数组时表示两者一致。字段为 `null` 时表示该来源没有该字段的值。
+
+##### 单曲文件 Tag 覆盖数据库
+
+```http
+POST /api/music/1/metadata/apply-file-to-db
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "mode": "overwrite"
+}
+```
+
+`mode` 固定为 `overwrite`（当前仅支持此模式）。
+
+响应示例：
+
+```json
+{
+  "musicId": 1,
+  "direction": "file_to_db",
+  "mode": "overwrite",
+  "status": "SUCCESS",
+  "beforeDatabase": { "title": "晴天", "artist": "周杰伦", ... },
+  "afterDatabase": { "title": "晴天", "artist": "Jay Chou", ... },
+  "beforeFile": { "title": "晴天", "artist": "Jay Chou", ... },
+  "afterFile": { "title": "晴天", "artist": "Jay Chou", ... },
+  "changedFields": ["artist", "album"],
+  "auditId": 10,
+  "errorMessage": null
+}
+```
+
+覆盖成功后，`tracks.metadataExtractedAt` 更新为当前时间，`tracks.metadataSource` 记录为 `embedded_tag`。
+
+##### 单曲数据库元数据写回音频文件
+
+```http
+POST /api/music/1/metadata/apply-db-to-file
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "mode": "overwrite"
+}
+```
+
+**⚠️ 此操作直接修改本地音频文件。执行前请确认文件已备份。**
+
+响应示例：
+
+```json
+{
+  "musicId": 1,
+  "direction": "db_to_file",
+  "mode": "overwrite",
+  "status": "SUCCESS",
+  "beforeDatabase": { "title": "晴天", "artist": "周杰伦", ... },
+  "afterDatabase": { "title": "晴天", "artist": "周杰伦", ... },
+  "beforeFile": { "title": "晴天", "artist": "Jay Chou", ... },
+  "afterFile": { "title": "晴天", "artist": "周杰伦", ... },
+  "changedFields": ["artist", "album"],
+  "auditId": 11,
+  "errorMessage": null
+}
+```
+
+写入成功后，`tracks.metadataUpdatedAt` 和 `tracks.metadataSource` 不变（此方向仅修改文件，不修改数据库记录）。
+
+##### 批量差异比较
+
+```http
+POST /api/music/metadata/compare
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "musicIds": [1, 2, 3]
+}
+```
+
+最多 20 条，超出返回 `400 Bad Request`。
+
+响应为数组，每个元素同单曲差异比较的响应结构。
+
+##### 批量同步（文件 Tag → 数据库 或 数据库 → 文件 Tag）
+
+```http
+POST /api/music/metadata/apply-file-to-db
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "musicIds": [1, 2, 3],
+  "mode": "overwrite"
+}
+```
+
+```http
+POST /api/music/metadata/apply-db-to-file
+Authorization: Bearer change-me
+Content-Type: application/json
+```
+
+```json
+{
+  "musicIds": [1, 2, 3],
+  "mode": "overwrite"
+}
+```
+
+批量响应示例：
+
+```json
+{
+  "batchId": "a1b2c3d4-e5f6-...",
+  "total": 3,
+  "success": 2,
+  "failed": 1,
+  "items": [ /* 单个 MetadataSyncResult 数组 */ ]
+}
+```
+
+批量操作中部分失败不影响其他项，每项的 `status` 字段标识成功/失败。
+
+##### 审计记录
+
+每次覆盖操作均会在 `music_metadata_sync_audit` 表写入一条审计记录，包含：
+
+- 完整操作快照（`beforeDatabaseJson`、`afterDatabaseJson`、`beforeFileJson`、`afterFileJson`）
+- 变更字段列表（`changedFieldsJson`）
+- 操作方向（`file_to_db` 或 `db_to_file`）、模式（`overwrite`）
+- 操作结果状态和错误信息（失败时）
+- `rollbackStatus` 和 `rollbackOfAuditId` 字段预留给 v0.8.5 回滚能力
+
+审计记录为后续 v0.8.5 审计历史页面和回滚能力预留，当前版本暂无独立审计查询接口。
+
  取消绑定：
 
 ```http
