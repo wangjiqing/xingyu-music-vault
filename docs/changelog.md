@@ -2,7 +2,41 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
-## v0.8.3 — 专辑浏览与专辑详情页
+## v0.8.4 — 元数据提取与同步增强
+
+**发布日期：** 2026-05-23
+
+### 新增
+
+- 音频文件内嵌 Tag 读取（`AudioMetadataService`，基于 `jaudiotagger`，支持 mp3/flac/wav/m4a/aac/ogg/opus）
+- 数据库与音频文件 Tag 差异比较接口（`GET /api/music/{id}/metadata/compare`）
+- 文件 Tag 覆盖数据库接口（`POST /api/music/{id}/metadata/apply-file-to-db`）
+- 数据库元数据写回音频文件 Tag 接口（`POST /api/music/{id}/metadata/apply-db-to-file`）
+- 批量差异比较接口（`POST /api/music/metadata/compare`，最多 20 条）
+- 批量同步接口（`POST /api/music/metadata/apply-file-to-db` / `POST /api/music/metadata/apply-db-to-file`，最多 20 条）
+- 新增 `tracks.metadataExtractedAt` 和 `tracks.metadataSource` 字段，记录元数据来源与提取时间
+- 审计表 `music_metadata_sync_audit`：记录每次覆盖操作的完整快照（覆盖前数据库状态、文件状态、覆盖后状态、变更字段），用于后续回滚
+
+### 风险提示
+
+**数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。当前版本暂不提供 UI 回滚能力。**
+
+`db_to_file`（数据库 → 文件 Tag）仅支持 jaudiotagger 3.0.1 已验证写入格式：mp3、flac、m4a、ogg（oga）、wav。aac 和 .opus 文件不支持写入，操作会返回明确失败，不会损坏文件。
+
+审计记录为后续 v0.8.5 审计历史页面与回滚能力预留。
+
+### 后续版本规划
+
+- 审计历史页面（查看同步操作历史）
+- 元数据回滚 UI（基于 `music_metadata_sync_audit` 记录回滚）
+- 网络刮削元数据（接入 MusicBrainz 等在线元数据源）
+- AI 元数据补全
+- 封面写入音频文件
+- 整库同步
+- 按歌手一键全量同步
+- 真实 album / artist 实体表
+
+---
 
 **发布日期：** 2026-05-22
 
@@ -24,8 +58,6 @@
 - 专辑别名合并
 - 多歌手拆分
 - 播放器能力
-- AI 元数据补全
-- 真实 album / artist 实体表
 
 ---
 

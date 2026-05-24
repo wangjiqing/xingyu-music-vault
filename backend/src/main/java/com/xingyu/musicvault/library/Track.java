@@ -50,6 +50,12 @@ public class Track extends PanacheEntityBase {
     @Column(name = "metadata_updated_at")
     public LocalDateTime metadataUpdatedAt;
 
+    @Column(name = "metadata_extracted_at")
+    public LocalDateTime metadataExtractedAt;
+
+    @Column(name = "metadata_source")
+    public String metadataSource;
+
     @Column(name = "metadata_status", nullable = false)
     public String metadataStatus = "pending";
 

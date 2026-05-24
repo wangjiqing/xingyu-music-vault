@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Edit, MoreFilled, PictureFilled, View } from '@element-plus/icons-vue'
+import { Edit, MoreFilled, PictureFilled, View, Connection } from '@element-plus/icons-vue'
 import type { MusicItem } from '../../api/music'
 import { ARTWORK_STATUS, LYRIC_STATUS } from '../../constants/musicStatus'
 import ArtworkImage from './ArtworkImage.vue'
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   bind: [item: MusicItem]
   unbind: [item: MusicItem]
   delete: [item: MusicItem]
+  sync: [item: MusicItem]
 }>()
 
 function displayTitle(item: MusicItem) {
@@ -56,6 +57,7 @@ function displayTitle(item: MusicItem) {
       <el-dropdown
         trigger="click"
         @command="(cmd: string) => {
+          if (cmd === 'sync') emit('sync', item)
           if (cmd === 'bind') emit('bind', item)
           if (cmd === 'unbind') emit('unbind', item)
           if (cmd === 'delete') emit('delete', item)
@@ -64,7 +66,10 @@ function displayTitle(item: MusicItem) {
         <el-button size="small" text :icon="MoreFilled" />
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="bind" :icon="PictureFilled">
+            <el-dropdown-item command="sync" :icon="Connection">
+              元数据同步
+            </el-dropdown-item>
+            <el-dropdown-item command="bind" :icon="PictureFilled" divided>
               {{ item.artworkStatus === ARTWORK_STATUS.BOUND ? '更换封面' : '选择/导入封面' }}
             </el-dropdown-item>
             <el-dropdown-item v-if="item.artworkStatus === ARTWORK_STATUS.BOUND" command="unbind" divided>

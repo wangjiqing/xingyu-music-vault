@@ -240,3 +240,92 @@ export async function fetchAlbumDetail(albumKey: string, artistKey: string): Pro
   })
   return data
 }
+
+export interface MetadataSnapshot {
+  title: string | null
+  artist: string | null
+  album: string | null
+  albumArtist: string | null
+  year: number | null
+  genre: string | null
+  trackNumber: number | null
+  duration: number | null
+}
+
+export interface MetadataDiffItem {
+  field: string
+  databaseValue: unknown
+  embeddedValue: unknown
+}
+
+export interface MetadataCompareResponse {
+  musicId: number
+  database: MetadataSnapshot
+  embedded: MetadataSnapshot
+  diffs: MetadataDiffItem[]
+}
+
+export interface MetadataSyncRequest {
+  mode?: string
+}
+
+export interface MetadataSyncResult {
+  musicId: number
+  direction: string
+  mode: string
+  status: string
+  beforeDatabase: MetadataSnapshot
+  afterDatabase: MetadataSnapshot
+  beforeFile: MetadataSnapshot
+  afterFile: MetadataSnapshot
+  changedFields: string[]
+  auditId: number | null
+  errorMessage: string | null
+}
+
+export interface BatchMetadataCompareRequest {
+  musicIds: number[]
+}
+
+export interface BatchMetadataSyncRequest {
+  musicIds: number[]
+  mode?: string
+}
+
+export interface BatchMetadataSyncResponse {
+  batchId: string
+  total: number
+  success: number
+  failed: number
+  items: MetadataSyncResult[]
+}
+
+export async function compareMusicMetadata(id: number): Promise<MetadataCompareResponse> {
+  const { data } = await http.get(`/api/music/${id}/metadata/compare`)
+  return data
+}
+
+export async function applyFileMetadataToDatabase(id: number): Promise<MetadataSyncResult> {
+  const { data } = await http.post(`/api/music/${id}/metadata/apply-file-to-db`, {} as MetadataSyncRequest)
+  return data
+}
+
+export async function applyDatabaseMetadataToFile(id: number): Promise<MetadataSyncResult> {
+  const { data } = await http.post(`/api/music/${id}/metadata/apply-db-to-file`, {} as MetadataSyncRequest)
+  return data
+}
+
+export async function batchCompareMusicMetadata(musicIds: number[]): Promise<MetadataCompareResponse[]> {
+  const { data } = await http.post('/api/music/metadata/compare', { musicIds } as BatchMetadataCompareRequest)
+  return data
+}
+
+export async function batchApplyFileMetadataToDatabase(musicIds: number[]): Promise<BatchMetadataSyncResponse> {
+  const { data } = await http.post('/api/music/metadata/apply-file-to-db', { musicIds } as BatchMetadataSyncRequest)
+  return data
+}
+
+export async function batchApplyDatabaseMetadataToFile(musicIds: number[]): Promise<BatchMetadataSyncResponse> {
+  const { data } = await http.post('/api/music/metadata/apply-db-to-file', { musicIds } as BatchMetadataSyncRequest)
+  return data
+}
