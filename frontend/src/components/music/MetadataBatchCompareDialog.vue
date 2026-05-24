@@ -26,7 +26,6 @@ const FIELD_LABELS: Record<string, string> = {
   year: '年份',
   genre: '流派',
   trackNumber: '音轨号',
-  duration: '时长',
 }
 
 const visible = ref(false)
@@ -65,7 +64,10 @@ async function open() {
   compareList.value = []
   applyResult.value = null
   try {
-    compareList.value = await batchCompareMusicMetadata(props.musicIds)
+    compareList.value = (await batchCompareMusicMetadata(props.musicIds)).map((item) => ({
+      ...item,
+      diffs: item.diffs.filter((diff) => diff.field in FIELD_LABELS),
+    }))
   } catch (e: any) {
     const msg = e?.response?.data?.message || '批量元数据对比失败'
     ElMessage.error(msg)

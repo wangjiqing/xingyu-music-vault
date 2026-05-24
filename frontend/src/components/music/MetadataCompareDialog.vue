@@ -25,7 +25,6 @@ const FIELD_LABELS: Record<string, string> = {
   year: '年份',
   genre: '流派',
   trackNumber: '音轨号',
-  duration: '时长',
 }
 
 const visible = ref(false)
@@ -49,7 +48,11 @@ async function open() {
   loading.value = true
   result.value = null
   try {
-    result.value = await compareMusicMetadata(props.musicId)
+    const response = await compareMusicMetadata(props.musicId)
+    result.value = {
+      ...response,
+      diffs: response.diffs.filter((diff) => diff.field in FIELD_LABELS),
+    }
   } catch (e: any) {
     const msg = e?.response?.data?.message || '加载元数据对比失败'
     ElMessage.error(msg)

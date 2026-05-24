@@ -26,6 +26,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -66,7 +67,8 @@ class MusicMetadataResourceTest {
                 .body("database.title", equalTo("DB Title"))
                 .body("embedded.title", equalTo("File Title"))
                 .body("diffs.find { it.field == 'title' }.databaseValue", equalTo("DB Title"))
-                .body("diffs.find { it.field == 'album' }.embeddedValue", equalTo("File Album"));
+                .body("diffs.find { it.field == 'album' }.embeddedValue", equalTo("File Album"))
+                .body("diffs.find { it.field == 'duration' }", nullValue());
     }
 
     @Test
@@ -143,6 +145,49 @@ class MusicMetadataResourceTest {
             assertNotNull(audit);
             assertEquals("SUCCESS", audit.status);
             assertEquals("[]", audit.changedFieldsJson);
+        });
+    }
+
+    @Test
+    void durationDifferenceIsNotReportedButFileToDatabaseRefreshesDuration() throws Exception {
+        Long musicId = createTaggedMusic("duration-refresh.mp3", "Duration Title", "Duration Artist", "Duration Album");
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            track.title = "Duration Title";
+            track.artist = "Duration Artist";
+            track.album = "Duration Album";
+            track.albumArtist = null;
+            track.year = null;
+            track.genre = null;
+            track.trackNo = null;
+            track.duration = 999L;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{id}/metadata/compare", musicId)
+                .then()
+                .statusCode(200)
+                .body("diffs", hasSize(0))
+                .body("database.duration", equalTo(999));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
+                .then()
+                .statusCode(200)
+                .body("status", equalTo("SUCCESS"))
+                .body("changedFields", hasSize(0));
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(musicId);
+            Track track = Track.findById(trackFile.trackId);
+            org.junit.jupiter.api.Assertions.assertNotEquals(999L, track.duration);
         });
     }
 

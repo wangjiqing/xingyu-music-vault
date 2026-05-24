@@ -309,7 +309,6 @@ public class MusicMetadataSyncService {
         addDiff(diffs, "year", database.year(), embedded.year());
         addDiff(diffs, "genre", database.genre(), embedded.genre());
         addDiff(diffs, "trackNumber", database.trackNumber(), embedded.trackNumber());
-        addDiff(diffs, "duration", database.duration(), embedded.duration());
         return diffs;
     }
 
