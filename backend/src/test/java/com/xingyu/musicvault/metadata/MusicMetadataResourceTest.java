@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.stream.LongStream;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
@@ -129,7 +130,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -177,7 +178,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -227,7 +228,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -278,7 +279,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -301,7 +302,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-db-to-file", musicId)
                 .then()
@@ -339,7 +340,7 @@ class MusicMetadataResourceTest {
         given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-db-to-file", musicId)
                 .then()
@@ -370,8 +371,8 @@ class MusicMetadataResourceTest {
     }
 
     @Test
-    void batchCompareRejectsMoreThanTwenty() {
-        String ids = LongStream.rangeClosed(1, 21)
+    void batchCompareRejectsMoreThanOneHundred() {
+        String ids = LongStream.rangeClosed(1, 101)
                 .mapToObj(Long::toString)
                 .collect(java.util.stream.Collectors.joining(","));
 
@@ -387,7 +388,126 @@ class MusicMetadataResourceTest {
                 .post("/api/music/metadata/compare")
                 .then()
                 .statusCode(400)
-                .body("error", equalTo("bad_request"));
+                .body("error", equalTo("bad_request"))
+                .body("message", containsString("musicIds size"));
+    }
+
+    @Test
+    void batchMusicIdsRejectEmptyAndDuplicateInputs() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"musicIds\": []}")
+                .when()
+                .post("/api/music/metadata/compare")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"))
+                .body("message", equalTo("musicIds must not be empty"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "musicIds": [1, 1]
+                        }
+                        """)
+                .when()
+                .post("/api/music/metadata/compare")
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"))
+                .body("message", equalTo("musicIds must not contain duplicate IDs"));
+    }
+
+    @Test
+    void applyAndRollbackRequireConfirmTrue() throws Exception {
+        Long musicId = createTaggedMusic("confirm-required.mp3", "Confirm File", "Artist", "Album");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": false}")
+                .when()
+                .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"))
+                .body("message", equalTo("confirm must be true"));
+
+        Integer auditId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("auditId");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": false}")
+                .when()
+                .post("/api/music/metadata/audits/{auditId}/rollback", auditId)
+                .then()
+                .statusCode(400)
+                .body("error", equalTo("bad_request"))
+                .body("message", equalTo("confirm must be true"));
+    }
+
+    @Test
+    void missingAudioFileReturnsClearCompareAndApplyErrors() {
+        Long musicId = createMusicWithMissingFile("missing-audio.mp3");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{id}/metadata/compare", musicId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"))
+                .body("message", containsString("Audio file does not exist"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
+                .then()
+                .statusCode(200)
+                .body("status", equalTo("FAILED"))
+                .body("errorMessage", containsString("Audio file does not exist"))
+                .body("auditId", notNullValue());
+    }
+
+    @Test
+    void batchCompareReturnsFailureItemAndContinues() throws Exception {
+        Long successId = createTaggedMusic("batch-compare-ok.mp3", "Batch Compare", "Artist", "Album");
+        Long failedId = createMusicWithMissingFile("batch-compare-missing.mp3");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "musicIds": [%d, %d]
+                        }
+                        """.formatted(successId, failedId))
+                .when()
+                .post("/api/music/metadata/compare")
+                .then()
+                .statusCode(200)
+                .body("", hasSize(2))
+                .body("[0].status", equalTo("SUCCESS"))
+                .body("[0].database.title", equalTo("DB Batch Compare"))
+                .body("[1].status", equalTo("FAILED"))
+                .body("[1].musicId", equalTo(failedId.intValue()))
+                .body("[1].errorMessage", containsString("Audio file does not exist"));
     }
 
     @Test
@@ -400,7 +520,8 @@ class MusicMetadataResourceTest {
                 .contentType(ContentType.JSON)
                 .body("""
                         {
-                          "musicIds": [%d, %d]
+                          "musicIds": [%d, %d],
+                          "confirm": true
                         }
                         """.formatted(successId, failedId))
                 .when()
@@ -422,6 +543,45 @@ class MusicMetadataResourceTest {
             List<MusicMetadataSyncAudit> audits = MusicMetadataSyncAudit.list("batchId", batchId);
             assertEquals(1, audits.stream().filter(audit -> "SUCCESS".equals(audit.status)).count());
             assertEquals(1, audits.stream().filter(audit -> "FAILED".equals(audit.status)).count());
+        });
+    }
+
+    @Test
+    void batchApplyPersistsFailureAuditWhenMusicIsMissing() throws Exception {
+        Long successId = createTaggedMusic("batch-ok-missing-music.mp3", "Batch Existing", "Batch Artist", "Batch Album");
+        Long missingId = 999999L;
+
+        String batchId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "musicIds": [%d, %d],
+                          "confirm": true
+                        }
+                        """.formatted(successId, missingId))
+                .when()
+                .post("/api/music/metadata/apply-file-to-db")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(2))
+                .body("success", equalTo(1))
+                .body("failed", equalTo(1))
+                .body("items[1].status", equalTo("FAILED"))
+                .body("items[1].auditId", notNullValue())
+                .body("items[1].errorMessage", equalTo("Music not found"))
+                .extract()
+                .path("batchId");
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            List<MusicMetadataSyncAudit> audits = MusicMetadataSyncAudit.list("batchId", batchId);
+            assertEquals(2, audits.size());
+            MusicMetadataSyncAudit failed = audits.stream()
+                    .filter(audit -> missingId.equals(audit.musicId))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("FAILED", failed.status);
+            assertEquals("Music not found", failed.errorMessage);
         });
     }
 
@@ -475,7 +635,8 @@ class MusicMetadataResourceTest {
                 .contentType(ContentType.JSON)
                 .body("""
                         {
-                          "musicIds": [%d, %d]
+                          "musicIds": [%d, %d],
+                          "confirm": true
                         }
                         """.formatted(firstMusicId, secondMusicId))
                 .when()
@@ -535,6 +696,71 @@ class MusicMetadataResourceTest {
     }
 
     @Test
+    void auditListRejectsInvalidPaginationAndEnums() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/metadata/audits?page=-1")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("page must be greater than or equal to 0"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/metadata/audits?pageSize=101")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("pageSize must be between 1 and 100"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("direction", "sideways")
+                .when()
+                .get("/api/music/metadata/audits")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("direction must be file_to_db or db_to_file"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("status", "DONE")
+                .when()
+                .get("/api/music/metadata/audits")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("status must be SUCCESS or FAILED"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("rollbackStatus", "MAYBE")
+                .when()
+                .get("/api/music/metadata/audits")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("rollbackStatus must be NOT_ROLLED_BACK or ROLLED_BACK"));
+    }
+
+    @Test
+    void missingMusicAndAuditIdsReturnClearErrors() {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/{id}/metadata/compare", 999999)
+                .then()
+                .statusCode(404)
+                .body("message", equalTo("Music not found"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/music/metadata/audits/{auditId}", 999999)
+                .then()
+                .statusCode(404)
+                .body("message", equalTo("Metadata audit not found"));
+    }
+
+    @Test
     void rollbackPreviewAndExecuteFileToDatabaseAudit() throws Exception {
         Long musicId = createTaggedMusic("rollback-db.mp3", "File Rollback", "File Artist", "File Album");
         setDatabaseMetadata(musicId, "Original DB", "Original Artist", "Original Album");
@@ -542,7 +768,7 @@ class MusicMetadataResourceTest {
         Integer auditId = given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -594,6 +820,16 @@ class MusicMetadataResourceTest {
                 .statusCode(200)
                 .body("canRollback", equalTo(false))
                 .body("errorMessage", equalTo("Audit record has already been rolled back"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/metadata/audits/{auditId}/rollback", auditId)
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("Audit record has already been rolled back"));
     }
 
     @Test
@@ -604,7 +840,7 @@ class MusicMetadataResourceTest {
         Integer auditId = given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-db-to-file", musicId)
                 .then()
@@ -646,6 +882,45 @@ class MusicMetadataResourceTest {
     }
 
     @Test
+    void rollbackMissingFileReturnsErrorAndDoesNotMarkOriginalRolledBack() throws Exception {
+        Path file = musicDir.resolve("rollback-missing-file.mp3");
+        Long musicId = createTaggedMusic(file.getFileName().toString(), "Original File", "Artist", "Album");
+        setDatabaseMetadata(musicId, "Database Target", "Artist", "Album");
+
+        Integer auditId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/{id}/metadata/apply-db-to-file", musicId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("auditId");
+
+        Files.delete(file);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/metadata/audits/{auditId}/rollback", auditId)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(false))
+                .body("errorMessage", containsString("Audio file does not exist"));
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            MusicMetadataSyncAudit original = MusicMetadataSyncAudit.findById(auditId.longValue());
+            assertEquals("NOT_ROLLED_BACK", original.rollbackStatus);
+            MusicMetadataSyncAudit rollback = MusicMetadataSyncAudit.find("rollbackOfAuditId", auditId.longValue()).firstResult();
+            assertNotNull(rollback);
+            assertEquals("FAILED", rollback.status);
+        });
+    }
+
+    @Test
     void failedAndRollbackAuditRecordsCannotBeRolledBack() throws Exception {
         Long failedMusicId = createMusicWithMissingFile("rollback-failed-missing.mp3");
 
@@ -654,7 +929,8 @@ class MusicMetadataResourceTest {
                 .contentType(ContentType.JSON)
                 .body("""
                         {
-                          "musicIds": [%d]
+                          "musicIds": [%d],
+                          "confirm": true
                         }
                         """.formatted(failedMusicId))
                 .when()
@@ -674,11 +950,21 @@ class MusicMetadataResourceTest {
                 .body("canRollback", equalTo(false))
                 .body("errorMessage", equalTo("Only SUCCESS audit records can be rolled back"));
 
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/metadata/audits/{auditId}/rollback", failedAuditId)
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("Only SUCCESS audit records can be rolled back"));
+
         Long musicId = createTaggedMusic("rollback-record.mp3", "Rollback Record File", "Artist", "Album");
         Integer applyAuditId = given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", musicId)
                 .then()
@@ -704,11 +990,41 @@ class MusicMetadataResourceTest {
                 .statusCode(200)
                 .body("canRollback", equalTo(false))
                 .body("errorMessage", equalTo("ROLLBACK audit records cannot be rolled back"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"confirm\": true}")
+                .when()
+                .post("/api/music/metadata/audits/{auditId}/rollback", rollbackAuditId)
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("ROLLBACK audit records cannot be rolled back"));
     }
 
     @Test
-    void batchRollbackRejectsMoreThanTwentyAndAllowsPartialFailure() throws Exception {
-        String ids = LongStream.rangeClosed(1, 21)
+    void batchRollbackRejectsMoreThanOneHundredAndAllowsPartialFailure() throws Exception {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"auditIds\": []}")
+                .when()
+                .post("/api/music/metadata/audits/rollback-preview")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("auditIds must not be empty"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"auditIds\": [1, 1]}")
+                .when()
+                .post("/api/music/metadata/audits/rollback-preview")
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("auditIds must not contain duplicate IDs"));
+
+        String ids = LongStream.rangeClosed(1, 101)
                 .mapToObj(Long::toString)
                 .collect(java.util.stream.Collectors.joining(","));
 
@@ -730,7 +1046,7 @@ class MusicMetadataResourceTest {
         Integer successAuditId = given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("{}")
+                .body("{\"confirm\": true}")
                 .when()
                 .post("/api/music/{id}/metadata/apply-file-to-db", successMusicId)
                 .then()
@@ -744,7 +1060,8 @@ class MusicMetadataResourceTest {
                 .contentType(ContentType.JSON)
                 .body("""
                         {
-                          "musicIds": [%d]
+                          "musicIds": [%d],
+                          "confirm": true
                         }
                         """.formatted(failedMusicId))
                 .when()

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, RefreshRight, View, Clock } from '@element-plus/icons-vue'
+import { Search, RefreshRight, View, Clock, WarningFilled } from '@element-plus/icons-vue'
 import {
   fetchMetadataAudits,
   type MetadataAuditListItem,
@@ -20,6 +20,7 @@ const query = reactive({
   direction: '',
   status: '',
   rollbackStatus: '',
+  operationType: '',
   startTime: '',
   endTime: '',
 })
@@ -30,7 +31,7 @@ const detailDialogRef = ref<InstanceType<typeof MetadataAuditDetailDialog>>()
 const detailAuditId = ref(0)
 
 const rollbackPreviewRef = ref<InstanceType<typeof MetadataRollbackPreviewDialog>>()
-const MAX_BATCH_SIZE = 20
+const MAX_BATCH_SIZE = 100
 
 const DIRECTION_LABELS: Record<string, string> = {
   file_to_db: '文件→数据库',
@@ -40,11 +41,13 @@ const DIRECTION_LABELS: Record<string, string> = {
 const STATUS_TYPES: Record<string, string> = {
   SUCCESS: 'success',
   FAILED: 'danger',
+  PARTIAL: 'warning',
 }
 
 const STATUS_LABELS: Record<string, string> = {
   SUCCESS: '成功',
   FAILED: '失败',
+  PARTIAL: '部分成功',
 }
 
 const ROLLBACK_LABELS: Record<string, string> = {
@@ -57,8 +60,29 @@ const ROLLBACK_TYPES: Record<string, string> = {
   ROLLED_BACK: 'success',
 }
 
+const OPERATION_LABELS: Record<string, string> = {
+  APPLY: '同步',
+  ROLLBACK: '回滚',
+}
+
+const OPERATION_TYPES: Record<string, string> = {
+  APPLY: 'primary',
+  ROLLBACK: 'warning',
+}
+
 function canRollbackItem(row: MetadataAuditListItem): boolean {
-  return row.status === 'SUCCESS' && row.operationType !== 'ROLLBACK' && row.rollbackStatus === 'NOT_ROLLED_BACK'
+  if (row.status !== 'SUCCESS') return false
+  if (row.operationType === 'ROLLBACK') return false
+  if (row.rollbackStatus !== 'NOT_ROLLED_BACK') return false
+  return true
+}
+
+function rollbackDisabledReason(row: MetadataAuditListItem): string {
+  if (row.operationType === 'ROLLBACK') return '回滚类型的记录不提供再次回滚'
+  if (row.status === 'FAILED') return '失败的同步记录不可回滚，请查看错误原因'
+  if (row.status === 'PARTIAL') return '部分成功的记录不建议回滚'
+  if (row.rollbackStatus === 'ROLLED_BACK') return '该记录已回滚'
+  return ''
 }
 
 async function loadList() {
@@ -72,13 +96,15 @@ async function loadList() {
     if (query.direction) params.direction = query.direction
     if (query.status) params.status = query.status
     if (query.rollbackStatus) params.rollbackStatus = query.rollbackStatus
+    if (query.operationType) params.operationType = query.operationType
     if (query.startTime) params.startTime = query.startTime
     if (query.endTime) params.endTime = query.endTime
     const res = await fetchMetadataAudits(params as any)
     list.value = res.items
     total.value = res.total
-  } catch {
-    ElMessage.error('加载审计列表失败')
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '加载审计列表失败，请确认后端服务正常运行'
+    ElMessage.error(msg)
   } finally {
     loading.value = false
   }
@@ -110,6 +136,11 @@ function openDetail(row: MetadataAuditListItem) {
 }
 
 async function handleSingleRollback(row: MetadataAuditListItem) {
+  if (!canRollbackItem(row)) {
+    const reason = rollbackDisabledReason(row)
+    ElMessage.warning(reason || '该记录不可回滚')
+    return
+  }
   rollbackPreviewRef.value?.openSingle(row.id)
 }
 
@@ -128,7 +159,11 @@ function handleBatchRollback() {
   }
   const nonRollbackable = selectedRows.value.filter((r) => !canRollbackItem(r))
   if (nonRollbackable.length > 0) {
-    ElMessage.warning(`${nonRollbackable.length} 条记录不可回滚，请重新选择`)
+    const reasons = nonRollbackable.map((r) => {
+      const reason = rollbackDisabledReason(r) || '不可回滚'
+      return `ID ${r.id}: ${reason}`
+    })
+    ElMessage.warning(`有 ${nonRollbackable.length} 条记录不可回滚：${reasons.slice(0, 3).join('；')}${reasons.length > 3 ? '...' : ''}`)
     return
   }
   const ids = selectedRows.value.map((r) => r.id)
@@ -146,7 +181,7 @@ function formatChangedFields(fields: string[]): string {
 }
 
 function emptyText(): string {
-  return query.keyword || query.direction || query.status || query.rollbackStatus
+  return query.keyword || query.direction || query.status || query.rollbackStatus || query.operationType
     ? '没有匹配的结果'
     : '暂无审计记录'
 }
@@ -203,12 +238,13 @@ onMounted(() => {
         placeholder="状态"
         clearable
         size="small"
-        style="width: 100px"
+        style="width: 110px"
         @change="handleSearch"
       >
         <el-option label="全部" value="" />
         <el-option label="成功" value="SUCCESS" />
         <el-option label="失败" value="FAILED" />
+        <el-option label="部分成功" value="PARTIAL" />
       </el-select>
       <el-select
         v-model="query.rollbackStatus"
@@ -221,6 +257,18 @@ onMounted(() => {
         <el-option label="全部" value="" />
         <el-option label="未回滚" value="NOT_ROLLED_BACK" />
         <el-option label="已回滚" value="ROLLED_BACK" />
+      </el-select>
+      <el-select
+        v-model="query.operationType"
+        placeholder="操作类型"
+        clearable
+        size="small"
+        style="width: 110px"
+        @change="handleSearch"
+      >
+        <el-option label="全部" value="" />
+        <el-option label="同步" value="APPLY" />
+        <el-option label="回滚" value="ROLLBACK" />
       </el-select>
       <el-date-picker
         v-model="query.startTime"
@@ -271,19 +319,26 @@ onMounted(() => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="变更字段" min-width="150" show-overflow-tooltip>
+      <el-table-column label="操作类型" width="80" align="center">
+        <template #default="{ row }">
+          <el-tag size="small" :type="OPERATION_TYPES[row.operationType] || 'info'">
+            {{ OPERATION_LABELS[row.operationType] || row.operationType }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="变更字段" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">
           {{ formatChangedFields(row.changedFields) }}
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
+      <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="STATUS_TYPES[row.status] || 'info'" size="small">
             {{ STATUS_LABELS[row.status] || row.status }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="回滚" width="80" align="center">
+      <el-table-column label="回滚" width="90" align="center">
         <template #default="{ row }">
           <el-tag :type="ROLLBACK_TYPES[row.rollbackStatus] || 'info'" size="small">
             {{ ROLLBACK_LABELS[row.rollbackStatus] || row.rollbackStatus }}
@@ -298,7 +353,7 @@ onMounted(() => {
           <span v-else style="color: #c0c4cc">--</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"
@@ -309,8 +364,24 @@ onMounted(() => {
           >
             详情
           </el-button>
+          <el-tooltip
+            v-if="!canRollbackItem(row)"
+            :content="rollbackDisabledReason(row)"
+            placement="top"
+            :disabled="!rollbackDisabledReason(row)"
+          >
+            <el-button
+              type="warning"
+              size="small"
+              text
+              :icon="Clock"
+              disabled
+            >
+              回滚
+            </el-button>
+          </el-tooltip>
           <el-button
-            v-if="canRollbackItem(row)"
+            v-else
             type="warning"
             size="small"
             text
@@ -318,6 +389,16 @@ onMounted(() => {
             @click="handleSingleRollback(row)"
           >
             回滚
+          </el-button>
+          <el-button
+            v-if="row.status === 'FAILED' && row.errorMessage"
+            type="danger"
+            size="small"
+            text
+            :icon="WarningFilled"
+            @click="openDetail(row)"
+          >
+            错误
           </el-button>
         </template>
       </el-table-column>

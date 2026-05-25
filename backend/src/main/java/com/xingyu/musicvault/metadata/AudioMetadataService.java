@@ -19,7 +19,7 @@ public class AudioMetadataService {
             Tag tag = audioFile.getTag();
             Long duration = audioFile.getAudioHeader() == null ? null : (long) audioFile.getAudioHeader().getTrackLength();
             if (tag == null) {
-                return new MetadataSnapshot(null, null, null, null, null, null, null, duration);
+                throw new AudioMetadataException("Audio tag is empty: " + path);
             }
             return new MetadataSnapshot(
                     clean(tag.getFirst(FieldKey.TITLE)),
@@ -56,7 +56,7 @@ public class AudioMetadataService {
     }
 
     private void requireReadableFile(Path path) {
-        if (path == null) {
+        if (path == null || path.toString().isBlank()) {
             throw new AudioMetadataException("Audio file path is required");
         }
         if (!Files.exists(path)) {

@@ -24,12 +24,14 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @ApplicationScoped
 public class MusicMetadataSyncService {
     private static final Logger LOG = Logger.getLogger(MusicMetadataSyncService.class);
-    public static final int MAX_BATCH_SIZE = 20;
+    public static final int MAX_BATCH_SIZE = 100;
     public static final String MODE_OVERWRITE = "overwrite";
     public static final String DIRECTION_FILE_TO_DB = "file_to_db";
     public static final String DIRECTION_DB_TO_FILE = "db_to_file";
@@ -49,22 +51,25 @@ public class MusicMetadataSyncService {
         TrackFile trackFile = findMusic(musicId);
         MetadataSnapshot database = databaseSnapshot(trackFile);
         MetadataSnapshot embedded = readFileSnapshot(trackFile);
-        return new MetadataCompareResponse(trackFile.id, compareSnapshot(database), compareSnapshot(embedded), diffs(database, embedded));
+        return new MetadataCompareResponse(trackFile.id, compareSnapshot(database), compareSnapshot(embedded),
+                diffs(database, embedded), STATUS_SUCCESS, null);
     }
 
     public List<MetadataCompareResponse> compareBatch(BatchMetadataCompareRequest request) {
         List<Long> ids = validateBatchIds(request == null ? null : request.musicIds());
-        return ids.stream().map(this::compare).toList();
+        return ids.stream().map(this::compareBatchItem).toList();
     }
 
     @Transactional
-    public MetadataSyncResult applyFileToDatabase(Long musicId, String mode) {
-        return applyFileToDatabase(musicId, null, normalizeMode(mode));
+    public MetadataSyncResult applyFileToDatabase(Long musicId, MetadataDtos.MetadataSyncRequest request) {
+        validateConfirm(request == null ? null : request.confirm());
+        return applyFileToDatabase(musicId, null, normalizeMode(request == null ? null : request.mode()));
     }
 
     @Transactional
-    public MetadataSyncResult applyDatabaseToFile(Long musicId, String mode) {
-        return applyDatabaseToFile(musicId, null, normalizeMode(mode));
+    public MetadataSyncResult applyDatabaseToFile(Long musicId, MetadataDtos.MetadataSyncRequest request) {
+        validateConfirm(request == null ? null : request.confirm());
+        return applyDatabaseToFile(musicId, null, normalizeMode(request == null ? null : request.mode()));
     }
 
     @Transactional
@@ -79,6 +84,7 @@ public class MusicMetadataSyncService {
 
     private BatchMetadataSyncResponse applyBatch(BatchMetadataSyncRequest request, String direction) {
         List<Long> ids = validateBatchIds(request == null ? null : request.musicIds());
+        validateConfirm(request == null ? null : request.confirm());
         String mode = normalizeMode(request == null ? null : request.mode());
         String batchId = UUID.randomUUID().toString();
         List<MetadataSyncResult> items = new ArrayList<>();
@@ -132,6 +138,7 @@ public class MusicMetadataSyncService {
             return new MetadataSyncResult(trackFile.id, DIRECTION_FILE_TO_DB, mode, STATUS_SUCCESS,
                     beforeDatabase, afterDatabase, beforeFile, beforeFile, changedFields, audit.id, null);
         } catch (Exception exception) {
+            restoreDatabaseSnapshot(trackFile, beforeDatabase);
             return failedResult(batchId, musicId, trackFile, DIRECTION_FILE_TO_DB, SOURCE_EMBEDDED_TAG, SOURCE_DATABASE,
                     mode, beforeDatabase, null, beforeFile, beforeFile, changedFields, exception);
         }
@@ -171,7 +178,7 @@ public class MusicMetadataSyncService {
         } catch (Exception exception) {
             Exception reportedException = exception;
             if (fileWriteCompleted && trackFile != null) {
-                String message = "Audio file metadata was modified but database audit/sync bookkeeping failed: "
+                String message = "Audio file metadata was modified but audit record failed to persist: "
                         + errorMessage(exception);
                 LOG.errorf(
                         exception,
@@ -184,6 +191,14 @@ public class MusicMetadataSyncService {
             }
             return failedResult(batchId, musicId, trackFile, DIRECTION_DB_TO_FILE, SOURCE_DATABASE, SOURCE_EMBEDDED_TAG,
                     mode, beforeDatabase, beforeDatabase, beforeFile, afterFile, changedFields, reportedException);
+        }
+    }
+
+    private MetadataCompareResponse compareBatchItem(Long musicId) {
+        try {
+            return compare(musicId);
+        } catch (Exception exception) {
+            return new MetadataCompareResponse(musicId, null, null, List.of(), STATUS_FAILED, errorMessage(exception));
         }
     }
 
@@ -204,16 +219,16 @@ public class MusicMetadataSyncService {
     ) {
         String message = errorMessage(exception);
         Long auditId = null;
-        if (trackFile != null) {
+        if (trackFile != null || batchId != null) {
             try {
-                MusicMetadataSyncAudit audit = audit(batchId, trackFile, direction, sourceType, targetType, mode,
+                MusicMetadataSyncAudit audit = audit(batchId, trackFile, musicId, direction, sourceType, targetType, mode,
                         beforeDatabase, afterDatabase, beforeFile, afterFile, changedFields, STATUS_FAILED, message);
                 auditId = audit.id;
             } catch (RuntimeException auditException) {
                 LOG.errorf(
                         auditException,
                         "Failed to persist metadata sync failure audit: musicId=%d direction=%s originalMessage=%s",
-                        trackFile.id,
+                        musicId,
                         direction,
                         message
                 );
@@ -259,10 +274,30 @@ public class MusicMetadataSyncService {
             String status,
             String errorMessage
     ) {
+        return audit(batchId, trackFile, trackFile.id, direction, sourceType, targetType, mode, beforeDatabase,
+                afterDatabase, beforeFile, afterFile, changedFields, status, errorMessage);
+    }
+
+    private MusicMetadataSyncAudit audit(
+            String batchId,
+            TrackFile trackFile,
+            Long musicId,
+            String direction,
+            String sourceType,
+            String targetType,
+            String mode,
+            MetadataSnapshot beforeDatabase,
+            MetadataSnapshot afterDatabase,
+            MetadataSnapshot beforeFile,
+            MetadataSnapshot afterFile,
+            List<String> changedFields,
+            String status,
+            String errorMessage
+    ) {
         return metadataAuditService.create(new MetadataAuditCreateRequest(
                 batchId,
-                trackFile.id,
-                trackFile.filePath,
+                musicId,
+                trackFile == null ? null : trackFile.filePath,
                 direction,
                 sourceType,
                 targetType,
@@ -299,6 +334,9 @@ public class MusicMetadataSyncService {
     }
 
     public MetadataSnapshot readFileSnapshot(TrackFile trackFile) {
+        if (trackFile.filePath == null || trackFile.filePath.isBlank()) {
+            throw new AudioMetadataException("Audio file path is required");
+        }
         return audioMetadataService.read(Path.of(trackFile.filePath));
     }
 
@@ -325,6 +363,16 @@ public class MusicMetadataSyncService {
         track.normalizedTitle = track.title == null ? null : track.title.toLowerCase(java.util.Locale.ROOT);
         track.artist = clean(snapshot.artist());
         track.album = clean(snapshot.album());
+    }
+
+    private void restoreDatabaseSnapshot(TrackFile trackFile, MetadataSnapshot snapshot) {
+        if (trackFile == null || snapshot == null) {
+            return;
+        }
+        Track track = trackOf(trackFile);
+        if (track != null) {
+            applySnapshotToTrack(track, snapshot);
+        }
     }
 
     private MetadataCompareSnapshot compareSnapshot(MetadataSnapshot snapshot) {
@@ -369,7 +417,18 @@ public class MusicMetadataSyncService {
         if (musicIds.size() > MAX_BATCH_SIZE) {
             throw new BadRequestException("musicIds size must be less than or equal to " + MAX_BATCH_SIZE);
         }
-        return musicIds.stream().distinct().toList();
+        Set<Long> seen = new HashSet<>();
+        boolean hasDuplicate = musicIds.stream().anyMatch(id -> !seen.add(id));
+        if (hasDuplicate) {
+            throw new BadRequestException("musicIds must not contain duplicate IDs");
+        }
+        return musicIds;
+    }
+
+    private void validateConfirm(Boolean confirm) {
+        if (!Boolean.TRUE.equals(confirm)) {
+            throw new BadRequestException("confirm must be true");
+        }
     }
 
     private String normalizeMode(String mode) {

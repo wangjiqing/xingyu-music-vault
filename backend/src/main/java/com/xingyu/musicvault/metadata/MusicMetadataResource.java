@@ -48,13 +48,13 @@ public class MusicMetadataResource {
     @POST
     @Path("/{id}/metadata/apply-file-to-db")
     public MetadataSyncResult applyFileToDatabase(@PathParam("id") Long id, MetadataSyncRequest request) {
-        return musicMetadataSyncService.applyFileToDatabase(id, request == null ? null : request.mode());
+        return musicMetadataSyncService.applyFileToDatabase(id, request);
     }
 
     @POST
     @Path("/{id}/metadata/apply-db-to-file")
     public MetadataSyncResult applyDatabaseToFile(@PathParam("id") Long id, MetadataSyncRequest request) {
-        return musicMetadataSyncService.applyDatabaseToFile(id, request == null ? null : request.mode());
+        return musicMetadataSyncService.applyDatabaseToFile(id, request);
     }
 
     @POST
