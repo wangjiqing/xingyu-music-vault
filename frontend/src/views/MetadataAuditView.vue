@@ -28,8 +28,6 @@ const query = reactive({
 const selectedRows = ref<MetadataAuditListItem[]>([])
 
 const detailDialogRef = ref<InstanceType<typeof MetadataAuditDetailDialog>>()
-const detailAuditId = ref(0)
-
 const rollbackPreviewRef = ref<InstanceType<typeof MetadataRollbackPreviewDialog>>()
 const MAX_BATCH_SIZE = 100
 
@@ -131,8 +129,7 @@ function handleSelectionChange(rows: MetadataAuditListItem[]) {
 }
 
 function openDetail(row: MetadataAuditListItem) {
-  detailAuditId.value = row.id
-  detailDialogRef.value?.open()
+  detailDialogRef.value?.open(row.id)
 }
 
 async function handleSingleRollback(row: MetadataAuditListItem) {
@@ -419,7 +416,6 @@ onMounted(() => {
 
   <MetadataAuditDetailDialog
     ref="detailDialogRef"
-    :audit-id="detailAuditId"
   />
 
   <MetadataRollbackPreviewDialog

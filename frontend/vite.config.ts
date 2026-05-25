@@ -15,4 +15,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/vue/') || id.includes('node_modules/vue-router/')) {
+            return 'vue-vendor'
+          }
+          if (id.includes('node_modules/element-plus/')) {
+            return 'element-plus'
+          }
+        },
+      },
+    },
+  },
 })
