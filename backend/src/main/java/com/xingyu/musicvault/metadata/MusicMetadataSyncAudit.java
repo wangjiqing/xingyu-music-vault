@@ -22,7 +22,7 @@ public class MusicMetadataSyncAudit extends PanacheEntityBase {
     @Column(name = "batch_id")
     public String batchId;
 
-    @Column(name = "music_id", nullable = false)
+    @Column(name = "music_id", nullable = false, columnDefinition = "integer")
     public Long musicId;
 
     @Column(name = "file_path")
@@ -67,7 +67,7 @@ public class MusicMetadataSyncAudit extends PanacheEntityBase {
     @Column(name = "rollback_status")
     public String rollbackStatus = "NOT_ROLLED_BACK";
 
-    @Column(name = "rollback_of_audit_id")
+    @Column(name = "rollback_of_audit_id", columnDefinition = "integer")
     public Long rollbackOfAuditId;
 
     @Column(name = "created_at", nullable = false)

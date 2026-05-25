@@ -3,10 +3,6 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { fetchMetadataAuditDetail, type MetadataAuditDetailResponse, type MetadataSnapshot } from '../../api/music'
 
-const props = defineProps<{
-  auditId: number
-}>()
-
 const visible = ref(false)
 const loading = ref(false)
 const detail = ref<MetadataAuditDetailResponse | null>(null)
@@ -80,12 +76,16 @@ function rollbackType(status: string): string {
   return types[status] || 'info'
 }
 
-async function open() {
+async function open(auditId: number) {
+  if (!auditId || auditId <= 0) {
+    ElMessage.error('审计记录 ID 无效')
+    return
+  }
   visible.value = true
   loading.value = true
   detail.value = null
   try {
-    detail.value = await fetchMetadataAuditDetail(props.auditId)
+    detail.value = await fetchMetadataAuditDetail(auditId)
   } catch (e: any) {
     const msg = e?.response?.data?.message || '加载审计详情失败，请确认审计记录存在'
     ElMessage.error(msg)
