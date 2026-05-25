@@ -747,30 +747,30 @@ Content-Type: application/json
 - 不会联网刮削或 AI 自动补全
 - 保存前前端会提示本次操作将影响多少首音乐
 
-#### 元数据同步（v0.8.4 / v0.8.5）
+#### 元数据同步（v0.8.4 / v0.8.5 / v0.8.6）
 
-v0.8.4 新增音频文件内嵌 Tag 读取与数据库/文件双向同步能力，v0.8.5 补充审计历史与回滚基础能力。
+v0.8.4 新增音频文件内嵌 Tag 读取与数据库/文件双向同步能力，v0.8.5 补充审计历史与回滚基础能力，v0.8.6 补强参数校验、强化边界限制、明确回滚规则与风险说明。
 
 **⚠️ 风险提示：数据库写回音频文件会修改本地音频文件。执行前应确认文件已备份。v0.8.5 已提供审计历史页面与回滚能力。**
 
 **同步范围（v0.8.5 收敛）：** 当前仅同步 title（歌曲名）、artist（歌手）、album（专辑）三个核心字段。albumArtist、year、genre、trackNumber 等高级字段暂不参与同步，原因：不同来源文件中这些字段的可用性和含义存在差异，暂不纳入当前版本同步范围，避免误覆盖。
 
+**批量操作限制（v0.8.6）：** 批量同步和批量回滚每次最多 100 条，超出返回 `400 Bad Request`。
+
 接口列表：
 
-|| Method | Path | 说明 |
+||| Method | Path | 说明 |
 |--------|------|------|
 | GET | `/api/music/{id}/metadata/compare` | 单曲：比较数据库与文件 Tag 差异 |
 | POST | `/api/music/{id}/metadata/apply-file-to-db` | 单曲：将文件 Tag 覆盖到数据库 |
 | POST | `/api/music/{id}/metadata/apply-db-to-file` | 单曲：将数据库元数据写回音频文件 Tag |
-| POST | `/api/music/metadata/compare` | 批量：比较多个音乐的差异（最多 20 条） |
-| POST | `/api/music/metadata/apply-file-to-db` | 批量：将文件 Tag 覆盖到数据库（最多 20 条） |
-| POST | `/api/music/metadata/apply-db-to-file` | 批量：将数据库元数据写回音频文件（最多 20 条） |
+| POST | `/api/music/metadata/compare` | 批量：比较多个音乐的差异（最多 100 条） |
+| POST | `/api/music/metadata/apply-file-to-db` | 批量：将文件 Tag 覆盖到数据库（最多 100 条） |
+| POST | `/api/music/metadata/apply-db-to-file` | 批量：将数据库元数据写回音频文件（最多 100 条） |
 
 **支持的音频格式（读取）：** mp3、flac、wav、m4a、aac、ogg、opus（基于 jaudiotagger 3.0.1 读取）。
 
-**db_to_file 写入限制：** jaudiotagger 3.0.1 注册的 writer 支持 ogg/oga、flac、mp3、mp4/m4a/m4b、wav、wma、aif/aiff/aifc、dsf。当前扫描包含的 aac、opus 格式无对应 writer 支持，其中 .opus 文件不应等同于 Ogg Vorbis 处理。`db_to_file` 操作对不支持写入的格式会返回明确失败结果，不会未捕获异常。建议生产使用中将 `db_to_file` 限制在已验证格式（mp3/flac/m4a/ogg/wav）范围内，后续版本将补充显式写入 allowlist。
-
-**批量同步限制：** 每次最多 20 条，超出返回 `400 Bad Request`。
+**db_to_file 写入限制：** jaudiotagger 3.0.1 注册的 writer 支持 ogg/oga、flac、mp3、mp4/m4a/m4b、wav、wma、aif/aiff/aifc、dsf。当前扫描包含的 aac、opus 格式无对应 writer 支持，其中 .opus 文件不应等同于 Ogg Vorbis 处理。`db_to_file` 操作对不支持写入的格式会返回明确失败结果，不会未捕获异常。建议生产使用中将 `db_to_file` 限制在已验证格式（mp3/flac/m4a/ogg/wav）范围内。
 
 ##### 单曲差异比较
 
@@ -817,7 +817,7 @@ Content-Type: application/json
 }
 ```
 
-`mode` 固定为 `overwrite`（当前仅支持此模式）。
+`mode` 固定为 `overwrite`（当前仅支持此模式）。`confirm` 参数可选，不传或为 `false` 时为预览模式，不实际写入。
 
 响应示例：
 
@@ -853,7 +853,7 @@ Content-Type: application/json
 }
 ```
 
-**⚠️ 此操作直接修改本地音频文件。执行前请确认文件已备份。**
+**⚠️ 此操作直接修改本地音频文件。执行前请确认文件已备份。** `confirm` 参数可选，不传或为 `false` 时为预览模式，不实际写入。
 
 响应示例：
 
@@ -889,7 +889,7 @@ Content-Type: application/json
 }
 ```
 
-最多 20 条，超出返回 `400 Bad Request`。
+最多 100 条，超出返回 `400 Bad Request`。
 
 响应为数组，每个元素同单曲差异比较的响应结构。
 
@@ -945,15 +945,19 @@ Content-Type: application/json
 - 操作结果状态和错误信息（失败时）
 - `rollbackStatus` 和 `rollbackOfAuditId` 字段预留给回滚能力
 
-**审计查询接口（v0.8.5）：**
+**审计查询接口（v0.8.5 / v0.8.6）：**
 - `GET /api/music/metadata/audits` — 审计历史分页列表，支持 `page`、`pageSize`、`direction`、`status`、`rollbackStatus` 筛选
 - `GET /api/music/metadata/audits/{auditId}` — 审计详情，包含完整操作快照
 - `GET /api/music/metadata/audits/{auditId}/rollback-preview` — 回滚预览
 - `POST /api/music/metadata/audits/{auditId}/rollback` — 执行单条回滚（`{ "confirm": true }`）
-- `POST /api/music/metadata/audits/rollback-preview` — 批量回滚预览
-- `POST /api/music/metadata/audits/rollback` — 批量执行回滚
+- `POST /api/music/metadata/audits/rollback-preview` — 批量回滚预览（最多 100 条，超出返回 `400`）
+- `POST /api/music/metadata/audits/rollback` — 批量执行回滚（最多 100 条，超出返回 `400`）
+
+**回滚规则（v0.8.6）：** 可回滚的审计记录需同时满足：`status = SUCCESS` 且 `rollbackStatus = NOT_ROLLED_BACK`。以下记录不可回滚：失败记录（`status = FAILED`）、已回滚记录（`rollbackStatus = ROLLED_BACK`）、ROLLBACK 记录（`rollbackOfAuditId != null`）。
 
 回滚操作同样写入审计记录（`rollbackOfAuditId` 指向前序审计记录），用于追溯。
+
+**暂不支持（v0.8.6）：** 全库同步、全库回滚、按歌手一键同步、按歌手一键回滚。如需大规模同步，建议分批调用，每批不超过 100 条。
 
  取消绑定：
 

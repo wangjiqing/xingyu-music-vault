@@ -27,9 +27,11 @@ import org.jboss.logging.Logger;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -38,12 +40,13 @@ public class MetadataAuditService {
     private static final Logger LOG = Logger.getLogger(MetadataAuditService.class);
     private static final int DEFAULT_PAGE_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 100;
-    private static final int MAX_BATCH_SIZE = 20;
+    private static final int MAX_BATCH_SIZE = 100;
     private static final String STATUS_SUCCESS = "SUCCESS";
     private static final String STATUS_FAILED = "FAILED";
     private static final String ROLLBACK_NOT_ROLLED_BACK = "NOT_ROLLED_BACK";
     private static final String ROLLBACK_ROLLED_BACK = "ROLLED_BACK";
     private static final String OPERATION_ROLLBACK = "ROLLBACK";
+    private static final String OPERATION_COMPARE = "COMPARE";
     private static final String DIRECTION_FILE_TO_DB = "file_to_db";
     private static final String DIRECTION_DB_TO_FILE = "db_to_file";
     private static final String TARGET_DATABASE = "database";
@@ -91,8 +94,9 @@ public class MetadataAuditService {
             Integer page,
             Integer pageSize
     ) {
-        int normalizedPage = page == null || page < 0 ? 0 : page;
-        int normalizedPageSize = normalizePageSize(pageSize);
+        validateListFilters(direction, status, rollbackStatus, page, pageSize);
+        int normalizedPage = page == null ? 0 : page;
+        int normalizedPageSize = pageSize == null ? DEFAULT_PAGE_SIZE : pageSize;
         List<MetadataAuditListItem> all = MusicMetadataSyncAudit.<MusicMetadataSyncAudit>listAll().stream()
                 .sorted(Comparator.comparing((MusicMetadataSyncAudit audit) -> audit.createdAt).reversed())
                 .filter(audit -> musicId == null || Objects.equals(audit.musicId, musicId))
@@ -125,7 +129,7 @@ public class MetadataAuditService {
             String rollbackTarget = rollbackTarget(audit);
             MetadataSnapshot current = TARGET_DATABASE.equals(rollbackTarget)
                     ? databaseSnapshot(trackFile)
-                    : audioMetadataService.read(Path.of(trackFile.filePath));
+                    : readFileSnapshot(trackFile);
             MetadataSnapshot target = rollbackTargetSnapshot(audit);
             List<MetadataDtos.MetadataDiffItem> diffs = diffs(current, target);
             return preview(audit, current, target, diffs, true, rollbackWarnings(trackFile, rollbackTarget), null);
@@ -183,7 +187,7 @@ public class MetadataAuditService {
             MetadataSnapshot target = rollbackTargetSnapshot(original);
             beforeDatabase = databaseSnapshot(trackFile);
             if (TARGET_EMBEDDED_TAG.equals(targetType)) {
-                beforeFile = audioMetadataService.read(Path.of(trackFile.filePath));
+                beforeFile = readFileSnapshot(trackFile);
             } else {
                 beforeFile = snapshot(original.afterFileJson);
             }
@@ -200,7 +204,7 @@ public class MetadataAuditService {
                 afterFile = beforeFile;
             } else {
                 afterDatabase = beforeDatabase;
-                afterFile = audioMetadataService.write(Path.of(trackFile.filePath), target);
+                afterFile = writeFileSnapshot(trackFile, target);
             }
 
             MusicMetadataSyncAudit rollbackAudit = createRollbackAudit(
@@ -243,7 +247,7 @@ public class MetadataAuditService {
                     message = message + "; additionally failed to persist rollback failure audit: " + errorMessage(auditException);
                 }
             }
-            if (throwOnFailure) {
+            if (throwOnFailure && exception instanceof BadRequestException) {
                 throw toApiException(exception, message);
             }
             return new MetadataRollbackResult(auditId, rollbackAuditId, false, null, message);
@@ -361,6 +365,9 @@ public class MetadataAuditService {
         }
         if (OPERATION_ROLLBACK.equals(audit.operationType)) {
             return "ROLLBACK audit records cannot be rolled back";
+        }
+        if (OPERATION_COMPARE.equals(audit.operationType)) {
+            return "COMPARE audit records cannot be rolled back";
         }
         if (!ROLLBACK_NOT_ROLLED_BACK.equals(audit.rollbackStatus)) {
             return "Audit record has already been rolled back";
@@ -539,14 +546,44 @@ public class MetadataAuditService {
         if (auditIds.size() > MAX_BATCH_SIZE) {
             throw new BadRequestException("auditIds size must be less than or equal to " + MAX_BATCH_SIZE);
         }
-        return auditIds.stream().distinct().toList();
+        Set<Long> seen = new HashSet<>();
+        boolean hasDuplicate = auditIds.stream().anyMatch(id -> !seen.add(id));
+        if (hasDuplicate) {
+            throw new BadRequestException("auditIds must not contain duplicate IDs");
+        }
+        return auditIds;
     }
 
-    private int normalizePageSize(Integer pageSize) {
-        if (pageSize == null || pageSize <= 0) {
-            return DEFAULT_PAGE_SIZE;
+    private void validateListFilters(String direction, String status, String rollbackStatus, Integer page, Integer pageSize) {
+        if (page != null && page < 0) {
+            throw new BadRequestException("page must be greater than or equal to 0");
         }
-        return Math.min(pageSize, MAX_PAGE_SIZE);
+        if (pageSize != null && (pageSize <= 0 || pageSize > MAX_PAGE_SIZE)) {
+            throw new BadRequestException("pageSize must be between 1 and " + MAX_PAGE_SIZE);
+        }
+        if (!isBlank(direction) && !Set.of(DIRECTION_FILE_TO_DB, DIRECTION_DB_TO_FILE).contains(direction)) {
+            throw new BadRequestException("direction must be file_to_db or db_to_file");
+        }
+        if (!isBlank(status) && !Set.of(STATUS_SUCCESS, STATUS_FAILED).contains(status)) {
+            throw new BadRequestException("status must be SUCCESS or FAILED");
+        }
+        if (!isBlank(rollbackStatus) && !Set.of(ROLLBACK_NOT_ROLLED_BACK, ROLLBACK_ROLLED_BACK).contains(rollbackStatus)) {
+            throw new BadRequestException("rollbackStatus must be NOT_ROLLED_BACK or ROLLED_BACK");
+        }
+    }
+
+    private MetadataSnapshot readFileSnapshot(TrackFile trackFile) {
+        if (trackFile.filePath == null || trackFile.filePath.isBlank()) {
+            throw new AudioMetadataException("Audio file path is required");
+        }
+        return audioMetadataService.read(Path.of(trackFile.filePath));
+    }
+
+    private MetadataSnapshot writeFileSnapshot(TrackFile trackFile, MetadataSnapshot snapshot) {
+        if (trackFile.filePath == null || trackFile.filePath.isBlank()) {
+            throw new AudioMetadataException("Audio file path is required");
+        }
+        return audioMetadataService.write(Path.of(trackFile.filePath), snapshot);
     }
 
     private String toJson(Object value) {

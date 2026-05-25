@@ -22,6 +22,11 @@ const DIRECTION_LABELS: Record<string, string> = {
   db_to_file: '数据库→文件',
 }
 
+const OPERATION_LABELS: Record<string, string> = {
+  APPLY: '同步',
+  ROLLBACK: '回滚',
+}
+
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
 }
@@ -39,14 +44,51 @@ function snapshotToRows(snapshot: MetadataSnapshot | null): { field: string; val
   }))
 }
 
+function statusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    SUCCESS: '成功',
+    FAILED: '失败',
+    PARTIAL: '部分成功',
+  }
+  return labels[status] || status
+}
+
+function statusType(status: string): string {
+  const types: Record<string, string> = {
+    SUCCESS: 'success',
+    FAILED: 'danger',
+    PARTIAL: 'warning',
+  }
+  return types[status] || 'info'
+}
+
+function rollbackLabel(status: string): string {
+  const labels: Record<string, string> = {
+    NOT_ROLLED_BACK: '未回滚',
+    ROLLED_BACK: '已回滚',
+    ROLLBACK_FAILED: '回滚失败',
+  }
+  return labels[status] || status
+}
+
+function rollbackType(status: string): string {
+  const types: Record<string, string> = {
+    NOT_ROLLED_BACK: 'info',
+    ROLLED_BACK: 'success',
+    ROLLBACK_FAILED: 'danger',
+  }
+  return types[status] || 'info'
+}
+
 async function open() {
   visible.value = true
   loading.value = true
   detail.value = null
   try {
     detail.value = await fetchMetadataAuditDetail(props.auditId)
-  } catch {
-    ElMessage.error('加载审计详情失败')
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || '加载审计详情失败，请确认审计记录存在'
+    ElMessage.error(msg)
     visible.value = false
   } finally {
     loading.value = false
@@ -65,6 +107,36 @@ defineExpose({ open })
   >
     <div v-loading="loading" style="min-height: 120px">
       <template v-if="detail">
+        <el-alert
+          v-if="detail.status === 'FAILED' || detail.status === 'PARTIAL'"
+          :title="detail.status === 'FAILED' ? '该操作执行失败' : '该操作部分成功'"
+          :type="detail.status === 'FAILED' ? 'error' : 'warning'"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 12px"
+        >
+          <template v-if="detail.errorMessage" #default>
+            <div style="margin-top: 4px; font-size: 13px">
+              错误原因：{{ detail.errorMessage }}
+            </div>
+          </template>
+        </el-alert>
+
+        <el-alert
+          v-if="detail.rollbackStatus === 'ROLLBACK_FAILED'"
+          title="该记录的回滚操作失败"
+          type="error"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 12px"
+        >
+          <template v-if="detail.errorMessage" #default>
+            <div style="margin-top: 4px; font-size: 13px">
+              错误原因：{{ detail.errorMessage }}
+            </div>
+          </template>
+        </el-alert>
+
         <el-descriptions :column="2" border size="small" style="margin-bottom: 16px">
           <el-descriptions-item label="操作时间">
             {{ detail.createdAt?.replace('T', ' ').substring(0, 19) || '--' }}
@@ -77,17 +149,17 @@ defineExpose({ open })
           </el-descriptions-item>
           <el-descriptions-item label="操作类型">
             <el-tag size="small" :type="detail.operationType === 'ROLLBACK' ? 'warning' : 'primary'">
-              {{ detail.operationType === 'ROLLBACK' ? '回滚' : '同步' }}
+              {{ OPERATION_LABELS[detail.operationType] || detail.operationType }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="状态">
-            <el-tag size="small" :type="detail.status === 'SUCCESS' ? 'success' : 'danger'">
-              {{ detail.status === 'SUCCESS' ? '成功' : '失败' }}
+            <el-tag size="small" :type="statusType(detail.status)">
+              {{ statusLabel(detail.status) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="回滚状态">
-            <el-tag size="small" :type="detail.rollbackStatus === 'ROLLED_BACK' ? 'success' : 'info'">
-              {{ detail.rollbackStatus === 'ROLLED_BACK' ? '已回滚' : '未回滚' }}
+            <el-tag size="small" :type="rollbackType(detail.rollbackStatus)">
+              {{ rollbackLabel(detail.rollbackStatus) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="批次" :span="2">
@@ -110,8 +182,13 @@ defineExpose({ open })
             </template>
             <span v-else style="color: #c0c4cc">--</span>
           </el-descriptions-item>
-          <el-descriptions-item v-if="detail.errorMessage" label="错误信息" :span="2">
-            <span style="color: #f56c6c">{{ detail.errorMessage }}</span>
+          <el-descriptions-item label="关联审计" :span="2" v-if="detail.rollbackOfAuditId || detail.rollbackAuditId">
+            <span v-if="detail.rollbackOfAuditId" style="font-size: 13px; color: #606266">
+              回滚自审计记录 ID: {{ detail.rollbackOfAuditId }}
+            </span>
+            <span v-if="detail.rollbackAuditId" style="font-size: 13px; color: #606266">
+              本记录的回滚审计 ID: {{ detail.rollbackAuditId }}
+            </span>
           </el-descriptions-item>
         </el-descriptions>
 

@@ -2,6 +2,49 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.8.6 — 元数据同步稳定性修复与边界收敛
+
+**发布日期：** 2026-05-25
+
+v0.8.6 是**稳定性修复版本**，不新增大功能。主要补充参数校验强化、边界限制明确、异常提示优化和风险说明。
+
+### 新增 / 补强
+
+- **批量元数据同步最多 100 条**：批量同步（`apply-file-to-db` / `apply-db-to-file`）传入超过 100 个 musicId 时返回 `400 Bad Request`，拒绝执行
+- **批量元数据回滚最多 100 条**：批量回滚（`/rollback`）传入超过 100 个 auditId 时返回 `400 Bad Request`，拒绝执行
+- **回滚规则明确**：审计记录可回滚状态为 `SUCCESS` 且 `rollbackStatus = NOT_ROLLED_BACK` 的记录；失败记录（`status = FAILED`）、已回滚记录（`rollbackStatus = ROLLED_BACK`）、ROLLBACK 记录（`rollbackOfAuditId != null`）不可再次回滚
+
+### 优化
+
+- **参数校验强化**：`musicIds` / `auditIds` 传入空数组、空值、重复值时返回明确的 `400 Bad Request` 说明；回滚接口（`POST .../rollback`）必须传入 `confirm: true` 才会执行，否则返回 `400`
+- **异常提示优化**：文件不存在、文件不可写、Tag 读写失败等场景返回更明确的错误信息，不静默失败
+- **危险操作确认文案**：数据库写回文件（`db_to_file`）和回滚操作在执行前必须有预览和用户确认步骤；UI 展示明确的风险提示
+
+### 风险说明
+
+- **数据库写回音频文件会修改本地音频文件**。`db_to_file`（数据库 → 文件 Tag）直接修改本地音频文件，执行前应确认文件已备份。v0.8.5 已提供审计历史与回滚能力。
+- **回滚是基于历史快照执行一次新的同步操作，不是删除历史**。回滚同样会生成新的审计记录（`rollbackOfAuditId` 指向前序记录），形成操作链，可追溯。
+- 不支持全库同步、不支持全库回滚、不支持按歌手一键同步/回滚。如需大规模同步，建议分批调用，每批不超过 100 条。
+
+### 暂不支持
+
+- OpenAPI（v0.9.x）
+- 网络刮削元数据
+- AI 元数据补全
+- 全库同步 / 全库回滚
+- 按歌手一键同步 / 按歌手一键回滚
+- 高级字段（albumArtist/year/genre/trackNumber）同步
+
+### 后续版本规划
+
+- v0.9.x：客户端 OpenAPI 开发（v0.8.6 / v0.8.7 收口后开始）
+- 高级字段同步（albumArtist/year/genre/trackNumber）
+- 封面写入音频文件
+- 网络刮削元数据（MusicBrainz 等在线元数据源）
+- AI 元数据补全
+
+---
+
 ## v0.8.5 — 元数据同步审计与回滚基础能力
 
 **发布日期：** 2026-05-24
@@ -48,8 +91,8 @@
 - 数据库与音频文件 Tag 差异比较接口（`GET /api/music/{id}/metadata/compare`）
 - 文件 Tag 覆盖数据库接口（`POST /api/music/{id}/metadata/apply-file-to-db`）
 - 数据库元数据写回音频文件 Tag 接口（`POST /api/music/{id}/metadata/apply-db-to-file`）
-- 批量差异比较接口（`POST /api/music/metadata/compare`，最多 20 条）
-- 批量同步接口（`POST /api/music/metadata/apply-file-to-db` / `POST /api/music/metadata/apply-db-to-file`，最多 20 条）
+- 批量差异比较接口（`POST /api/music/metadata/compare`，最多 100 条）
+- 批量同步接口（`POST /api/music/metadata/apply-file-to-db` / `POST /api/music/metadata/apply-db-to-file`，最多 100 条）
 - 新增 `tracks.metadataExtractedAt` 和 `tracks.metadataSource` 字段，记录元数据来源与提取时间
 - 审计表 `music_metadata_sync_audit`：记录每次覆盖操作的完整快照（覆盖前数据库状态、文件状态、覆盖后状态、变更字段），用于后续回滚
 

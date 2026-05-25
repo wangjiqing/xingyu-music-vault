@@ -29,8 +29,10 @@ const visible = ref(false)
 const loading = ref(false)
 const applying = ref(false)
 const result = ref<MetadataCompareResponse | null>(null)
+const previewFailed = ref(false)
 
 const hasDifference = computed(() => (result.value?.diffs?.length ?? 0) > 0)
+const previewCompleted = computed(() => !loading.value && result.value !== null && !previewFailed.value)
 
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
@@ -45,6 +47,7 @@ async function open() {
   visible.value = true
   loading.value = true
   result.value = null
+  previewFailed.value = false
   try {
     const response = await compareMusicMetadata(props.musicId)
     result.value = {
@@ -52,18 +55,19 @@ async function open() {
       diffs: response.diffs?.filter((diff) => COMPARABLE_FIELDS.includes(diff.field)) || [],
     }
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '加载元数据对比失败'
+    const msg = e?.response?.data?.message || '加载元数据对比失败，请确认歌曲文件仍存在且后端服务正常'
     ElMessage.error(msg)
-    visible.value = false
+    previewFailed.value = true
   } finally {
     loading.value = false
   }
 }
 
 async function handleApplyFileToDb() {
+  if (!result.value) return
   try {
     await ElMessageBox.confirm(
-      '本次操作将使用音频文件内嵌 Tag 覆盖数据库中的歌曲名、歌手、专辑三个字段，请确认差异后再继续。\n这不会修改音频文件本身。\n是否继续？',
+      '将使用音频文件内嵌 Tag 覆盖数据库中的歌曲元数据。\n这会修改系统中展示的标题、歌手、专辑、年份等信息，但不会修改音频文件本身。\n是否继续？',
       '确认：用文件覆盖数据库',
       { confirmButtonText: '确认覆盖', cancelButtonText: '取消', type: 'warning' },
     )
@@ -72,7 +76,7 @@ async function handleApplyFileToDb() {
   }
   applying.value = true
   try {
-    const res = await applyFileMetadataToDatabase(props.musicId)
+    const res = await applyFileMetadataToDatabase(props.musicId, { confirm: true })
     if (res.status === 'SUCCESS') {
       ElMessage.success('元数据已用文件 Tag 覆盖数据库')
     } else {
@@ -81,7 +85,7 @@ async function handleApplyFileToDb() {
     visible.value = false
     emit('done')
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '覆盖失败'
+    const msg = e?.response?.data?.message || '覆盖失败，请确认歌曲文件仍存在且当前程序有读写权限'
     ElMessage.error(msg)
   } finally {
     applying.value = false
@@ -89,9 +93,10 @@ async function handleApplyFileToDb() {
 }
 
 async function handleApplyDbToFile() {
+  if (!result.value) return
   try {
     await ElMessageBox.confirm(
-      '本次操作将使用数据库中的歌曲名、歌手、专辑三个字段写回音频文件内嵌 Tag，请确认差异后再继续。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？',
+      '将使用数据库中的歌曲元数据写回音频文件内嵌 Tag。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？',
       '确认：用数据库写回文件',
       { confirmButtonText: '确认写回', cancelButtonText: '取消', type: 'warning' },
     )
@@ -100,7 +105,7 @@ async function handleApplyDbToFile() {
   }
   applying.value = true
   try {
-    const res = await applyDatabaseMetadataToFile(props.musicId)
+    const res = await applyDatabaseMetadataToFile(props.musicId, { confirm: true })
     if (res.status === 'SUCCESS') {
       ElMessage.success('元数据已写回音频文件')
     } else {
@@ -109,7 +114,7 @@ async function handleApplyDbToFile() {
     visible.value = false
     emit('done')
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '写回失败'
+    const msg = e?.response?.data?.message || '写回失败，请确认音频文件存在且当前程序有写入权限'
     ElMessage.error(msg)
   } finally {
     applying.value = false
@@ -138,6 +143,9 @@ defineExpose({ open })
             <svg viewBox="0 0 1024 1024" width="1em" height="1em" fill="currentColor"><path d="M512 64a448 448 0 1 1 0 896 448 448 0 0 1 0-896z m-55.808 536.128l-99.52-99.584a38.4 38.4 0 1 0-54.336 54.336l126.72 126.72a38.4 38.4 0 0 0 54.336 0l262.144-262.144a38.4 38.4 0 1 0-54.336-54.336L456.192 600.128z" /></svg>
           </el-icon>
           <div style="font-size: 15px">数据库与文件元数据一致</div>
+          <div style="font-size: 13px; color: #e6a23c; margin-top: 8px">
+            无可变更字段，不建议继续覆盖操作
+          </div>
         </div>
 
         <el-table
@@ -166,6 +174,10 @@ defineExpose({ open })
           </el-table-column>
         </el-table>
       </template>
+
+      <template v-if="previewFailed">
+        <el-empty description="无法加载元数据对比，预览失败" />
+      </template>
     </div>
 
     <template #footer>
@@ -174,7 +186,7 @@ defineExpose({ open })
           <el-button
             type="primary"
             :loading="applying"
-            :disabled="!result"
+            :disabled="!previewCompleted || !hasDifference"
             @click="handleApplyFileToDb"
           >
             用文件覆盖数据库
@@ -182,7 +194,7 @@ defineExpose({ open })
           <el-button
             type="warning"
             :loading="applying"
-            :disabled="!result"
+            :disabled="!previewCompleted || !hasDifference"
             @click="handleApplyDbToFile"
           >
             用数据库写回文件

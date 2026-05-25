@@ -37,12 +37,15 @@ public final class MetadataDtos {
             Long musicId,
             MetadataCompareSnapshot database,
             MetadataCompareSnapshot embedded,
-            List<MetadataDiffItem> diffs
+            List<MetadataDiffItem> diffs,
+            String status,
+            String errorMessage
     ) {
     }
 
     public record MetadataSyncRequest(
-            String mode
+            String mode,
+            Boolean confirm
     ) {
     }
 
@@ -68,7 +71,8 @@ public final class MetadataDtos {
 
     public record BatchMetadataSyncRequest(
             List<Long> musicIds,
-            String mode
+            String mode,
+            Boolean confirm
     ) {
     }
 

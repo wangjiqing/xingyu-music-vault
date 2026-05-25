@@ -571,7 +571,7 @@ function onMetadataSyncDone() {
   loadStats()
 }
 
-const MAX_BATCH_SYNC = 20
+const MAX_BATCH_SYNC = 100
 
 function openBatchMetadataSync() {
   if (selectedRows.value.length === 0) {

@@ -266,13 +266,16 @@ export interface MetadataDiffItem {
 
 export interface MetadataCompareResponse {
   musicId: number
-  database: MetadataCompareSnapshot
-  embedded: MetadataCompareSnapshot
+  database: MetadataCompareSnapshot | null
+  embedded: MetadataCompareSnapshot | null
   diffs: MetadataDiffItem[]
+  status: string
+  errorMessage: string | null
 }
 
 export interface MetadataSyncRequest {
   mode?: string
+  confirm?: boolean
 }
 
 export interface MetadataSyncResult {
@@ -296,6 +299,7 @@ export interface BatchMetadataCompareRequest {
 export interface BatchMetadataSyncRequest {
   musicIds: number[]
   mode?: string
+  confirm?: boolean
 }
 
 export interface BatchMetadataSyncResponse {
@@ -311,13 +315,13 @@ export async function compareMusicMetadata(id: number): Promise<MetadataCompareR
   return data
 }
 
-export async function applyFileMetadataToDatabase(id: number): Promise<MetadataSyncResult> {
-  const { data } = await http.post(`/api/music/${id}/metadata/apply-file-to-db`, {} as MetadataSyncRequest)
+export async function applyFileMetadataToDatabase(id: number, request: MetadataSyncRequest): Promise<MetadataSyncResult> {
+  const { data } = await http.post(`/api/music/${id}/metadata/apply-file-to-db`, request)
   return data
 }
 
-export async function applyDatabaseMetadataToFile(id: number): Promise<MetadataSyncResult> {
-  const { data } = await http.post(`/api/music/${id}/metadata/apply-db-to-file`, {} as MetadataSyncRequest)
+export async function applyDatabaseMetadataToFile(id: number, request: MetadataSyncRequest): Promise<MetadataSyncResult> {
+  const { data } = await http.post(`/api/music/${id}/metadata/apply-db-to-file`, request)
   return data
 }
 
@@ -327,12 +331,12 @@ export async function batchCompareMusicMetadata(musicIds: number[]): Promise<Met
 }
 
 export async function batchApplyFileMetadataToDatabase(musicIds: number[]): Promise<BatchMetadataSyncResponse> {
-  const { data } = await http.post('/api/music/metadata/apply-file-to-db', { musicIds } as BatchMetadataSyncRequest)
+  const { data } = await http.post('/api/music/metadata/apply-file-to-db', { musicIds, confirm: true } as BatchMetadataSyncRequest)
   return data
 }
 
 export async function batchApplyDatabaseMetadataToFile(musicIds: number[]): Promise<BatchMetadataSyncResponse> {
-  const { data } = await http.post('/api/music/metadata/apply-db-to-file', { musicIds } as BatchMetadataSyncRequest)
+  const { data } = await http.post('/api/music/metadata/apply-db-to-file', { musicIds, confirm: true } as BatchMetadataSyncRequest)
   return data
 }
 

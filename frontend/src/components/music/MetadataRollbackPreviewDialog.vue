@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   fetchMetadataRollbackPreview,
@@ -23,15 +23,27 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 const COMPARABLE_FIELDS = ['title', 'artist', 'album']
+const MAX_BATCH_SIZE = 100
 
 const visible = ref(false)
 const loading = ref(false)
 const executing = ref(false)
+const previewFailed = ref(false)
 const mode = ref<'single' | 'batch'>('single')
 const singlePreview = ref<MetadataRollbackPreviewResponse | null>(null)
 const batchPreview = ref<BatchMetadataRollbackPreviewResponse | null>(null)
 const batchResult = ref<BatchMetadataRollbackResponse | null>(null)
 const singleAuditId = ref(0)
+
+const singlePreviewReady = computed(() =>
+  !loading.value && singlePreview.value !== null && !previewFailed.value
+)
+const batchPreviewReady = computed(() =>
+  !loading.value && batchPreview.value !== null && !previewFailed.value
+)
+const singleHasDiff = computed(() =>
+  singlePreview.value?.canRollback && (singlePreview.value?.diffs?.length ?? 0) > 0
+)
 
 function fieldLabel(field: string): string {
   return FIELD_LABELS[field] || field
@@ -46,6 +58,21 @@ function rollbackTargetLabel(target: string): string {
   return target === 'embedded_tag' ? '文件 Tag' : target === 'database' ? '数据库' : target
 }
 
+function getErrorHint(context: string): string {
+  const hints: Record<string, string> = {
+    fileNotFound: '请确认音频文件仍存在',
+    fileNotReadable: '请确认当前程序有读取文件权限',
+    fileNotWritable: '请确认当前程序有写入文件权限',
+    tagReadFailed: '音频文件 Tag 读取失败，文件可能已损坏',
+    tagWriteFailed: '音频文件 Tag 写入失败，请确认文件未被其他程序占用',
+    auditNotFound: '审计记录不存在，可能已被删除',
+    notRollbackable: '该记录不可回滚，可能因为文件缺失或已回滚',
+    alreadyRolledBack: '该记录已回滚，无需再次操作',
+    batchTooLarge: `一次最多处理 ${MAX_BATCH_SIZE} 条记录`,
+  }
+  return hints[context] || context
+}
+
 async function openSingle(auditId: number) {
   mode.value = 'single'
   singleAuditId.value = auditId
@@ -54,6 +81,7 @@ async function openSingle(auditId: number) {
   singlePreview.value = null
   batchPreview.value = null
   batchResult.value = null
+  previewFailed.value = false
   try {
     singlePreview.value = await fetchMetadataRollbackPreview(auditId)
     if (singlePreview.value) {
@@ -63,21 +91,30 @@ async function openSingle(auditId: number) {
       }
     }
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '加载回滚预览失败'
+    const msg = e?.response?.data?.message || '加载回滚预览失败，请确认审计记录存在且后端服务正常'
     ElMessage.error(msg)
-    visible.value = false
+    previewFailed.value = true
   } finally {
     loading.value = false
   }
 }
 
 async function openBatch(auditIds: number[]) {
+  if (auditIds.length === 0) {
+    ElMessage.warning('请先选择要回滚的审计记录')
+    return
+  }
+  if (auditIds.length > MAX_BATCH_SIZE) {
+    ElMessage.warning(getErrorHint('batchTooLarge') + `，当前已选择 ${auditIds.length} 条`)
+    return
+  }
   mode.value = 'batch'
   visible.value = true
   loading.value = true
   singlePreview.value = null
   batchPreview.value = null
   batchResult.value = null
+  previewFailed.value = false
   try {
     batchPreview.value = await batchFetchMetadataRollbackPreview(auditIds)
     if (batchPreview.value) {
@@ -90,20 +127,20 @@ async function openBatch(auditIds: number[]) {
       }
     }
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '加载批量回滚预览失败'
+    const msg = e?.response?.data?.message || '加载批量回滚预览失败，请确认审计记录存在且后端服务正常'
     ElMessage.error(msg)
-    visible.value = false
+    previewFailed.value = true
   } finally {
     loading.value = false
   }
 }
 
 async function handleSingleExecute() {
-  if (!singlePreview.value) return
+  if (!singlePreview.value || !singlePreviewReady.value) return
   const isFileTarget = singlePreview.value.rollbackTarget === 'embedded_tag'
   const confirmText = isFileTarget
     ? '将使用历史审计记录中的文件 Tag 快照写回音频文件。\n这会直接修改本地音频文件，请确认你已经备份重要文件。\n是否继续？'
-    : '将使用历史审计记录中的数据库快照恢复当前数据库元数据。\n这会修改系统中展示的标题、歌手、专辑等信息，但不会修改音频文件本身。\n是否继续？'
+    : '将使用历史审计记录中的数据库快照恢复当前数据库元数据。\n这会修改系统中展示的标题、歌手、专辑、年份等信息，但不会修改音频文件本身。\n是否继续？'
   const confirmTitle = isFileTarget ? '确认：回滚文件 Tag' : '确认：回滚数据库'
 
   try {
@@ -127,7 +164,7 @@ async function handleSingleExecute() {
     visible.value = false
     emit('done')
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '回滚失败'
+    const msg = e?.response?.data?.message || '回滚失败，请确认审计记录存在且文件可访问'
     ElMessage.error(msg)
   } finally {
     executing.value = false
@@ -135,7 +172,7 @@ async function handleSingleExecute() {
 }
 
 async function handleBatchExecute() {
-  if (!batchPreview.value || batchPreview.value.canRollbackCount === 0) return
+  if (!batchPreview.value || !batchPreviewReady.value || batchPreview.value.canRollbackCount === 0) return
 
   const anyFileTarget = batchPreview.value.items.some((i) => i.rollbackTarget === 'embedded_tag')
   const confirmText = anyFileTarget
@@ -154,18 +191,18 @@ async function handleBatchExecute() {
 
   executing.value = true
   try {
-    const ids = batchPreview.value.items.map((i) => i.auditId)
+    const ids = batchPreview.value.items.filter((i) => i.canRollback).map((i) => i.auditId)
     batchResult.value = await batchRollbackMetadataAudits(ids)
     if (batchResult.value.failed === 0) {
       ElMessage.success(`全部完成：成功 ${batchResult.value.success} 条`)
     } else if (batchResult.value.success === 0) {
-      ElMessage.error(`全部失败：${batchResult.value.failed} 条`)
+      ElMessage.error(`全部失败：${batchResult.value.failed} 条。请确认审计记录和对应文件仍存在`)
     } else {
       ElMessage.warning(`成功 ${batchResult.value.success} 条，失败 ${batchResult.value.failed} 条`)
     }
     emit('done')
   } catch (e: any) {
-    const msg = e?.response?.data?.message || '批量回滚失败'
+    const msg = e?.response?.data?.message || '批量回滚失败，请确认审计记录存在且后端服务正常'
     ElMessage.error(msg)
   } finally {
     executing.value = false
@@ -242,9 +279,19 @@ defineExpose({ openSingle, openBatch })
             </el-table>
           </div>
           <div v-else style="text-align: center; padding: 24px 0; color: #909399">
-            当前值与目标值一致，无需回滚
+            <el-alert
+              title="当前值与目标值一致，无需回滚。不建议继续执行回滚操作。"
+              type="warning"
+              show-icon
+              :closable="false"
+            />
           </div>
         </template>
+      </template>
+
+      <!-- Single preview failed -->
+      <template v-if="mode === 'single' && previewFailed">
+        <el-empty description="无法加载回滚预览，预览失败时不可执行回滚操作" />
       </template>
 
       <!-- Batch preview -->
@@ -309,7 +356,9 @@ defineExpose({ openSingle, openBatch })
                       </el-table-column>
                     </el-table>
                   </div>
-                  <div v-else style="color: #67c23a; padding: 4px 0">当前值与目标值一致</div>
+                  <div v-else style="color: #67c23a; padding: 4px 0">
+                    当前值与目标值一致
+                  </div>
                 </template>
                 <el-alert
                   v-else
@@ -344,6 +393,11 @@ defineExpose({ openSingle, openBatch })
         </el-table>
       </template>
 
+      <!-- Batch preview failed -->
+      <template v-if="mode === 'batch' && previewFailed">
+        <el-empty description="无法加载批量回滚预览，预览失败时不可执行回滚操作" />
+      </template>
+
       <!-- Batch result -->
       <template v-if="mode === 'batch' && batchResult">
         <el-result
@@ -356,10 +410,10 @@ defineExpose({ openSingle, openBatch })
               <div
                 v-for="r in batchResult.items.filter(r => !r.success)"
                 :key="r.auditId"
-                style="padding: 6px 0; border-bottom: 1px solid #ebeef5"
+                style="padding: 8px 0; border-bottom: 1px solid #ebeef5"
               >
-                <span style="font-size: 12px">审计 ID: {{ r.auditId }}</span>
-                <span style="font-size: 12px; color: #f56c6c; margin-left: 8px">{{ r.errorMessage }}</span>
+                <div style="font-size: 13px"><strong>审计 ID: {{ r.auditId }}</strong></div>
+                <div style="font-size: 12px; color: #f56c6c; margin-top: 2px">错误：{{ r.errorMessage || '未知错误' }}</div>
               </div>
             </div>
           </template>
@@ -368,10 +422,10 @@ defineExpose({ openSingle, openBatch })
     </div>
 
     <template #footer>
-      <!-- Single: show rollback button -->
+      <!-- Single: show rollback button only with preview ready & has diff -->
       <div v-if="mode === 'single' && singlePreview">
         <el-button
-          v-if="singlePreview.canRollback && singlePreview.diffs.length > 0"
+          v-if="singlePreviewReady && singleHasDiff"
           :type="singlePreview.rollbackTarget === 'embedded_tag' ? 'danger' : 'warning'"
           :loading="executing"
           @click="handleSingleExecute"
@@ -387,7 +441,7 @@ defineExpose({ openSingle, openBatch })
           <el-button
             type="warning"
             :loading="executing"
-            :disabled="batchPreview.canRollbackCount === 0"
+            :disabled="!batchPreviewReady || batchPreview.canRollbackCount === 0"
             @click="handleBatchExecute"
           >
             确认批量回滚 ({{ batchPreview.canRollbackCount }} 条)
@@ -398,6 +452,11 @@ defineExpose({ openSingle, openBatch })
 
       <!-- Batch result: close -->
       <div v-if="mode === 'batch' && batchResult">
+        <el-button @click="visible = false">关闭</el-button>
+      </div>
+
+      <!-- Preview failed: only cancel available -->
+      <div v-if="previewFailed">
         <el-button @click="visible = false">关闭</el-button>
       </div>
     </template>
