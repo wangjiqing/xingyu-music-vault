@@ -91,6 +91,51 @@
 
 可从歌手详情页的专辑分组点击跳转进入。
 
+### OpenAPI 客户端接入（v0.9.0）
+
+v0.9.0 为播放器客户端提供只读 OpenAPI，前缀为 `/api/open/v1`。本节说明客户端接入星语音库的建议流程和注意事项。
+
+### 接入流程
+
+**第一步：验证服务可用性。** 客户端启动时调用 `GET /api/open/v1/server/info`，确认 `serviceVersion` 和 `apiVersion` 与客户端兼容。
+
+**第二步：检查音乐库是否变化。** 调用 `GET /api/open/v1/sync/state`，获取 `lastUpdatedAt`（活跃歌曲 track_files.updatedAt 与关联 tracks.updatedAt 的最大值）。若与本地缓存的值一致，可跳过全量数据拉取；若不一致，按需重新拉取曲目列表。
+
+**第三步：拉取曲目列表。** 调用 `GET /api/open/v1/tracks`，使用分页参数（`page` + `pageSize`）逐页拉取，不要一次请求全量。列表项中 `artworkUrl` 为相对路径（如 `/api/open/v1/tracks/1/artwork`），客户端使用服务端 base URL 拼接，不是 base64。
+
+**第四步：按需拉取歌词和封面。** 歌词和封面正文不随列表接口返回，需要时单独调用：
+- `GET /api/open/v1/tracks/{id}/lyrics` — 歌词原文
+- `GET /api/open/v1/tracks/{id}/artwork` — 封面文件 URL
+
+**第五步：本地缓存。** 封面接口设置 `Cache-Control: max-age=3600` 和 ETag，客户端可利用条件请求（`If-None-Match`/`If-Modified-Since`）避免重复下载。歌词接口不设置 HTTP 缓存头，建议客户端直接本地缓存歌词内容。
+
+**第六步：关联本地音乐。** 若客户端持有本地音乐文件，可通过 `GET /api/open/v1/match/track?title=...&artist=...` 查询服务端对应曲目 ID，建立关联后再使用其他接口。
+
+### 按需拉取原则
+
+- 歌词和封面正文不要在曲目列表接口中加载，也不要在列表项中嵌入 base64
+- 歌词元数据（`/lyrics/meta`）用于判断是否有歌词、时间戳、语言，可用于快速过滤，无需下载正文
+- 封面元数据（`/artwork/meta`）包含宽高、MIME、文件大小，可用于预留布局尺寸
+
+### 分页拉取示例
+
+```http
+GET /api/open/v1/tracks?page=0&pageSize=50&keyword=周杰伦
+```
+
+翻页时递增 `page` 参数，直至 `total` 达到预期或 `items` 为空。
+
+### 暂不支持的操作
+
+以下能力在 v0.9.0 不提供，客户端不应尝试调用：
+
+- 音频流播放
+- 客户端修改元数据
+- 上传音乐文件
+- OAuth / JWT 认证（当前使用后端全局 Bearer Token，不需要 OAuth/JWT）
+- WebSocket 推送
+- 远程扫描音乐库
+
 ### 元数据同步（v0.8.4 / v0.8.5 / v0.8.6 / v0.8.7）
 
 v0.8.4 新增音频文件内嵌 Tag 读取与双向同步能力，v0.8.5 补充审计历史与回滚基础能力，v0.8.6 补强参数校验、强化边界限制、明确回滚规则与风险说明，v0.8.7 完成 v0.8 功能冻结与回归测试，确认完整功能链路稳定可用。

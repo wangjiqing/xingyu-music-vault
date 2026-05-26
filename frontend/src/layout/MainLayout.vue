@@ -11,6 +11,7 @@ import {
   Fold,
   User,
   Collection,
+  Connection,
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -27,6 +28,7 @@ const menuItems = [
   { path: '/albums', title: '专辑', icon: Collection },
   { path: '/lyrics', title: '歌词', icon: Mic },
   { path: '/artwork', title: '封面', icon: Picture },
+  { path: '/openapi', title: 'OpenAPI', icon: Connection },
   { path: '/settings', title: '设置', icon: Setting },
 ]
 
