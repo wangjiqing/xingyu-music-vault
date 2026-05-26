@@ -1346,6 +1346,414 @@ Authorization: Bearer change-me
 
 当前歌曲歌词状态包括：`BOUND`、`NO_LYRIC`、`PARSE_FAILED`、`MISSING_FILE`。`UNMATCHED` 是歌词扫描统计语义，表示导入了歌词文件但未找到歌曲候选。
 
+### 错误格式
+
+```json
+{
+  "code": "TRACK_NOT_FOUND",
+  "message": "Track not found",
+  "traceId": "a1b2c3d4-e5f6-...",
+  "details": {}
+}
+```
+
+所有 OpenAPI 接口错误响应格式统一为 `code` + `message` + `traceId` + `details`。`traceId` 用于问题追踪，`details` 为可选的补充信息对象。
+
+### 接口清单
+
+|| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/open/v1/server/info` | 服务信息（版本、API 版本、readOnly 标识、功能特性列表） |
+| GET | `/api/open/v1/sync/state` | 音乐库状态（各维度统计计数 + lastUpdatedAt） |
+| GET | `/api/open/v1/tracks` | 曲目列表（分页、搜索、多维过滤、排序） |
+| GET | `/api/open/v1/tracks/{id}` | 曲目详情 |
+| GET | `/api/open/v1/tracks/{id}/lyrics` | 歌词原文（按需拉取） |
+| GET | `/api/open/v1/tracks/{id}/lyrics/meta` | 歌词元数据 |
+| GET | `/api/open/v1/tracks/{id}/artwork` | 封面图片（二进制流） |
+| GET | `/api/open/v1/tracks/{id}/artwork/meta` | 封面元数据 |
+| GET | `/api/open/v1/artists` | 歌手聚合列表（全量，无分页） |
+| GET | `/api/open/v1/artists/{artistName}/tracks` | 指定歌手的曲目列表（分页） |
+| GET | `/api/open/v1/albums` | 专辑聚合列表（全量，无分页） |
+| GET | `/api/open/v1/albums/tracks` | 指定专辑的曲目列表（分页） |
+| GET | `/api/open/v1/match/track` | 本地音乐与服务端元数据匹配 |
+
+### 服务信息
+
+```http
+GET /api/open/v1/server/info
+```
+
+响应示例：
+
+```json
+{
+  "serviceName": "xingyu-music-vault",
+  "serviceVersion": "0.9.0",
+  "apiVersion": "v1",
+  "readOnly": true,
+  "features": {
+    "tracks": true,
+    "lyrics": true,
+    "artwork": true,
+    "artists": true,
+    "albums": true,
+    "matchTrack": true,
+    "streaming": false,
+    "writeBack": false,
+    "scanTrigger": false
+  }
+}
+```
+
+`readOnly: true` 表示当前版本所有 OpenAPI 均为只读。`features` 映射中 `true` 表示已实现，`false` 表示未实现。建议客户端启动时调用此接口，验证 `apiVersion` 与客户端预期一致，并检查 `features` 中需要的功能是否为 `true`。
+
+### 音乐库状态
+
+```http
+GET /api/open/v1/sync/state
+```
+
+响应示例：
+
+```json
+{
+  "trackCount": 529,
+  "artistCount": 42,
+  "albumCount": 38,
+  "lyricsCount": 487,
+  "artworkCount": 510,
+  "lastUpdatedAt": "2026-05-26T06:00:00"
+}
+```
+
+`lastUpdatedAt` 是活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者），用于判断音乐库是否变化。客户端可缓存此值，当与服务端返回值一致时可跳过全量拉取。本接口不返回 `lastScanAt`。
+
+### 曲目列表
+
+```http
+GET /api/open/v1/tracks?page=0&pageSize=20&keyword=周杰伦&metadataStatus=complete&lyricsStatus=BOUND&artworkStatus=BOUND
+```
+
+参数：
+
+|| 参数 | 说明 |
+|------|------|
+| `page` | 页码，从 0 开始，默认 0 |
+| `pageSize` | 每页条数，默认 20，最大 100 |
+| `keyword` | 模糊匹配文件名、标题、歌手、专辑、流派 |
+| `artist` | 按歌手名精确过滤（小写 trim 后比较） |
+| `album` | 按专辑名精确过滤（小写 trim 后比较） |
+| `year` | 按年份精确过滤 |
+| `genre` | 按流派精确过滤 |
+| `metadataStatus` | 按元数据状态过滤，允许值：`pending`、`matched`、`missing`、`ignored` |
+| `lyricsStatus` | 按歌词状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`NO_LYRIC`（含 `MISSING`） |
+| `artworkStatus` | 按封面状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`MISSING` |
+| `updatedAfter` | ISO-8601 日期时间，过滤指定时间后有变更的曲目 |
+| `sort` | 排序字段：`updatedAt`（默认）、`title`、`artist`、`album`、`year`、`durationMs`、`trackNo`、`metadataStatus`、`lyricsStatus`、`artworkStatus`、`fileName`、`createdAt` |
+| `order` | 排序方向：`asc` 或 `desc`（默认 `desc`） |
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "title": "晴天",
+      "artist": "周杰伦",
+      "album": "叶惠美",
+      "albumArtist": "周杰伦",
+      "durationMs": 268000,
+      "year": 2003,
+      "trackNo": 1,
+      "genre": "流行",
+      "metadataStatus": "matched",
+      "lyricsStatus": "BOUND",
+      "artworkStatus": "BOUND",
+      "fileName": "周杰伦 - 晴天.flac",
+      "fileExtension": "flac",
+      "fileSize": 12345678,
+      "lyricsAvailable": true,
+      "lyricId": 1,
+      "artworkAvailable": true,
+      "artworkId": 1,
+      "artworkUrl": "/api/open/v1/tracks/1/artwork",
+      "createdAt": "2026-05-14T06:40:00",
+      "updatedAt": "2026-05-14T06:40:00"
+    }
+  ],
+  "page": 0,
+  "pageSize": 20,
+  "total": 1
+}
+```
+
+**注意**：`durationMs` 单位为毫秒（如 `268000`）。`artworkUrl` 为相对路径，客户端使用服务端 base URL 拼接。列表接口中 `artworkUrl` 返回相对路径，不是 base64。歌词和封面正文按需调用单独接口获取，不要在列表接口中加载。
+
+### 曲目详情
+
+```http
+GET /api/open/v1/tracks/{id}
+```
+
+响应示例：
+
+```json
+{
+  "id": 1,
+  "title": "晴天",
+  "artist": "周杰伦",
+  "album": "叶惠美",
+  "albumArtist": "周杰伦",
+  "durationMs": 268000,
+  "year": 2003,
+  "trackNo": 1,
+  "genre": "流行",
+  "metadataStatus": "matched",
+  "lyricsStatus": "BOUND",
+  "artworkStatus": "BOUND",
+  "fileName": "周杰伦 - 晴天.flac",
+  "fileExtension": "flac",
+  "fileSize": 12345678,
+  "lyricsAvailable": true,
+  "lyricId": 1,
+  "artworkAvailable": true,
+  "artworkId": 1,
+  "artworkUrl": "/api/open/v1/tracks/1/artwork",
+  "createdAt": "2026-05-14T06:40:00",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+本接口不返回 `filePath`（文件路径不暴露给外部客户端）。
+
+### 歌词原文
+
+```http
+GET /api/open/v1/tracks/{id}/lyrics
+```
+
+无歌词时返回 `404`。
+
+响应示例：
+
+```json
+{
+  "trackId": 1,
+  "lyricId": 1,
+  "format": "LRC",
+  "content": "[ti:晴天]\n[ar:周杰伦]\n[al:叶惠美]\n[00:00.00] 作曲 : 周杰伦\n[00:05.00] 作词 : 方文山\n[00:10.00] 故事的小黄花\n...",
+  "hash": "a3f5e2d...",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+**注意**：本接口不设置 HTTP 缓存头（`Cache-Control`/`ETag`/`Last-Modified`）。建议客户端直接本地缓存歌词内容。
+
+### 歌词元数据
+
+```http
+GET /api/open/v1/tracks/{id}/lyrics/meta
+```
+
+响应示例：
+
+```json
+{
+  "trackId": 1,
+  "available": true,
+  "lyricId": 1,
+  "format": "LRC",
+  "hash": "a3f5e2d...",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+`available` 为 `true` 表示该曲目有主绑定歌词。本接口不返回 `language` 和 `hasTimeTag`。
+
+### 封面文件
+
+```http
+GET /api/open/v1/tracks/{id}/artwork
+```
+
+无封面时返回 `404`。成功时直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。
+
+`OpenTrackResponse.artworkUrl` 字段返回相对路径 `/api/open/v1/tracks/{id}/artwork`，客户端应使用服务端 base URL 拼接该相对路径获取图片。
+
+### 封面元数据
+
+```http
+GET /api/open/v1/tracks/{id}/artwork/meta
+```
+
+响应示例：
+
+```json
+{
+  "trackId": 1,
+  "available": true,
+  "artworkId": 1,
+  "mimeType": "image/png",
+  "fileSize": 123456,
+  "width": 600,
+  "height": 600,
+  "hash": "b4c3d2e...",
+  "updatedAt": "2026-05-14T06:40:00"
+}
+```
+
+本接口不返回 `fileName`。
+
+### 歌手列表
+
+```http
+GET /api/open/v1/artists
+```
+
+无分页参数，返回全量歌手列表，按歌手名字升序排列。
+
+响应示例：
+
+```json
+[
+  {
+    "artistName": "周杰伦",
+    "trackCount": 15,
+    "albumCount": 3,
+    "lyricsCount": 14,
+    "artworkCount": 12
+  }
+]
+```
+
+### 歌手曲目
+
+```http
+GET /api/open/v1/artists/{artistName}/tracks?page=0&pageSize=20
+```
+
+路径参数 `artistName` 为歌手名 URL-safe 编码，传入 tracks 接口的 artist 参数筛选该歌手曲目。响应结构同曲目列表，按 title 升序排列。
+
+### 专辑列表
+
+```http
+GET /api/open/v1/albums
+```
+
+无分页参数，返回全量专辑列表，按专辑名升序排列（同名专辑按专辑歌手升序）。
+
+响应示例：
+
+```json
+[
+  {
+    "album": "叶惠美",
+    "albumArtist": "周杰伦",
+    "year": 2003,
+    "trackCount": 5,
+    "lyricsCount": 5,
+    "artworkCount": 4
+  }
+]
+```
+
+### 专辑曲目
+
+```http
+GET /api/open/v1/albums/tracks?album=叶惠美&artist=周杰伦&page=0&pageSize=20
+```
+
+参数：
+
+|| 参数 | 说明 |
+|------|------|
+| `album` | 专辑名（必填） |
+| `artist` | 专辑歌手（选填，用于区分同名专辑） |
+| `page` | 页码，从 0 开始，默认 0 |
+| `pageSize` | 每页条数，默认 20，最大 100 |
+
+`album` 和 `artist` 均为原始字符串，无需 URL-safe 编码。响应结构同曲目列表，按 trackNo 升序排列。
+
+### 本地音乐匹配
+
+```http
+GET /api/open/v1/match/track?title=晴天&artist=周杰伦&album=叶惠美&durationMs=268000
+```
+
+参数：
+
+|| 参数 | 说明 |
+|------|------|
+| `title` | 歌曲标题（必填，且必须完全匹配） |
+| `artist` | 歌手（选填，完全匹配加 15 分） |
+| `album` | 专辑（选填，完全匹配加 10 分） |
+| `durationMs` | 时长毫秒数（选填，与库内时长差值 ≤ ±3000ms 加 5 分） |
+
+匹配规则：title 必填且必须完全匹配（基础分 70），artist 完全匹配加 15 分，album 完全匹配加 10 分，durationMs 与库内时长差值 ≤ ±3000ms 加 5 分。返回最高分候选，分数上限 100；无 title 完全匹配时返回 `matched: false`。
+
+响应示例：
+
+```json
+{
+  "matched": true,
+  "score": 100,
+  "reason": "title exact match; artist exact match; duration within +/-3000ms",
+  "track": {
+    "id": 1,
+    "title": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "albumArtist": "周杰伦",
+    "durationMs": 268000,
+    "year": 2003,
+    "trackNo": 1,
+    "genre": "流行",
+    "metadataStatus": "matched",
+    "lyricsStatus": "BOUND",
+    "artworkStatus": "BOUND",
+    "fileName": "周杰伦 - 晴天.flac",
+    "fileExtension": "flac",
+    "fileSize": 12345678,
+    "lyricsAvailable": true,
+    "lyricId": 1,
+    "artworkAvailable": true,
+    "artworkId": 1,
+    "artworkUrl": "/api/open/v1/tracks/1/artwork",
+    "createdAt": "2026-05-14T06:40:00",
+    "updatedAt": "2026-05-14T06:40:00"
+  }
+}
+```
+
+无可匹配曲目时返回 `200` 且 `matched: false`，`score` 为 0，`reason` 为 `"No exact title match"`，`track` 为 `null`。建议客户端持有本地音乐文件时，先通过 match/track 查询服务端对应曲目 ID，建立关联后再使用其他接口。
+
+### 暂不支持
+
+v0.9.0 是只读 MVP，以下能力不提供：
+
+- 音频流播放（`GET /api/open/v1/tracks/{id}/stream`）
+- 客户端修改元数据（`PUT /api/open/v1/tracks/{id}` 等）
+- 上传音乐（文件上传接口）
+- 复杂限流
+- WebSocket 推送（实时同步）
+- 客户端批量修改元数据
+- 远程扫描音乐库
+- 网络刮削
+- AI 元数据补全
+
+OpenAPI `/api/open/v1/*` 路径受后端全局 Bearer Token 保护，需要在请求头中携带有效 Token。
+
+### 客户端接入建议
+
+1. **启动时先调用 `/api/open/v1/server/info`**，验证 `apiVersion` 与客户端预期一致，检查 `features` 中需要的功能是否为 `true`
+2. **再调用 `/api/open/v1/sync/state`**，获取 `lastUpdatedAt`，若与本地缓存一致，可跳过全量数据拉取
+3. **歌曲列表分页拉取**，使用 `page` + `pageSize` 参数，不要一次拉取全量
+4. **歌词和封面按需拉取**，不要在列表接口中加载正文
+5. **封面不要使用 base64**，按 `artworkUrl` 相对路径拼接服务端 base URL 获取图片二进制
+6. **本地缓存 lyrics/artwork**：`artwork` 接口支持 HTTP 缓存（ETag/Cache-Control），歌词接口无缓存头，需客户端主动本地缓存
+7. **使用 match/track 建立关联**，客户端本地音乐通过 match/track 查询服务端 ID
+
 ## 规划中接口
 
 以下接口仅为规划，当前版本尚未实现。

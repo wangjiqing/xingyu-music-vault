@@ -87,6 +87,12 @@ const router = createRouter({
           component: () => import('../views/MetadataAuditView.vue'),
           meta: { title: '元数据审计', hidden: true },
         },
+        {
+          path: 'openapi',
+          name: 'OpenApi',
+          component: () => import('../views/OpenApiView.vue'),
+          meta: { title: 'OpenAPI' },
+        },
       ],
     },
   ],
