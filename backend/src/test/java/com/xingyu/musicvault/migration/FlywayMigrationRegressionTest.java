@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(10, first.migrationsExecuted);
+        assertEquals(11, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -51,7 +51,12 @@ class FlywayMigrationRegressionTest {
             assertIndexes(connection,
                     "idx_tracks_album", "idx_tracks_artist", "idx_tracks_genre",
                     "idx_metadata_sync_audit_music_id", "idx_metadata_sync_audit_batch_id",
-                    "idx_metadata_sync_audit_created_at");
+                    "idx_metadata_sync_audit_created_at",
+                    "idx_openapi_sync_change_log_version", "idx_openapi_sync_change_log_entity",
+                    "idx_openapi_sync_change_log_changed_at");
+            assertColumns(connection, "openapi_library_state", "id", "library_version", "last_changed_at");
+            assertColumns(connection, "openapi_sync_change_log",
+                    "id", "version", "entity_type", "entity_id", "change_type", "changed_fields_json", "changed_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -85,7 +90,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(9, result.migrationsExecuted);
+        assertEquals(10, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -93,6 +98,7 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "tracks", "metadata_extracted_at", "metadata_source", "year", "track_no", "genre");
             assertColumns(connection, "music_metadata_sync_audit",
                     "operation_type", "rollback_status", "rollback_of_audit_id");
+            assertEquals(1, queryLong(connection, "select library_version from openapi_library_state where id = 1"));
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -139,6 +145,14 @@ class FlywayMigrationRegressionTest {
              ResultSet resultSet = statement.executeQuery(sql)) {
             assertTrue(resultSet.next(), "query should return one row: " + sql);
             return resultSet.getString(1);
+        }
+    }
+
+    private long queryLong(Connection connection, String sql) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql)) {
+            assertTrue(resultSet.next(), "query should return one row: " + sql);
+            return resultSet.getLong(1);
         }
     }
 }

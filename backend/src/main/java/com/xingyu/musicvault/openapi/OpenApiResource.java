@@ -19,6 +19,8 @@ import com.xingyu.musicvault.openapi.OpenApiDtos.MatchTrackResponse;
 import com.xingyu.musicvault.openapi.OpenApiDtos.OpenPageResponse;
 import com.xingyu.musicvault.openapi.OpenApiDtos.OpenTrackResponse;
 import com.xingyu.musicvault.openapi.OpenApiDtos.ServerInfoResponse;
+import com.xingyu.musicvault.openapi.OpenApiDtos.SyncChangeItemResponse;
+import com.xingyu.musicvault.openapi.OpenApiDtos.SyncChangesResponse;
 import com.xingyu.musicvault.openapi.OpenApiDtos.SyncStateResponse;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.panache.common.Page;
@@ -26,12 +28,12 @@ import io.quarkus.panache.common.Sort;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Encoded;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.CacheControl;
-import jakarta.ws.rs.core.EntityTag;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -71,6 +73,15 @@ public class OpenApiResource {
     @Inject
     MusicVaultConfig config;
 
+    @Inject
+    OpenApiSyncStateService syncStateService;
+
+    @Inject
+    OpenApiChangeLogService changeLogService;
+
+    @Inject
+    OpenApiHashService hashService;
+
     @ConfigProperty(name = "app.artwork.scan-dir")
     String artworkScanDir;
 
@@ -79,7 +90,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "0.9.0",
+                "0.9.1",
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(
@@ -101,19 +112,51 @@ public class OpenApiResource {
     public SyncStateResponse syncState() {
         List<TrackFile> trackFiles = activeTrackFiles();
         Map<Long, Track> tracksById = tracksById(trackFiles);
+        OpenApiLibraryState syncState = syncStateService.current();
         LocalDateTime lastUpdatedAt = trackFiles.stream()
                 .map(trackFile -> max(trackFile.updatedAt, trackOf(trackFile, tracksById) == null ? null : trackOf(trackFile, tracksById).updatedAt))
                 .filter(Objects::nonNull)
                 .max(Comparator.naturalOrder())
                 .orElse(null);
         return new SyncStateResponse(
+                syncState.libraryVersion,
                 trackFiles.size(),
                 artistAggregates(trackFiles, tracksById).size(),
                 albumAggregates(trackFiles, tracksById).size(),
-                SongLyric.count("isPrimary = true"),
-                MusicArtworkBinding.count("relationType = ?1 and isPrimary = true", ArtworkService.TRACK_COVER),
-                lastUpdatedAt
+                activeLyricsCount(trackFiles),
+                activeArtworkCount(trackFiles),
+                lastUpdatedAt,
+                syncState.lastChangedAt,
+                true
         );
+    }
+
+    @GET
+    @Path("/sync/changes")
+    public SyncChangesResponse syncChanges(
+            @QueryParam("sinceVersion") Long sinceVersion,
+            @QueryParam("limit") Integer limit
+    ) {
+        long fromVersion = sinceVersion == null ? 0 : sinceVersion;
+        if (fromVersion < 0) {
+            throw invalid("sinceVersion must be greater than or equal to 0");
+        }
+        int limitValue = resolveChangeLimit(limit);
+        OpenApiLibraryState state = syncStateService.current();
+        List<OpenApiSyncChangeLog> changes = changeLogService.changesAfter(fromVersion, limitValue);
+        boolean hasMore = !changes.isEmpty()
+                && changeLogService.hasChangesAfter(changes.getLast().version);
+        List<SyncChangeItemResponse> items = changes.stream()
+                .map(changeLog -> new SyncChangeItemResponse(
+                        changeLog.version,
+                        changeLog.entityType,
+                        changeLog.entityId,
+                        changeLog.changeType,
+                        changeLogService.changedFields(changeLog),
+                        changeLog.changedAt
+                ))
+                .toList();
+        return new SyncChangesResponse(fromVersion, state.libraryVersion, hasMore, items);
     }
 
     @GET
@@ -166,10 +209,22 @@ public class OpenApiResource {
 
     @GET
     @Path("/tracks/{id}/lyrics")
-    public LyricsResponse lyrics(@PathParam("id") Long id) {
+    public Response lyrics(
+            @PathParam("id") Long id,
+            @HeaderParam("If-None-Match") String ifNoneMatch
+    ) {
         findActiveTrackFile(id);
         Lyric lyric = findPrimaryLyric(id);
-        return new LyricsResponse(id, lyric.id, lyric.format, lyric.content, lyric.contentHash, lyric.updatedAt);
+        String hash = hashService.lyricsHash(lyric);
+        String etag = hashService.lyricsEtag(id, hash);
+        if (hashService.matches(ifNoneMatch, etag)) {
+            return Response.status(Response.Status.NOT_MODIFIED)
+                    .header("ETag", etag)
+                    .build();
+        }
+        return Response.ok(new LyricsResponse(id, lyric.id, lyric.format, lyric.content, hash, lyric.updatedAt))
+                .header("ETag", etag)
+                .build();
     }
 
     @GET
@@ -178,30 +233,41 @@ public class OpenApiResource {
         findActiveTrackFile(id);
         SongLyric binding = songLyricRepository.findPrimaryBySongId(id);
         if (binding == null) {
-            return new LyricsMetaResponse(id, false, null, null, null, null);
+            return new LyricsMetaResponse(id, false, null, null, null, null, null);
         }
         Lyric lyric = Lyric.findById(binding.lyricId);
         if (lyric == null) {
-            return new LyricsMetaResponse(id, false, null, null, null, null);
+            return new LyricsMetaResponse(id, false, null, null, null, null, null);
         }
-        return new LyricsMetaResponse(id, true, lyric.id, lyric.format, lyric.contentHash, lyric.updatedAt);
+        String hash = hashService.lyricsHash(lyric);
+        return new LyricsMetaResponse(id, true, lyric.id, lyric.format, hash, hashService.lyricsEtag(id, hash), lyric.updatedAt);
     }
 
     @GET
     @Path("/tracks/{id}/artwork")
     @Produces({"image/png", "image/jpeg", "image/webp", MediaType.APPLICATION_OCTET_STREAM})
-    public Response artwork(@PathParam("id") Long id) {
+    public Response artwork(
+            @PathParam("id") Long id,
+            @HeaderParam("If-None-Match") String ifNoneMatch
+    ) {
         findActiveTrackFile(id);
         Artwork artwork = findPrimaryArtwork(id);
         java.nio.file.Path path = safeArtworkPath(artwork);
         if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
             throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
         }
+        String hash = hashService.artworkHash(artwork, path);
+        String etag = hashService.artworkEtag(id, hash);
+        if (hashService.matches(ifNoneMatch, etag)) {
+            return Response.status(Response.Status.NOT_MODIFIED)
+                    .header("ETag", etag)
+                    .build();
+        }
         CacheControl cacheControl = new CacheControl();
         cacheControl.setMaxAge(3600);
         return Response.ok(path.toFile(), blankToDefault(artwork.mimeType, MediaType.APPLICATION_OCTET_STREAM))
                 .cacheControl(cacheControl)
-                .tag(new EntityTag(artwork.hash))
+                .header("ETag", etag)
                 .build();
     }
 
@@ -211,12 +277,14 @@ public class OpenApiResource {
         findActiveTrackFile(id);
         MusicArtworkBinding binding = artworkBindingRepository.findPrimaryTrackCoverByMusicId(id);
         if (binding == null) {
-            return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null);
+            return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null, null);
         }
         Artwork artwork = Artwork.findById(binding.artworkId);
         if (artwork == null) {
-            return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null);
+            return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null, null);
         }
+        java.nio.file.Path path = safeArtworkPath(artwork);
+        String hash = hashService.artworkHash(artwork, path);
         return new ArtworkMetaResponse(
                 id,
                 true,
@@ -225,7 +293,8 @@ public class OpenApiResource {
                 artwork.fileSize,
                 artwork.width,
                 artwork.height,
-                artwork.hash,
+                hash,
+                hashService.artworkEtag(id, hash),
                 artwork.updatedAt
         );
     }
@@ -637,6 +706,26 @@ public class OpenApiResource {
         return TrackFile.list("deleteStatus is null or deleteStatus = ?1", ACTIVE);
     }
 
+    private long activeLyricsCount(List<TrackFile> trackFiles) {
+        List<Long> trackIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
+        if (trackIds.isEmpty()) {
+            return 0;
+        }
+        return SongLyric.count("songId in ?1 and isPrimary = true", trackIds);
+    }
+
+    private long activeArtworkCount(List<TrackFile> trackFiles) {
+        List<Long> trackIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
+        if (trackIds.isEmpty()) {
+            return 0;
+        }
+        return MusicArtworkBinding.count(
+                "musicId in ?1 and relationType = ?2 and isPrimary = true",
+                trackIds,
+                ArtworkService.TRACK_COVER
+        );
+    }
+
     private Map<Long, Track> tracksById(List<TrackFile> trackFiles) {
         List<Long> trackIds = trackFiles.stream().map(trackFile -> trackFile.trackId).filter(Objects::nonNull).distinct().toList();
         if (trackIds.isEmpty()) {
@@ -700,6 +789,16 @@ public class OpenApiResource {
             throw invalid("pageSize must be between 1 and 100");
         }
         return pageSize;
+    }
+
+    private int resolveChangeLimit(Integer limit) {
+        if (limit == null) {
+            return 500;
+        }
+        if (limit < 1 || limit > 1000) {
+            throw invalid("limit must be between 1 and 1000");
+        }
+        return limit;
     }
 
     private OpenApiException invalid(String message) {

@@ -9,6 +9,7 @@ import com.xingyu.musicvault.lyrics.Lyric;
 import com.xingyu.musicvault.lyrics.SongLyric;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -27,6 +29,9 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.startsWith;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class OpenApiResourceTest {
@@ -35,11 +40,20 @@ class OpenApiResourceTest {
 
     Path workDir;
 
+    @Inject
+    OpenApiChangeLogService changeLogService;
+
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
         Files.createDirectories(ROOT);
         workDir = Files.createTempDirectory(ROOT, "case-");
+        OpenApiSyncChangeLog.deleteAll();
+        OpenApiLibraryState state = OpenApiLibraryState.findById(1);
+        if (state != null) {
+            state.libraryVersion = 1;
+            state.lastChangedAt = null;
+        }
         MusicArtworkBinding.deleteAll();
         Artwork.deleteAll();
         SongLyric.deleteAll();
@@ -50,8 +64,9 @@ class OpenApiResourceTest {
 
     @Test
     void serverInfoAndSyncStateExposeReadOnlyCapabilitiesAndCounts() {
-        createTrack("晴天.flac", "晴天", "周杰伦", "叶惠美", 2003, "Pop", 242_000L);
+        Long trackId = createTrack("晴天.flac", "晴天", "周杰伦", "叶惠美", 2003, "Pop", 242_000L);
         createTrack("七里香.flac", "七里香", "周杰伦", "七里香", 2004, "Pop", 280_000L);
+        changeLogService.recordTrackChange(trackId, "updated", List.of("metadata"));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -59,7 +74,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("0.9.0"))
+                .body("serviceVersion", equalTo("0.9.1"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -71,9 +86,34 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/sync/state")
                 .then()
                 .statusCode(200)
+                .body("libraryVersion", equalTo(2))
                 .body("trackCount", equalTo(2))
                 .body("artistCount", equalTo(1))
-                .body("albumCount", equalTo(2));
+                .body("albumCount", equalTo(2))
+                .body("changesAvailable", equalTo(true))
+                .body("lastChangedAt", notNullValue());
+    }
+
+    @Test
+    void syncStateCountsOnlyActiveTrackBindings() throws IOException {
+        Long activeTrackId = createTrack("活跃.flac", "活跃", "星语", "Demo", 2026, "Pop", 180_000L);
+        Long deletedTrackId = createTrack("已删除.flac", "已删除", "星语", "Demo", 2026, "Pop", 180_000L);
+        bindLyric(activeTrackId, "活跃", "星语", "Demo", "LRC", "[00:01.00]active");
+        bindLyric(deletedTrackId, "已删除", "星语", "Demo", "LRC", "[00:01.00]deleted");
+        bindArtwork(activeTrackId, "active.png");
+        bindArtwork(deletedTrackId, "deleted.png");
+        markTrackDeleted(deletedTrackId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/sync/state")
+                .then()
+                .statusCode(200)
+                .body("trackCount", equalTo(1))
+                .body("lyricsCount", equalTo(1))
+                .body("artworkCount", equalTo(1))
+                .body("changesAvailable", equalTo(true));
     }
 
     @Test
@@ -162,7 +202,8 @@ class OpenApiResourceTest {
                 .then()
                 .statusCode(200)
                 .body("available", equalTo(true))
-                .body("hash", equalTo("晴天-hash"))
+                .body("hash", startsWith("sha256:"))
+                .body("etag", startsWith("\"lyrics-" + qingtianId + "-"))
                 .body("updatedAt", notNullValue());
 
         given()
@@ -183,6 +224,8 @@ class OpenApiResourceTest {
                 .statusCode(200)
                 .body("available", equalTo(true))
                 .body("mimeType", equalTo("image/png"))
+                .body("hash", startsWith("sha256:"))
+                .body("etag", startsWith("\"artwork-" + qingtianId + "-"))
                 .body("width", equalTo(3))
                 .body("height", equalTo(2));
 
@@ -245,6 +288,179 @@ class OpenApiResourceTest {
                 .statusCode(200)
                 .body("matched", equalTo(false))
                 .body("track", nullValue());
+    }
+
+    @Test
+    void syncChangesReturnIncrementalOrderedVersionsAndRespectLimit() {
+        Long firstId = createTrack("first.flac", "First", "星语", "Demo", 2026, "Pop", 180_000L);
+        Long secondId = createTrack("second.flac", "Second", "星语", "Demo", 2026, "Pop", 181_000L);
+
+        long v2 = changeLogService.recordTrackChange(firstId, "created", List.of("metadata")).version;
+        long v3 = changeLogService.recordLyricsChange(firstId).version;
+        long v4 = changeLogService.recordArtworkChange(secondId).version;
+
+        assertTrue(v2 < v3);
+        assertTrue(v3 < v4);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("sinceVersion", 0)
+                .queryParam("limit", 2)
+                .when()
+                .get("/api/open/v1/sync/changes")
+                .then()
+                .statusCode(200)
+                .body("fromVersion", equalTo(0))
+                .body("toVersion", equalTo((int) v4))
+                .body("hasMore", equalTo(true))
+                .body("items", hasSize(2))
+                .body("items[0].version", equalTo((int) v2))
+                .body("items[1].version", equalTo((int) v3));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("sinceVersion", v2)
+                .when()
+                .get("/api/open/v1/sync/changes")
+                .then()
+                .statusCode(200)
+                .body("items", hasSize(2))
+                .body("items[0].version", equalTo((int) v3))
+                .body("items[0].changedFields[0]", equalTo("lyrics"))
+                .body("items[1].version", equalTo((int) v4))
+                .body("hasMore", equalTo(false));
+    }
+
+    @Test
+    void tracksUpdatedAfterUsesStrictGreaterThanSemantics() {
+        Long trackId = createTrack("strict.flac", "Strict", "星语", "Demo", 2026, "Pop", 180_000L);
+        String updatedAt = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}", trackId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("updatedAt");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("updatedAfter", updatedAt)
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(0));
+    }
+
+    @Test
+    void lyricsHashAndEtagSupportConditionalRequests() {
+        Long trackId = createTrack("歌词.flac", "歌词", "星语", "Demo", 2026, "Pop", 180_000L);
+        bindLyric(trackId, "歌词", "星语", "Demo", "LRC", "[ti:歌词]\n[00:01.00]first\n");
+
+        String hash = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("hash", startsWith("sha256:"))
+                .body("etag", startsWith("\"lyrics-" + trackId + "-"))
+                .extract()
+                .path("hash");
+        String etag = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("etag");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .header("If-None-Match", etag)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", trackId)
+                .then()
+                .statusCode(304)
+                .header("ETag", equalTo(etag));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .header("If-None-Match", "\"lyrics-stale\"")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", trackId)
+                .then()
+                .statusCode(200)
+                .header("ETag", equalTo(etag))
+                .body("hash", equalTo(hash));
+
+        updateLyricContent("歌词", "[ti:歌词]\n[00:01.00]second\n");
+        String changedHash = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("hash");
+        assertNotEquals(hash, changedHash);
+    }
+
+    @Test
+    void artworkHashAndEtagSupportConditionalRequests() throws IOException {
+        Long trackId = createTrack("封面.flac", "封面", "星语", "Demo", 2026, "Pop", 180_000L);
+        Path imagePath = bindArtwork(trackId, "cover.png");
+
+        String hash = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("hash", startsWith("sha256:"))
+                .body("etag", startsWith("\"artwork-" + trackId + "-"))
+                .extract()
+                .path("hash");
+        String etag = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("etag");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .header("If-None-Match", etag)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork", trackId)
+                .then()
+                .statusCode(304)
+                .header("ETag", equalTo(etag));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .header("If-None-Match", "\"artwork-stale\"")
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork", trackId)
+                .then()
+                .statusCode(200)
+                .header("ETag", equalTo(etag))
+                .contentType("image/png");
+
+        writePng(imagePath, 5, 4);
+        String changedHash = given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("hash");
+        assertNotEquals(hash, changedHash);
     }
 
     @Test
@@ -350,10 +566,26 @@ class OpenApiResourceTest {
         });
     }
 
-    private void bindArtwork(Long trackId, String fileName) throws IOException {
+    private Path bindArtwork(Long trackId, String fileName) throws IOException {
         Path imagePath = workDir.resolve(fileName);
         writePng(imagePath, 3, 2);
         bindArtworkPath(trackId, imagePath);
+        return imagePath;
+    }
+
+    private void updateLyricContent(String title, String content) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Lyric lyric = Lyric.find("title", title).firstResult();
+            lyric.content = content;
+        });
+    }
+
+    private void markTrackDeleted(Long trackId) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(trackId);
+            trackFile.deleteStatus = "trashed";
+            trackFile.deletedAt = LocalDateTime.now();
+        });
     }
 
     private void bindArtworkPath(Long trackId, Path imagePath) {
@@ -366,7 +598,7 @@ class OpenApiResourceTest {
             artwork.fileSize = imageSize(imagePath);
             artwork.width = 3;
             artwork.height = 2;
-            artwork.hash = "artwork-hash";
+            artwork.hash = "artwork-hash-" + imagePath.getFileName();
             artwork.sourceType = "local";
             artwork.sourcePath = artwork.filePath;
             artwork.title = "晴天";
