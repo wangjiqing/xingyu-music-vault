@@ -18,12 +18,33 @@ public final class OpenApiDtos {
     }
 
     public record SyncStateResponse(
+            long libraryVersion,
             long trackCount,
             long artistCount,
             long albumCount,
             long lyricsCount,
             long artworkCount,
-            LocalDateTime lastUpdatedAt
+            LocalDateTime lastUpdatedAt,
+            String lastChangedAt,
+            boolean changesAvailable
+    ) {
+    }
+
+    public record SyncChangesResponse(
+            long fromVersion,
+            long toVersion,
+            boolean hasMore,
+            List<SyncChangeItemResponse> items
+    ) {
+    }
+
+    public record SyncChangeItemResponse(
+            long version,
+            String entityType,
+            Long entityId,
+            String changeType,
+            List<String> changedFields,
+            String updatedAt
     ) {
     }
 
@@ -77,6 +98,7 @@ public final class OpenApiDtos {
             Long lyricId,
             String format,
             String hash,
+            String etag,
             LocalDateTime updatedAt
     ) {
     }
@@ -90,6 +112,7 @@ public final class OpenApiDtos {
             Integer width,
             Integer height,
             String hash,
+            String etag,
             LocalDateTime updatedAt
     ) {
     }

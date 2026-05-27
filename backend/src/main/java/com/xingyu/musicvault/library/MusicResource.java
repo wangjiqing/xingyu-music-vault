@@ -23,6 +23,7 @@ import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicStatsResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicTrashResponse;
 import com.xingyu.musicvault.lyrics.LyricService;
+import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import com.xingyu.musicvault.scan.LibraryScanService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -99,6 +100,9 @@ public class MusicResource {
 
     @Inject
     ArtworkService artworkService;
+
+    @Inject
+    OpenApiChangeLogService openApiChangeLogService;
 
     @Inject
     ManagedExecutor managedExecutor;
@@ -360,6 +364,7 @@ public class MusicResource {
             throw new ConflictException("Failed to move music file to trash");
         }
 
+        openApiChangeLogService.recordTrackChange(trackFile.id, "deleted", List.of("metadata"));
         return MusicFileResponse.from(trackFile);
     }
 
@@ -405,6 +410,7 @@ public class MusicResource {
             }
             throw exception;
         }
+        openApiChangeLogService.recordTrackChange(trackFile.id, "updated", List.of("metadata"));
         return MusicFileResponse.from(trackFile);
     }
 
@@ -431,6 +437,7 @@ public class MusicResource {
             throw new ConflictException("Failed to permanently delete trash file");
         }
 
+        openApiChangeLogService.recordTrackChange(trackFile.id, "deleted", List.of("metadata"));
         return MusicFileResponse.from(trackFile);
     }
 
@@ -509,6 +516,7 @@ public class MusicResource {
                 track.persist();
                 trackFile.trackId = track.id;
             }
+            openApiChangeLogService.recordTrackChange(trackFile.id, "updated", List.of("metadata"));
         }
 
         return new MusicMetadataBatchUpdateResponse(trackFiles.size());
@@ -550,6 +558,7 @@ public class MusicResource {
             trackFile.trackId = track.id;
         }
 
+        openApiChangeLogService.recordTrackChange(trackFile.id, "updated", List.of("metadata"));
         return toMusicResponse(trackFile);
     }
 

@@ -1364,7 +1364,8 @@ Authorization: Bearer change-me
 || Method | Path | 说明 |
 |--------|------|------|
 | GET | `/api/open/v1/server/info` | 服务信息（版本、API 版本、readOnly 标识、功能特性列表） |
-| GET | `/api/open/v1/sync/state` | 音乐库状态（各维度统计计数 + lastUpdatedAt） |
+| GET | `/api/open/v1/sync/state` | 音乐库状态（版本号、各维度统计计数、lastChangedAt） |
+| GET | `/api/open/v1/sync/changes` | 增量变更日志 |
 | GET | `/api/open/v1/tracks` | 曲目列表（分页、搜索、多维过滤、排序） |
 | GET | `/api/open/v1/tracks/{id}` | 曲目详情 |
 | GET | `/api/open/v1/tracks/{id}/lyrics` | 歌词原文（按需拉取） |
@@ -1388,7 +1389,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "0.9.0",
+  "serviceVersion": "0.9.1",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
@@ -1417,16 +1418,54 @@ GET /api/open/v1/sync/state
 
 ```json
 {
+  "libraryVersion": 128,
   "trackCount": 529,
   "artistCount": 42,
   "albumCount": 38,
   "lyricsCount": 487,
   "artworkCount": 510,
-  "lastUpdatedAt": "2026-05-26T06:00:00"
+  "lastUpdatedAt": "2026-05-26T06:00:00",
+  "lastChangedAt": "2026-05-26T22:15:30+08:00",
+  "changesAvailable": true
 }
 ```
 
-`lastUpdatedAt` 是活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者），用于判断音乐库是否变化。客户端可缓存此值，当与服务端返回值一致时可跳过全量拉取。本接口不返回 `lastScanAt`。
+`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastChangedAt` 是最近一次 OpenAPI 变更日志记录时间。`changesAvailable` 表示 `libraryVersion > 1`，即音乐库是否曾经发生过任何变更记录（该字段为全局状态，不针对特定客户端）。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。各计数字段（trackCount、artistCount、albumCount、lyricsCount、artworkCount）均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
+
+### 增量变更
+
+```http
+GET /api/open/v1/sync/changes?sinceVersion=120&limit=500
+```
+
+参数：
+
+|| 参数 | 说明 |
+|------|------|
+| `sinceVersion` | 起始版本，返回 `version > sinceVersion` 的变更；默认 0 |
+| `limit` | 返回条数，默认 500，最大 1000 |
+
+响应示例：
+
+```json
+{
+  "fromVersion": 120,
+  "toVersion": 128,
+  "hasMore": false,
+  "items": [
+    {
+      "version": 121,
+      "entityType": "track",
+      "entityId": 1001,
+      "changeType": "updated",
+      "changedFields": ["metadata", "lyrics"],
+      "updatedAt": "2026-05-26T22:10:00+08:00"
+    }
+  ]
+}
+```
+
+返回项按 `version` 升序排列。`toVersion` 为响应生成时的当前 `libraryVersion`。`hasMore` 为 `true` 表示服务端仍有 `version` 更大的变更，客户端应继续用最后一条 `version` 作为下一次 `sinceVersion` 拉取。
 
 ### 曲目列表
 
@@ -1448,7 +1487,7 @@ GET /api/open/v1/tracks?page=0&pageSize=20&keyword=周杰伦&metadataStatus=comp
 | `metadataStatus` | 按元数据状态过滤，允许值：`pending`、`matched`、`missing`、`ignored` |
 | `lyricsStatus` | 按歌词状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`NO_LYRIC`（含 `MISSING`） |
 | `artworkStatus` | 按封面状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`MISSING` |
-| `updatedAfter` | ISO-8601 日期时间，过滤指定时间后有变更的曲目 |
+| `updatedAfter` | ISO-8601 日期时间，返回 `updatedAt` 严格晚于该时间的曲目（`updatedAt > updatedAfter`） |
 | `sort` | 排序字段：`updatedAt`（默认）、`title`、`artist`、`album`、`year`、`durationMs`、`trackNo`、`metadataStatus`、`lyricsStatus`、`artworkStatus`、`fileName`、`createdAt` |
 | `order` | 排序方向：`asc` 或 `desc`（默认 `desc`） |
 
@@ -1489,6 +1528,8 @@ GET /api/open/v1/tracks?page=0&pageSize=20&keyword=周杰伦&metadataStatus=comp
 ```
 
 **注意**：`durationMs` 单位为毫秒（如 `268000`）。`artworkUrl` 为相对路径，客户端使用服务端 base URL 拼接。列表接口中 `artworkUrl` 返回相对路径，不是 base64。歌词和封面正文按需调用单独接口获取，不要在列表接口中加载。
+
+`updatedAfter` 使用严格大于语义：如果曲目的 `updatedAt` 与参数值完全相等，该曲目不会出现在结果中。
 
 ### 曲目详情
 
@@ -1548,7 +1589,7 @@ GET /api/open/v1/tracks/{id}/lyrics
 }
 ```
 
-**注意**：本接口不设置 HTTP 缓存头（`Cache-Control`/`ETag`/`Last-Modified`）。建议客户端直接本地缓存歌词内容。
+成功响应会设置 `ETag`。客户端再次请求时可携带 `If-None-Match`，若命中当前歌词 ETag，服务端返回 `304 Not Modified`，并继续返回当前 `ETag` 响应头。
 
 ### 歌词元数据
 
@@ -1564,12 +1605,13 @@ GET /api/open/v1/tracks/{id}/lyrics/meta
   "available": true,
   "lyricId": 1,
   "format": "LRC",
-  "hash": "a3f5e2d...",
+  "hash": "sha256:a3f5e2d...",
+  "etag": "\"lyrics-1-a3f5e2d...\"",
   "updatedAt": "2026-05-14T06:40:00"
 }
 ```
 
-`available` 为 `true` 表示该曲目有主绑定歌词。本接口不返回 `language` 和 `hasTimeTag`。
+`available` 为 `true` 表示该曲目有主绑定歌词。本接口不返回 `language` 和 `hasTimeTag`。`hash` 由歌词内容、歌词格式和语言组合后计算 SHA-256，格式为 `sha256:<hex>`。`etag` 使用当前歌词 hash 生成，供 `/lyrics` 条件请求使用。
 
 ### 封面文件
 
@@ -1577,7 +1619,7 @@ GET /api/open/v1/tracks/{id}/lyrics/meta
 GET /api/open/v1/tracks/{id}/artwork
 ```
 
-无封面时返回 `404`。成功时直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。
+无封面时返回 `404`。成功时直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。客户端再次请求时可携带 `If-None-Match`，若命中当前封面 ETag，服务端返回 `304 Not Modified`。
 
 `OpenTrackResponse.artworkUrl` 字段返回相对路径 `/api/open/v1/tracks/{id}/artwork`，客户端应使用服务端 base URL 拼接该相对路径获取图片。
 
@@ -1598,7 +1640,8 @@ GET /api/open/v1/tracks/{id}/artwork/meta
   "fileSize": 123456,
   "width": 600,
   "height": 600,
-  "hash": "b4c3d2e...",
+  "hash": "sha256:b4c3d2e...",
+  "etag": "\"artwork-1-b4c3d2e...\"",
   "updatedAt": "2026-05-14T06:40:00"
 }
 ```
@@ -1730,7 +1773,7 @@ GET /api/open/v1/match/track?title=晴天&artist=周杰伦&album=叶惠美&durat
 
 ### 暂不支持
 
-v0.9.0 是只读 MVP，以下能力不提供：
+v0.9.1 是只读增强版本，以下能力不提供：
 
 - 音频流播放（`GET /api/open/v1/tracks/{id}/stream`）
 - 客户端修改元数据（`PUT /api/open/v1/tracks/{id}` 等）
@@ -1741,18 +1784,27 @@ v0.9.0 是只读 MVP，以下能力不提供：
 - 远程扫描音乐库
 - 网络刮削
 - AI 元数据补全
+- 星语音乐盒真实联调
+- API Token 独立认证（当前使用后端全局 Bearer Token）
+- IP 限流
+- 访问日志
+- 部署验证
+- 反向代理配置
 
 OpenAPI `/api/open/v1/*` 路径受后端全局 Bearer Token 保护，需要在请求头中携带有效 Token。
 
-### 客户端接入建议
+### 客户端接入建议（v0.9.1 增量同步流程）
 
-1. **启动时先调用 `/api/open/v1/server/info`**，验证 `apiVersion` 与客户端预期一致，检查 `features` 中需要的功能是否为 `true`
-2. **再调用 `/api/open/v1/sync/state`**，获取 `lastUpdatedAt`，若与本地缓存一致，可跳过全量数据拉取
-3. **歌曲列表分页拉取**，使用 `page` + `pageSize` 参数，不要一次拉取全量
-4. **歌词和封面按需拉取**，不要在列表接口中加载正文
-5. **封面不要使用 base64**，按 `artworkUrl` 相对路径拼接服务端 base URL 获取图片二进制
-6. **本地缓存 lyrics/artwork**：`artwork` 接口支持 HTTP 缓存（ETag/Cache-Control），歌词接口无缓存头，需客户端主动本地缓存
-7. **使用 match/track 建立关联**，客户端本地音乐通过 match/track 查询服务端 ID
+1. **调用 `/api/open/v1/server/info`**，验证 `apiVersion` 与客户端预期一致，检查 `features` 中需要的功能是否为 `true`
+2. **调用 `/api/open/v1/sync/state`**，获取 `libraryVersion`，与本地保存的版本比对
+3. **若 `libraryVersion` 未变化**：跳过同步，直接使用本地缓存
+4. **若 `libraryVersion` 变化**：调用 `GET /api/open/v1/sync/changes?sinceVersion=<localVersion>`
+5. **根据 `changedFields` 刷新缓存**：对 `created` / `updated` 歌曲刷新本地缓存；对 `deleted` 歌曲移除本地缓存
+6. **`hasMore=true` 时**：继续用最后一条变更的 `version` 作为下一次 `sinceVersion`，分批拉取直至 `hasMore=false`
+7. **歌词和封面按需刷新**：先读 `lyrics/meta` 或 `artwork/meta` 接口比对 `hash`；或直接在正文请求中携带 `If-None-Match`，命中 `304` 时复用本地缓存
+8. **客户端保存最新 `libraryVersion`**，用于下次启动时的增量判断
+
+歌词 `hash` 由歌词内容、格式和语言组合计算 SHA-256，格式为 `sha256:<hex>`；封面 `hash` 按图片二进制内容计算 SHA-256，格式为 `sha256:<hex>`。ETag 由服务端生成，供条件请求使用。
 
 ## 规划中接口
 

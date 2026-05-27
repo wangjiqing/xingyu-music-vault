@@ -9,6 +9,7 @@ import com.xingyu.musicvault.lyrics.LyricDtos.LyricDetailResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricListItemResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricScanResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.SongLyricResponse;
+import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Sort;
@@ -60,6 +61,9 @@ public class LyricService {
 
     @Inject
     SongLyricRepository songLyricRepository;
+
+    @Inject
+    OpenApiChangeLogService openApiChangeLogService;
 
     @Transactional
     public LyricScanResponse scan(String requestedPath, boolean overwritePrimary) {
@@ -424,6 +428,7 @@ public class LyricService {
             }
 
             if (bind(match.songId(), lyric.id, match.matchType(), match.score(), overwritePrimary)) {
+                openApiChangeLogService.recordLyricsChange(match.songId());
                 counters.matched++;
             } else {
                 counters.skippedBindings++;

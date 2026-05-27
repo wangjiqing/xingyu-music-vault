@@ -7,6 +7,7 @@ import com.xingyu.musicvault.artwork.ArtworkDtos.MusicArtworkResponse;
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
+import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Sort;
@@ -60,6 +61,9 @@ public class ArtworkService {
 
     @Inject
     MusicArtworkBindingRepository bindingRepository;
+
+    @Inject
+    OpenApiChangeLogService openApiChangeLogService;
 
     @Transactional
     public ArtworkScanResponse scan(String requestedPath) {
@@ -210,6 +214,7 @@ public class ArtworkService {
             binding.isPrimary = true;
         }
         updateTrackArtworkStatus(trackFile, "matched");
+        openApiChangeLogService.recordArtworkChange(trackFile.id);
     }
 
     private void updateArtworkFileMetadata(Artwork artwork, Path path, String extension, ImageSize imageSize) throws IOException {
@@ -232,6 +237,7 @@ public class ArtworkService {
             primary.delete();
         }
         updateTrackArtworkStatus(trackFile, "missing");
+        openApiChangeLogService.recordArtworkChange(musicId);
         return MusicArtworkResponse.missing(musicId);
     }
 
@@ -342,6 +348,7 @@ public class ArtworkService {
             binding.isPrimary = true;
             binding.persist();
             updateTrackArtworkStatus(trackFile, "matched");
+            openApiChangeLogService.recordArtworkChange(trackFile.id);
             counters.autoBound++;
         }
     }

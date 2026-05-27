@@ -8,6 +8,7 @@ import com.xingyu.musicvault.library.TrackFile;
 import com.xingyu.musicvault.metadata.AudioMetadataException;
 import com.xingyu.musicvault.metadata.AudioMetadataService;
 import com.xingyu.musicvault.metadata.MetadataDtos.MetadataSnapshot;
+import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -51,6 +52,9 @@ public class LibraryScanService {
 
     @Inject
     AudioMetadataService audioMetadataService;
+
+    @Inject
+    OpenApiChangeLogService openApiChangeLogService;
 
     @Transactional
     public ScanJob run(Long scanJobId) {
@@ -337,9 +341,11 @@ public class LibraryScanService {
 
         if (isNew) {
             trackFile.persist();
+            openApiChangeLogService.recordTrackChange(trackFile.id, "created", List.of("metadata"));
             LOG.debugf("Inserted track file: jobId=%d path=%s ext=%s size=%d", scanJob.id, filePath, ext, trackFile.fileSize);
             return UpsertResult.INSERTED;
         } else {
+            openApiChangeLogService.recordTrackChange(trackFile.id, "updated", List.of("metadata"));
             LOG.debugf("Updated track file: jobId=%d path=%s ext=%s size=%d", scanJob.id, filePath, ext, trackFile.fileSize);
             return UpsertResult.UPDATED;
         }

@@ -2,6 +2,30 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.1 — 客户端缓存与增量同步增强
+
+**发布日期：** 2026-05-27
+
+v0.9.1 在 v0.9.0 只读 OpenAPI 基础上补强客户端缓存、增量同步和资源变化判断能力。本版本仍不提供音频流、客户端修改、上传、写回或扫描触发能力。
+
+### 新增 / 补强
+
+- **同步状态版本化**：新增 `openapi_library_state`，`GET /api/open/v1/sync/state` 返回 `libraryVersion`（版本号）、`lastChangedAt`（最近一次 OpenAPI 变更日志时间）、`changesAvailable`（是否有变更）；保留 `lastUpdatedAt` 用于兼容旧客户端
+- **增量变更日志**：新增 `openapi_sync_change_log` 和 `GET /api/open/v1/sync/changes`，支持 `sinceVersion`、`limit`，按 `version` 升序返回变更
+- **变更记录服务**：歌曲新增、删除、元数据更新、歌词更新、封面更新时记录 OpenAPI change log，并递增 `libraryVersion`
+- **歌词缓存判断**：`/tracks/{id}/lyrics/meta` 返回 `sha256:` hash 和 ETag；`/tracks/{id}/lyrics` 支持 `If-None-Match`，命中时返回 `304 Not Modified`
+- **封面缓存判断**：`/tracks/{id}/artwork/meta` 返回基于图片二进制内容的 `sha256:` hash 和 ETag；`/tracks/{id}/artwork` 支持 `If-None-Match`，命中时返回 `304 Not Modified`
+- **updatedAfter 语义明确**：`GET /api/open/v1/tracks?updatedAfter=...` 使用严格大于语义，即 `updatedAt > updatedAfter`
+
+### 客户端接入建议
+
+- 客户端启动后优先读取 `/sync/state` 的 `libraryVersion`
+- 本地已有版本时调用 `/sync/changes?sinceVersion=<localVersion>`，根据 `changedFields` 决定刷新曲目、歌词或封面缓存
+- 对歌词和封面正文请求携带本地保存的 ETag，命中 `304` 时复用本地缓存
+- `hasMore=true` 时继续以最后一条变更的 `version` 作为下一次 `sinceVersion`
+
+---
+
 ## v0.9.0 — OpenAPI MVP
 
 **发布日期：** 2026-05-26
@@ -58,6 +82,7 @@ v0.9.0 是只读 MVP，以下能力在当前版本不提供：
 - 基础鉴权（简单 token 验证）
 - 基础限流
 - 音乐库变更 WebSocket 推送
+- 星语音乐盒真实联调（客户端集成测试）
 
 ---
 
