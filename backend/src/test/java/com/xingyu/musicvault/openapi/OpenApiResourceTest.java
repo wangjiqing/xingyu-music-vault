@@ -112,7 +112,8 @@ class OpenApiResourceTest {
                 .statusCode(200)
                 .body("trackCount", equalTo(1))
                 .body("lyricsCount", equalTo(1))
-                .body("artworkCount", equalTo(1));
+                .body("artworkCount", equalTo(1))
+                .body("changesAvailable", equalTo(true));
     }
 
     @Test

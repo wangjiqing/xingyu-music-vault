@@ -127,7 +127,7 @@ public class OpenApiResource {
                 activeArtworkCount(trackFiles),
                 lastUpdatedAt,
                 syncState.lastChangedAt,
-                syncState.libraryVersion > 1
+                true
         );
     }
 

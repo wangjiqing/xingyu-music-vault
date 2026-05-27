@@ -357,6 +357,7 @@ public class LibraryScanService {
         trackFile.originalPath = filePath;
         trackFile.deleteStatus = DELETE_STATUS_ACTIVE;
         trackFile.scanJobId = scanJob.id;
+        openApiChangeLogService.recordTrackChange(trackFile.id, "updated", List.of("metadata"));
         LOG.debugf("Restored trashed track file found during scan: jobId=%d path=%s", scanJob.id, filePath);
     }
 

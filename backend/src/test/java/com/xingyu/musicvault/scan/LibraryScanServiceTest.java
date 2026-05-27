@@ -4,6 +4,8 @@ import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.job.ScanJob;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
+import com.xingyu.musicvault.openapi.OpenApiLibraryState;
+import com.xingyu.musicvault.openapi.OpenApiSyncChangeLog;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -34,6 +36,12 @@ class LibraryScanServiceTest {
     void cleanData() throws IOException {
         Files.createDirectories(ALLOWED_MUSIC_ROOT);
         musicDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "service-test-");
+        OpenApiSyncChangeLog.deleteAll();
+        OpenApiLibraryState state = OpenApiLibraryState.findById(1);
+        if (state != null) {
+            state.libraryVersion = 1;
+            state.lastChangedAt = null;
+        }
         TrackFile.deleteAll();
         Track.deleteAll();
         ScanJob.deleteAll();
@@ -140,6 +148,10 @@ class LibraryScanServiceTest {
         assertNull(restored.deletedAt);
         assertNull(restored.trashPath);
         assertEquals(secondJobId, restored.scanJobId);
+
+        OpenApiSyncChangeLog changeLog = OpenApiSyncChangeLog.find("entityId = ?1 and changeType = ?2", restored.id, "updated").firstResult();
+        assertNotNull(changeLog);
+        assertEquals(3, changeLog.version);
     }
 
     @Test

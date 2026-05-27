@@ -72,7 +72,7 @@ GET /api/open/v1/sync/state
 }
 ```
 
-`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。`changesAvailable` 表示 `libraryVersion > 1`，即音乐库是否曾经发生过任何变更记录（全局状态，不针对特定客户端）。客户端应保存 `libraryVersion`，下次启动后与本地值比对，决定是否需要同步。各计数字段均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
+`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。`changesAvailable` 表示服务端支持 `/sync/changes` 增量同步能力，v0.9.1 固定返回 `true`，不表示特定客户端是否存在待同步变更。客户端应保存 `libraryVersion`，下次启动后与本地值比对，决定是否需要同步。各计数字段均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
 
 **增量同步流程：**
 
