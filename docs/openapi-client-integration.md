@@ -4,13 +4,19 @@
 
 ## 概述
 
-星语音库 OpenAPI v0.9.2 提供面向播放器客户端的只读音乐库查询接口，在 v0.9.0 / v0.9.1 基础上补强缓存、增量同步、安全与访问控制能力。客户端可通过本 API 查询曲目、歌词、封面、歌手、专辑等元数据，并建立本地音乐与服务端元数据的关联。
+星语音库 OpenAPI v0.9.2 提供面向播放器客户端的只读音乐库查询接口，
+在 v0.9.0 / v0.9.1 基础上补强缓存、增量同步、安全与访问控制能力。
+客户端可通过本 API 查询曲目、歌词、封面、歌手、专辑等元数据，
+并建立本地音乐与服务端元数据的关联。
 
 **v0.9.2 只做 OpenAPI 安全与访问控制增强，不做：星语音乐盒真实联调、部署验证、反向代理配置、音频流、客户端写入元数据、WebSocket 推送。**
 
 **当前版本为只读增强版本，不支持音频流、不支持客户端修改元数据、不支持上传音乐。**
 
-**认证方式：** OpenAPI `/api/open/v1/*` 默认不要求独立 token。部署方开启 `xingyu.openapi.auth.enabled=true` 后，请求需携带 `Authorization: Bearer <token>` 或 `X-Xingyu-Api-Token: <token>`。后台管理 API 仍使用原有全局 Bearer Token。
+**认证方式：** OpenAPI `/api/open/v1/*` 默认不要求独立 token。
+部署方开启 `xingyu.openapi.auth.enabled=true` 后，
+请求需携带 `Authorization: Bearer <token>` 或 `X-Xingyu-Api-Token: <token>`。
+后台管理 API 仍使用原有全局 Bearer Token。
 
 ## 安全配置
 
@@ -60,7 +66,10 @@ GET /api/open/v1/server/info
 }
 ```
 
-`readOnly: true` 表示当前版本所有 OpenAPI 均为只读。`features` 中 `true` 表示该功能已实现，`false` 表示未实现。若 `apiVersion` 不符合客户端预期，或 `features` 中需要的功能为 `false`，应给出明确提示，避免后续调用失败。
+`readOnly: true` 表示当前版本所有 OpenAPI 均为只读。
+`features` 中 `true` 表示该功能已实现，`false` 表示未实现。
+若 `apiVersion` 不符合客户端预期，或 `features` 中需要的功能为 `false`，
+应给出明确提示，避免后续调用失败。
 
 ### 第二步：检查音乐库是否变化
 
@@ -84,7 +93,14 @@ GET /api/open/v1/sync/state
 }
 ```
 
-`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。`changesAvailable` 表示服务端支持 `/sync/changes` 增量同步能力，固定返回 `true`，不表示特定客户端是否存在待同步变更。客户端应保存 `libraryVersion`，下次启动后与本地值比对，决定是否需要同步。各计数字段均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
+`libraryVersion` 是 OpenAPI 同步版本号，
+每次记录歌曲、歌词或封面变更时递增，初始值为 1。
+`lastUpdatedAt` 保留用于兼容旧客户端，
+它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。
+`changesAvailable` 表示服务端支持 `/sync/changes` 增量同步能力，
+固定返回 `true`，不表示特定客户端是否存在待同步变更。
+客户端应保存 `libraryVersion`，下次启动后与本地值比对，决定是否需要同步。
+各计数字段均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
 
 **增量同步流程：**
 
@@ -118,7 +134,8 @@ GET /api/open/v1/sync/changes?sinceVersion=<localVersion>&limit=500
 5. 对 `created` / `updated` 歌曲刷新本地缓存；对 `deleted` 歌曲移除本地缓存
 6. 客户端保存最新 `libraryVersion`，用于下次启动时的增量判断
 
-`changedFields` 可能的值：`metadata`（元数据更新）、`lyrics`（歌词更新）、`artwork`（封面更新）；`changeType` 可能的值：`created`（新增）、`updated`（更新）、`deleted`（删除）。
+`changedFields` 可能的值：`metadata`（元数据更新）、`lyrics`（歌词更新）、`artwork`（封面更新）；
+`changeType` 可能的值：`created`（新增）、`updated`（更新）、`deleted`（删除）。
 
 ### 第三步：拉取曲目列表
 
@@ -148,7 +165,8 @@ GET /api/open/v1/tracks?page=0&pageSize=50&keyword=周杰伦
 
 翻页时递增 `page`，直至 `items` 为空或达到预期总量。
 
-**列表项中的 `artworkUrl` 是相对路径（如 `/api/open/v1/tracks/1/artwork`），不是 base64，也不是完整 URL。** 客户端使用服务端 base URL 拼接该相对路径获取图片。不要将封面 data URL 嵌入列表项。
+**列表项中的 `artworkUrl` 是相对路径（如 `/api/open/v1/tracks/1/artwork`），不是 base64，也不是完整 URL。**
+客户端使用服务端 base URL 拼接该相对路径获取图片。不要将封面 data URL 嵌入列表项。
 
 ### 第四步：按需拉取歌词和封面
 
@@ -162,7 +180,10 @@ GET /api/open/v1/tracks/{id}/lyrics
 GET /api/open/v1/tracks/{id}/artwork
 ```
 
-封面接口直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。歌词接口返回 JSON，也会设置 ETag。列表项中的 `artworkUrl` 字段返回相对路径，客户端使用服务端 base URL 拼接后获取图片。
+封面接口直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，
+支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。
+歌词接口返回 JSON，也会设置 ETag。
+列表项中的 `artworkUrl` 字段返回相对路径，客户端使用服务端 base URL 拼接后获取图片。
 
 无歌词或无封面时接口返回 `404`，客户端应做好降级处理。
 
@@ -178,7 +199,9 @@ GET /api/open/v1/tracks/{id}/artwork/meta
 
 ### 第五步：本地缓存与条件请求
 
-歌词和封面正文接口都支持 `If-None-Match` 条件请求。客户端可先读取 meta 接口中的 `hash` 和 `etag`，若本地已有相同资源则跳过正文下载，或在正文请求中携带 `If-None-Match`：
+歌词和封面正文接口都支持 `If-None-Match` 条件请求。
+客户端可先读取 meta 接口中的 `hash` 和 `etag`，
+若本地已有相同资源则跳过正文下载，或在正文请求中携带 `If-None-Match`：
 
 ```http
 GET /api/open/v1/tracks/{id}/lyrics
@@ -190,7 +213,10 @@ GET /api/open/v1/tracks/{id}/artwork
 If-None-Match: "artwork-1-b4c3d2e..."
 ```
 
-命中当前 ETag 时返回 `304 Not Modified`；未命中时返回 `200` 和完整歌词 JSON 或封面图片流。歌词 hash 基于歌词内容、歌词格式、歌词语言三者按固定顺序组合后计算 SHA-256（`null` 按空字符串处理，编码为 UTF-8）；封面 hash 基于图片二进制内容计算 SHA-256。
+命中当前 ETag 时返回 `304 Not Modified`；
+未命中时返回 `200` 和完整歌词 JSON 或封面图片流。
+歌词 hash 基于歌词内容、歌词格式、歌词语言三者按固定顺序组合后计算 SHA-256
+（`null` 按空字符串处理，编码为 UTF-8）；封面 hash 基于图片二进制内容计算 SHA-256。
 
 ### 第六步：关联本地音乐
 
@@ -209,7 +235,10 @@ GET /api/open/v1/match/track?title=晴天&artist=周杰伦&album=叶惠美&durat
 | `album` | 专辑（选填，完全匹配加 10 分） |
 | `durationMs` | 时长毫秒数（选填，与库内时长差值 ≤ ±3000ms 加 5 分） |
 
-匹配规则：title 必填且必须完全匹配（基础分 70），artist 完全匹配加 15 分，album 完全匹配加 10 分，durationMs 与库内时长差值 ≤ ±3000ms 加 5 分。返回最高分候选，分数上限 100；无 title 完全匹配时返回 `matched: false`。
+匹配规则：title 必填且必须完全匹配（基础分 70），
+artist 完全匹配加 15 分，album 完全匹配加 10 分，
+durationMs 与库内时长差值 ≤ ±3000ms 加 5 分。
+返回最高分候选，分数上限 100；无 title 完全匹配时返回 `matched: false`。
 
 ```json
 {
