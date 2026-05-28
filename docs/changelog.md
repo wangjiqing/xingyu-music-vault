@@ -2,6 +2,30 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.2 — OpenAPI 安全与访问控制
+
+**发布日期：** 2026-05-28
+
+v0.9.2 只补强 `/api/open/v1/*` 的安全与访问控制能力。本版本不做星语音乐盒真实联调，不提供音频流，不提供客户端元数据写入。
+
+### 新增 / 补强
+
+- **可选 OpenAPI API Token 认证**：通过 `xingyu.openapi.auth.enabled` 开启，仅作用于 `/api/open/v1/*`；支持 `Authorization: Bearer <token>` 和 `X-Xingyu-Api-Token`
+- **简单 IP 限流**：通过 `xingyu.openapi.rate-limit.enabled` 开启，默认每 IP 每分钟 120 次；优先使用 `X-Forwarded-For` 第一个 IP，其次 `X-Real-IP`
+- **OpenAPI 访问日志**：默认开启，记录 method、path、status、durationMs、clientIp、traceId；不会记录 Authorization、`X-Xingyu-Api-Token` 或 token
+- **错误码完善**：OpenAPI 错误码统一使用 `OPENAPI_*` 前缀，新增 `OPENAPI_UNAUTHORIZED`、`OPENAPI_RATE_LIMITED`、`OPENAPI_CONFIG_ERROR` 等
+
+### 暂不支持
+
+- 星语音乐盒真实联调
+- 音频流播放
+- 客户端写入元数据
+- 分布式限流 / Redis 限流
+- 复杂代理信任链
+- 反向代理部署测试
+
+---
+
 ## v0.9.1 — 客户端缓存与增量同步增强
 
 **发布日期：** 2026-05-27
@@ -79,10 +103,10 @@ v0.9.0 是只读 MVP，以下能力在当前版本不提供：
 
 - 音频流播放接口（`GET /api/open/v1/tracks/{id}/stream`）
 - 客户端元数据修改接口
-- 基础鉴权（简单 token 验证）
-- 基础限流
 - 音乐库变更 WebSocket 推送
 - 星语音乐盒真实联调（客户端集成测试）
+
+> **v0.9.2 已实现：** 基础鉴权（简单 token 验证）、基础限流（简单 IP 限流）。
 
 ---
 

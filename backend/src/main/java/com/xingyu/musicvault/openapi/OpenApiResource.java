@@ -90,7 +90,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "0.9.1",
+                "0.9.2",
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(
@@ -254,7 +254,7 @@ public class OpenApiResource {
         Artwork artwork = findPrimaryArtwork(id);
         java.nio.file.Path path = safeArtworkPath(artwork);
         if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
         String hash = hashService.artworkHash(artwork, path);
         String etag = hashService.artworkEtag(id, hash);
@@ -546,7 +546,7 @@ public class OpenApiResource {
             case "fileName" -> Comparator.comparing(OpenTrackResponse::fileName, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
             case "createdAt" -> Comparator.comparing(OpenTrackResponse::createdAt, Comparator.nullsLast(Comparator.naturalOrder()));
             case "updatedAt" -> Comparator.comparing(OpenTrackResponse::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()));
-            default -> throw invalid("sort is not supported");
+            default -> throw new OpenApiException(Response.Status.BAD_REQUEST, "OPENAPI_UNSUPPORTED_SORT", "sort is not supported");
         };
         boolean ascending = "asc".equalsIgnoreCase(blankToDefault(order, "desc"));
         Comparator<OpenTrackResponse> withTieBreaker = comparator.thenComparing(OpenTrackResponse::id);
@@ -598,10 +598,10 @@ public class OpenApiResource {
         try {
             realPath = path.toRealPath();
         } catch (java.io.IOException exception) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
         if (allowedArtworkRoots().stream().noneMatch(root -> realPath.startsWith(root) && !realPath.equals(root))) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
         return realPath;
     }
@@ -635,7 +635,7 @@ public class OpenApiResource {
     private TrackFile findActiveTrackFile(Long id) {
         TrackFile trackFile = TrackFile.findById(id);
         if (trackFile == null || !(trackFile.deleteStatus == null || ACTIVE.equals(trackFile.deleteStatus))) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "TRACK_NOT_FOUND", "Track not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_TRACK_NOT_FOUND", "Track not found");
         }
         return trackFile;
     }
@@ -643,11 +643,11 @@ public class OpenApiResource {
     private Lyric findPrimaryLyric(Long trackId) {
         SongLyric binding = songLyricRepository.findPrimaryBySongId(trackId);
         if (binding == null) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "LYRICS_NOT_FOUND", "Lyrics not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_LYRICS_NOT_FOUND", "Lyrics not found");
         }
         Lyric lyric = Lyric.findById(binding.lyricId);
         if (lyric == null) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "LYRICS_NOT_FOUND", "Lyrics not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_LYRICS_NOT_FOUND", "Lyrics not found");
         }
         return lyric;
     }
@@ -655,11 +655,11 @@ public class OpenApiResource {
     private Artwork findPrimaryArtwork(Long trackId) {
         MusicArtworkBinding binding = artworkBindingRepository.findPrimaryTrackCoverByMusicId(trackId);
         if (binding == null) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
         Artwork artwork = Artwork.findById(binding.artworkId);
         if (artwork == null) {
-            throw new OpenApiException(Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
         return artwork;
     }
@@ -802,7 +802,7 @@ public class OpenApiResource {
     }
 
     private OpenApiException invalid(String message) {
-        return new OpenApiException(Response.Status.BAD_REQUEST, "INVALID_ARGUMENT", message);
+        return new OpenApiException(Response.Status.BAD_REQUEST, "OPENAPI_INVALID_ARGUMENT", message);
     }
 
     private LocalDateTime parseDateTime(String value) {

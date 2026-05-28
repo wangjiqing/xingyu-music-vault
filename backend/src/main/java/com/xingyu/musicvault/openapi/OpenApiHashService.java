@@ -30,7 +30,7 @@ public class OpenApiHashService {
         try {
             return "sha256:" + sha256(Files.readAllBytes(filePath));
         } catch (IOException exception) {
-            throw new OpenApiException(jakarta.ws.rs.core.Response.Status.NOT_FOUND, "ARTWORK_NOT_FOUND", "Artwork not found");
+            throw new OpenApiException(jakarta.ws.rs.core.Response.Status.NOT_FOUND, "OPENAPI_ARTWORK_NOT_FOUND", "Artwork not found");
         }
     }
 

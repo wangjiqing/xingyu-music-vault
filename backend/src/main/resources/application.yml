@@ -45,6 +45,16 @@ app:
   artwork:
     scan-dir: ${APP_ARTWORK_SCAN_DIR:/Users/wangjiqing/Project/Musics/Artworks}
 
+xingyu:
+  openapi:
+    auth:
+      enabled: ${XINGYU_OPENAPI_AUTH_ENABLED:false}
+    rate-limit:
+      enabled: ${XINGYU_OPENAPI_RATE_LIMIT_ENABLED:false}
+      requests-per-minute: ${XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+    access-log:
+      enabled: ${XINGYU_OPENAPI_ACCESS_LOG_ENABLED:true}
+
 "%dev":
   quarkus:
     datasource:

@@ -24,7 +24,7 @@ public class ApiTokenFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext requestContext) {
         String path = normalizePath(requestContext.getUriInfo().getPath());
-        if (isPublicPath(path) || isPublicArtworkFile(requestContext, path) || !path.startsWith("api/")) {
+        if (isPublicPath(path) || isOpenApiPath(path) || isPublicArtworkFile(requestContext, path) || !path.startsWith("api/")) {
             return;
         }
 
@@ -41,6 +41,10 @@ public class ApiTokenFilter implements ContainerRequestFilter {
         return "api/health".equals(path)
                 || path.startsWith("q/")
                 || "q".equals(path);
+    }
+
+    private boolean isOpenApiPath(String path) {
+        return "api/open/v1".equals(path) || path.startsWith("api/open/v1/");
     }
 
     private boolean isPublicArtworkFile(ContainerRequestContext requestContext, String path) {

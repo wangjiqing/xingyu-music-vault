@@ -88,6 +88,7 @@ Authorization: Bearer <your-token>`,
   "width": 800,
   "height": 800,
   "hash": "def789abc012...",
+  "etag": "\\"artwork-42-def789abc012...\\"",
   "updatedAt": "2025-01-15T08:32:00"
 }`,
   },
@@ -133,6 +134,75 @@ Authorization: Bearer <your-token>`,
     "artworkUrl": "/api/open/v1/tracks/42/artwork",
     "createdAt": "2025-01-15T08:30:00",
     "updatedAt": "2025-03-20T14:22:00"
+  }
+}`,
+  },
+]
+
+const securityTable = [
+  { status: '401', code: 'OPENAPI_UNAUTHORIZED', description: 'Token 缺失或无效' },
+  { status: '429', code: 'OPENAPI_RATE_LIMITED', description: '超出每分钟请求频率限制' },
+]
+
+const securityExamples = [
+  {
+    title: '认证：Authorization Bearer（推荐）',
+    request: `GET /api/open/v1/tracks?page=0&pageSize=10
+Authorization: Bearer <your-openapi-token>`,
+    response: `HTTP 200 OK
+Content-Type: application/json
+
+{
+  "items": [...],
+  "page": 0,
+  "pageSize": 10,
+  "total": 150
+}`,
+  },
+  {
+    title: '认证：X-Xingyu-Api-Token（备选）',
+    request: `GET /api/open/v1/tracks?page=0&pageSize=10
+X-Xingyu-Api-Token: <your-openapi-token>`,
+    response: `HTTP 200 OK
+Content-Type: application/json
+
+{
+  "items": [...],
+  "page": 0,
+  "pageSize": 10,
+  "total": 150
+}`,
+  },
+  {
+    title: '错误：401 认证失败',
+    request: `GET /api/open/v1/tracks?page=0&pageSize=10
+Authorization: Bearer invalid-token`,
+    response: `HTTP 401 Unauthorized
+Content-Type: application/json
+
+{
+  "code": "OPENAPI_UNAUTHORIZED",
+  "message": "Missing or invalid OpenAPI token",
+  "traceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "details": {}
+}`,
+  },
+  {
+    title: '错误：429 请求频率限制',
+    request: `GET /api/open/v1/tracks?page=0&pageSize=10
+Authorization: Bearer <your-openapi-token>
+
+（超过每分钟请求上限后触发）`,
+    response: `HTTP 429 Too Many Requests
+Content-Type: application/json
+
+{
+  "code": "OPENAPI_RATE_LIMITED",
+  "message": "Too many OpenAPI requests",
+  "traceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "details": {
+    "limit": 120,
+    "windowSeconds": 60
   }
 }`,
   },
@@ -305,6 +375,44 @@ function toLabel(key: string): string {
 
     <el-card class="section-card">
       <template #header>
+        <span>安全与访问控制</span>
+      </template>
+
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+      >
+        OpenAPI 认证默认关闭（<code>xingyu.openapi.auth.enabled=false</code>），部署方可设为 <code>true</code> 启用认证。支持两种认证方式：<strong>Authorization Bearer</strong>（推荐）和 <strong>X-Xingyu-Api-Token</strong>（备选）。Token 通过后端配置项 <code>xingyu.openapi.auth.token</code> 设置。
+      </el-alert>
+
+      <el-table :data="securityTable" size="small" stripe style="margin-bottom: 16px">
+        <el-table-column prop="status" label="状态码" width="100" />
+        <el-table-column prop="code" label="错误码" width="240" />
+        <el-table-column prop="description" label="说明" />
+      </el-table>
+
+      <el-collapse accordion>
+        <el-collapse-item
+          v-for="item in securityExamples"
+          :key="item.title"
+          :title="item.title"
+        >
+          <div class="example-section">
+            <div class="example-label">请求</div>
+            <pre class="code-block">{{ item.request }}</pre>
+          </div>
+          <div class="example-section">
+            <div class="example-label">响应</div>
+            <pre class="code-block">{{ item.response }}</pre>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </el-card>
+
+    <el-card class="section-card">
+      <template #header>
         <span>请求示例</span>
       </template>
       <el-collapse accordion>
@@ -328,7 +436,7 @@ function toLabel(key: string): string {
       <div class="integration-tips">
         <el-alert type="info" :closable="false" show-icon>
           <p>1. 在「设置」页面生成或配置 <strong>API Token</strong>，作为客户端身份凭证。</p>
-          <p>2. 所有 <code>/api/open/v1/*</code> 接口均需在请求头中携带 <code>Authorization: Bearer &lt;token&gt;</code>。</p>
+          <p>2. 所有接口在请求头中携带 <code>Authorization: Bearer &lt;token&gt;</code>（推荐），或使用 <code>X-Xingyu-Api-Token: &lt;token&gt;</code>（备选）。</p>
           <p>3. 分页接口使用 <code>page</code>（从 0 开始）和 <code>pageSize</code> 参数，响应中包含 <code>total</code>。</p>
           <p>4. 封面图片通过 <code>GET /api/open/v1/tracks/{id}/artwork</code> 获取二进制文件流，响应头含 <code>ETag</code> + <code>Cache-Control</code>。必要字段可通过 <code>GET .../artwork/meta</code> 获取。</p>
           <p>5. 建议客户端实现本地缓存策略，减少重复请求。</p>
