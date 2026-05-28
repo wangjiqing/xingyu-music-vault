@@ -1350,7 +1350,7 @@ Authorization: Bearer change-me
 
 ```json
 {
-  "code": "TRACK_NOT_FOUND",
+  "code": "OPENAPI_TRACK_NOT_FOUND",
   "message": "Track not found",
   "traceId": "a1b2c3d4-e5f6-...",
   "details": {}
@@ -1358,6 +1358,56 @@ Authorization: Bearer change-me
 ```
 
 所有 OpenAPI 接口错误响应格式统一为 `code` + `message` + `traceId` + `details`。`traceId` 用于问题追踪，`details` 为可选的补充信息对象。
+
+### 安全与访问控制
+
+v0.9.2 新增 OpenAPI 专用安全配置，仅作用于 `/api/open/v1/*`，不影响后台管理 API、静态资源、健康检查或旧版封面文件接口。
+
+配置项：
+
+|| 配置 | 默认值 | 说明 |
+|------|--------|------|
+| `xingyu.openapi.auth.enabled` | `false` | 是否启用 OpenAPI API Token 认证 |
+| `xingyu.openapi.auth.token` | 未配置 | OpenAPI API Token；认证开启时必须配置 |
+| `xingyu.openapi.rate-limit.enabled` | `false` | 是否启用 OpenAPI 简单 IP 限流 |
+| `xingyu.openapi.rate-limit.requests-per-minute` | `120` | 每个客户端 IP 每分钟请求数 |
+| `xingyu.openapi.access-log.enabled` | `true` | 是否记录 OpenAPI 访问日志 |
+
+认证开启后，请求必须携带以下任一请求头：
+
+```http
+Authorization: Bearer <token>
+```
+
+```http
+X-Xingyu-Api-Token: <token>
+```
+
+认证失败返回 `401`，错误码为 `OPENAPI_UNAUTHORIZED`。若启用认证但未配置 token，返回 `500`，错误码为 `OPENAPI_CONFIG_ERROR`。认证 token 不会写入访问日志。
+
+限流开启后，服务端按客户端 IP 做每分钟限流。客户端 IP 获取优先级为：`X-Forwarded-For` 第一个 IP、`X-Real-IP`、请求 remote address。超过限制返回 `429`，错误码为 `OPENAPI_RATE_LIMITED`，`details` 包含 `limit` 和 `windowSeconds`。
+
+访问日志格式示例：
+
+```text
+OpenAPI access method=GET path=/api/open/v1/tracks status=200 durationMs=18 clientIp=127.0.0.1 traceId=...
+```
+
+访问日志不会记录 `Authorization`、`X-Xingyu-Api-Token` 或 token。
+
+OpenAPI 错误码：
+
+|| 错误码 | 说明 |
+|--------|------|
+| `OPENAPI_INVALID_ARGUMENT` | 请求参数非法 |
+| `OPENAPI_UNAUTHORIZED` | OpenAPI token 缺失或错误 |
+| `OPENAPI_RATE_LIMITED` | OpenAPI 请求超过限流阈值 |
+| `OPENAPI_TRACK_NOT_FOUND` | 曲目不存在或不可访问 |
+| `OPENAPI_LYRICS_NOT_FOUND` | 歌词不存在 |
+| `OPENAPI_ARTWORK_NOT_FOUND` | 封面不存在或不可访问 |
+| `OPENAPI_UNSUPPORTED_SORT` | 不支持的排序字段 |
+| `OPENAPI_INTERNAL_ERROR` | OpenAPI 内部错误 |
+| `OPENAPI_CONFIG_ERROR` | OpenAPI 安全配置错误 |
 
 ### 接口清单
 
@@ -1389,7 +1439,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "0.9.1",
+  "serviceVersion": "0.9.2",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
@@ -1430,7 +1480,7 @@ GET /api/open/v1/sync/state
 }
 ```
 
-`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastChangedAt` 是最近一次 OpenAPI 变更日志记录时间。`changesAvailable` 表示服务端支持 `/sync/changes` 增量同步能力，v0.9.1 固定返回 `true`，不表示特定客户端是否存在待同步变更。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。各计数字段（trackCount、artistCount、albumCount、lyricsCount、artworkCount）均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
+`libraryVersion` 是 OpenAPI 同步版本号，每次记录歌曲、歌词或封面变更时递增，初始值为 1。`lastChangedAt` 是最近一次 OpenAPI 变更日志记录时间。`changesAvailable` 表示服务端支持 `/sync/changes` 增量同步能力，固定返回 `true`，不表示特定客户端是否存在待同步变更。`lastUpdatedAt` 保留用于兼容旧客户端，它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。各计数字段（trackCount、artistCount、albumCount、lyricsCount、artworkCount）均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
 
 ### 增量变更
 
@@ -1771,29 +1821,77 @@ GET /api/open/v1/match/track?title=晴天&artist=周杰伦&album=叶惠美&durat
 
 无可匹配曲目时返回 `200` 且 `matched: false`，`score` 为 0，`reason` 为 `"No exact title match"`，`track` 为 `null`。建议客户端持有本地音乐文件时，先通过 match/track 查询服务端对应曲目 ID，建立关联后再使用其他接口。
 
+### OpenAPI 安全配置（v0.9.2）
+
+**认证（默认关闭）：**
+
+```properties
+xingyu.openapi.auth.enabled=true
+xingyu.openapi.auth.token=your-token
+```
+
+开启后，所有 `/api/open/v1/*` 请求需要携带 `Authorization: Bearer <token>` 或 `X-Xingyu-Api-Token: <token>`。认证仅作用于 `/api/open/v1/*`；后台管理 API（`/api/*` 除 `/api/open/v1/*` 外）不受影响，仍使用原有全局 Bearer Token。
+
+认证失败返回 `401 OPENAPI_UNAUTHORIZED`。开启认证但未配置 token 时返回 `500 OPENAPI_CONFIG_ERROR`。
+
+**限流（默认关闭）：**
+
+```properties
+xingyu.openapi.rate-limit.enabled=true
+xingyu.openapi.rate-limit.requests-per-minute=120
+```
+
+客户端 IP 识别优先级：`X-Forwarded-For` 第一个 IP > `X-Real-IP` > 远端地址。超过限制返回 `429 OPENAPI_RATE_LIMITED`。
+
+**访问日志（默认开启）：**
+
+访问日志记录 `method`、`path`、`status`、`durationMs`、`clientIp`、`traceId`。以下内容不会被记录：Authorization 请求头值、`X-Xingyu-Api-Token` 请求头值、token 配置值。
+
+**错误码（v0.9.2 新增）：**
+
+|| 状态码 | code | 说明 |
+||--------|------|------|------|
+|| 401 | `OPENAPI_UNAUTHORIZED` | 未提供或无效的 OpenAPI Token |
+|| 429 | `OPENAPI_RATE_LIMITED` | 请求超出限流阈值 |
+|| 400 | `OPENAPI_INVALID_ARGUMENT` | 请求参数错误 |
+|| 500 | `OPENAPI_CONFIG_ERROR` | OpenAPI 认证已开启但未配置 token |
+
+所有 OpenAPI 错误响应格式统一：
+
+```json
+{
+  "code": "OPENAPI_UNAUTHORIZED",
+  "message": "...",
+  "traceId": "...",
+  "details": {}
+}
+```
+
 ### 暂不支持
 
-v0.9.1 是只读增强版本，以下能力不提供：
+v0.9.2 是 OpenAPI 安全与访问控制增强版本，以下能力不提供：
 
 - 音频流播放（`GET /api/open/v1/tracks/{id}/stream`）
 - 客户端修改元数据（`PUT /api/open/v1/tracks/{id}` 等）
 - 上传音乐（文件上传接口）
-- 复杂限流
+- 复杂限流 / 分布式限流 / Redis 限流
 - WebSocket 推送（实时同步）
 - 客户端批量修改元数据
 - 远程扫描音乐库
 - 网络刮削
 - AI 元数据补全
+- OAuth / OIDC / JWT
+- 多 Token 管理
+- 前端 Token 管理页面
 - 星语音乐盒真实联调
-- API Token 独立认证（当前使用后端全局 Bearer Token）
-- IP 限流
-- 访问日志
 - 部署验证
 - 反向代理配置
+- 公网部署完整安全方案
+- 通过 `X-Forwarded-For` 伪造 IP 的防护（v0.9.2 仅取第一个 IP，不校验真实性）
 
-OpenAPI `/api/open/v1/*` 路径受后端全局 Bearer Token 保护，需要在请求头中携带有效 Token。
+OpenAPI `/api/open/v1/*` 默认不要求独立 token；开启 `xingyu.openapi.auth.enabled=true` 后，需要携带 OpenAPI API Token。后台管理 API 仍使用原有全局 Bearer Token。
 
-### 客户端接入建议（v0.9.1 增量同步流程）
+### 客户端接入建议（v0.9.2）
 
 1. **调用 `/api/open/v1/server/info`**，验证 `apiVersion` 与客户端预期一致，检查 `features` 中需要的功能是否为 `true`
 2. **调用 `/api/open/v1/sync/state`**，获取 `libraryVersion`，与本地保存的版本比对

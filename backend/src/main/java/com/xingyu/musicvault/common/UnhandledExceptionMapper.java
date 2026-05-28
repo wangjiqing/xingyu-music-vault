@@ -27,7 +27,7 @@ public class UnhandledExceptionMapper implements ExceptionMapper<Throwable> {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .type(MediaType.APPLICATION_JSON)
                     .entity(Map.of(
-                            "code", "INTERNAL_ERROR",
+                            "code", "OPENAPI_INTERNAL_ERROR",
                             "message", "Unexpected server error",
                             "traceId", UUID.randomUUID().toString(),
                             "details", Map.of()

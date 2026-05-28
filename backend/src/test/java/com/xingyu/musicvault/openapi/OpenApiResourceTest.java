@@ -69,12 +69,19 @@ class OpenApiResourceTest {
         changeLogService.recordTrackChange(trackId, "updated", List.of("metadata"));
 
         given()
+                .when()
+                .get("/api/open/v1/server/info")
+                .then()
+                .statusCode(200)
+                .body("serviceVersion", equalTo("0.9.2"));
+
+        given()
                 .header("Authorization", AUTHORIZATION)
                 .when()
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("0.9.1"))
+                .body("serviceVersion", equalTo("0.9.2"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -92,6 +99,17 @@ class OpenApiResourceTest {
                 .body("albumCount", equalTo(2))
                 .body("changesAvailable", equalTo(true))
                 .body("lastChangedAt", notNullValue());
+    }
+
+    @Test
+    void rateLimitDisabledDoesNotLimitOpenApiRequests() {
+        for (int i = 0; i < 5; i++) {
+            given()
+                    .when()
+                    .get("/api/open/v1/server/info")
+                    .then()
+                    .statusCode(200);
+        }
     }
 
     @Test
@@ -162,9 +180,17 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/tracks?pageSize=101")
                 .then()
                 .statusCode(400)
-                .body("code", equalTo("INVALID_ARGUMENT"))
+                .body("code", equalTo("OPENAPI_INVALID_ARGUMENT"))
                 .body("traceId", notNullValue())
                 .body("details", notNullValue());
+
+        given()
+                .when()
+                .get("/api/open/v1/tracks?sort=sideways")
+                .then()
+                .statusCode(400)
+                .body("code", equalTo("OPENAPI_UNSUPPORTED_SORT"))
+                .body("traceId", notNullValue());
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -473,7 +499,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/tracks/{id}/lyrics", trackId)
                 .then()
                 .statusCode(404)
-                .body("code", equalTo("LYRICS_NOT_FOUND"))
+                .body("code", equalTo("OPENAPI_LYRICS_NOT_FOUND"))
                 .body("traceId", notNullValue());
 
         Path outsideRoot = Path.of("target/open-api-outside");
@@ -488,7 +514,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/tracks/{id}/artwork", trackId)
                 .then()
                 .statusCode(404)
-                .body("code", equalTo("ARTWORK_NOT_FOUND"))
+                .body("code", equalTo("OPENAPI_ARTWORK_NOT_FOUND"))
                 .body("traceId", notNullValue());
     }
 
@@ -500,7 +526,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/tracks/999999")
                 .then()
                 .statusCode(404)
-                .body("code", equalTo("TRACK_NOT_FOUND"))
+                .body("code", equalTo("OPENAPI_TRACK_NOT_FOUND"))
                 .body("message", equalTo("Track not found"))
                 .body("traceId", notNullValue())
                 .body("details", notNullValue());
