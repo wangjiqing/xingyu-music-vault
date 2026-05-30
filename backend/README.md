@@ -95,6 +95,15 @@ mvn package
 
 This builds a JVM-mode Quarkus app under `target/quarkus-app`.
 
+Run the packaged app directly:
+
+```bash
+cd backend
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+The packaged app listens on `http://localhost:8080` by default. Runtime data should be provided through writable directories such as `MUSIC_VAULT_DATA_DIR` and `MUSIC_VAULT_DB_PATH`; music files should stay outside the artifact and can be mounted read-only in Docker.
+
 ## Swagger UI
 
 Swagger UI is always included:
@@ -444,12 +453,20 @@ Environment variables:
 | `MUSIC_VAULT_DATA_DIR` | `/app/data` |
 | `MUSIC_VAULT_CONFIG_DIR` | `/app/config` |
 | `MUSIC_VAULT_MUSIC_DIRS` | `/music` |
+| `MUSIC_VAULT_LYRIC_DIRS` | `/music` |
 | `MUSIC_VAULT_DB_PATH` | `/app/data/music-vault.db` |
 | `MUSIC_VAULT_API_TOKEN` | `change-me` |
 | `MUSIC_VAULT_FFPROBE_PATH` | `/usr/bin/ffprobe` |
 | `MUSIC_VAULT_FFMPEG_PATH` | `/usr/bin/ffmpeg` |
+| `XINGYU_OPENAPI_AUTH_ENABLED` | `false` |
+| `XINGYU_OPENAPI_AUTH_TOKEN` | unset |
+| `XINGYU_OPENAPI_RATE_LIMIT_ENABLED` | `false` |
+| `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` | `120` |
+| `XINGYU_OPENAPI_ACCESS_LOG_ENABLED` | `true` |
 
 The custom config prefix is `music-vault`, read by `MusicVaultConfig`.
+
+In Docker, `MUSIC_VAULT_LYRIC_DIRS` defaults to the same container path as `MUSIC_VAULT_MUSIC_DIRS` (`/music`). If lyrics are stored separately, mount that directory and override `MUSIC_VAULT_LYRIC_DIRS`.
 
 ## SQLite Note
 
@@ -460,12 +477,17 @@ This skeleton uses `quarkus-jdbc-sqlite` with Hibernate ORM Panache and `org.hib
 ```bash
 cd backend
 mvn package
-docker build -t xingyu-music-vault-backend .
+docker build -t xingyu-music-vault:latest .
 docker run --rm -p 8080:8080 \
   -e MUSIC_VAULT_DB_PATH=/app/data/music-vault.db \
   -e MUSIC_VAULT_MUSIC_DIRS=/music \
   -e MUSIC_VAULT_API_TOKEN=change-me \
+  -e XINGYU_OPENAPI_AUTH_ENABLED=false \
+  -e XINGYU_OPENAPI_RATE_LIMIT_ENABLED=false \
+  -e XINGYU_OPENAPI_ACCESS_LOG_ENABLED=true \
   -v "$PWD/data:/app/data" \
   -v "/path/to/music:/music:ro" \
-  xingyu-music-vault-backend
+  xingyu-music-vault:latest
 ```
+
+The Docker build context is `backend/`. The image copies `target/quarkus-app`, exposes port `8080`, and does not include local music files or SQLite runtime data.
