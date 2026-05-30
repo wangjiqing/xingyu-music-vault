@@ -39,6 +39,9 @@ logs/
 *.db
 *.db-journal
 *.sqlite
+deploy/data/*.db
+deploy/data/*.db-wal
+deploy/data/*.db-shm
 
 # Config (local secrets)
 config/application.properties
@@ -48,6 +51,7 @@ config/application.yaml
 
 # Docker
 .docker/
+deploy/*local*.yml
 
 # Misc
 *.log
@@ -63,4 +67,3 @@ config/application.yaml
 # AI agent local settings
 
 .claude/
-

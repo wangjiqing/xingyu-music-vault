@@ -15,6 +15,8 @@ v0.9.3 确认星语音库后端的 Maven 打包、独立运行方式，并完成
 - **Docker 构建上下文收敛**：新增 `backend/.dockerignore`，保留 Docker build 必需的 `target/quarkus-app`，排除源码、运行数据、日志和本地目录
 - **Docker 基础验证通过**：镜像 `xingyu-music-vault:v0.9.3-verify` 可构建并启动，容器内服务监听 `8080`，宿主机端口映射后 `/api/open/v1/server/info` 和 `/api/open/v1/sync/state` 可访问
 - **Compose 示例完善**：`deploy/docker-compose.yml` 支持端口映射、数据目录挂载、日志目录挂载、音乐目录只读挂载、OpenAPI auth / rate-limit / access-log 环境变量、时区和 `unless-stopped` 重启策略
+- **本地联调 Compose 模板**：新增 `deploy/debugging-docker-compose.example.yml`，用于 Mac mini / 本机 Docker 局域网联调；真实本机路径文件应保存为 `deploy/debugging-docker-compose.local.yml` 并保持忽略
+- **本地联调部署说明**：部署文档补充本地联调模式与正式 Docker / NAS 部署模式的区别，并记录星语音乐盒局域网联调已验证的只读 OpenAPI 接口范围
 - **部署文档同步**：补充 Maven 打包、Jar 启动、Docker build、Compose 启动、NAS 目录建议、OpenAPI baseUrl 和验证接口说明
 - **OpenAPI 服务版本同步**：`/api/open/v1/server/info` 的 `serviceVersion` 更新为 `0.9.3`
 

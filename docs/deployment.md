@@ -89,6 +89,72 @@ http://localhost:8080
 
 请在运行前把示例中的 `/your/music/path` 改成自己的宿主机音乐目录。
 
+## 本地联调模式
+
+本地联调模式用于 Mac mini / 本机 Docker 场景，方便星语音乐盒真机在同一局域网内访问星语音库 OpenAPI。当前 Mac mini 局域网地址示例为：
+
+```text
+http://192.168.31.101:8080
+```
+
+可提交的模板文件为：
+
+```text
+deploy/debugging-docker-compose.example.yml
+```
+
+使用时复制成本地文件，并按本机实际路径修改：
+
+```bash
+cp deploy/debugging-docker-compose.example.yml deploy/debugging-docker-compose.local.yml
+docker compose -f deploy/debugging-docker-compose.local.yml up --build
+```
+
+`deploy/debugging-docker-compose.local.yml` 允许包含本机绝对路径、临时 token 或本地调试数据库路径，但不应提交到仓库。`.gitignore` 已忽略 `deploy/*local*.yml` 和 `deploy/data/*.db*`。
+
+本地联调模式下，如果复用已有 SQLite 数据库，容器内挂载路径应尽量与数据库中记录的文件路径一致。例如数据库记录的是宿主机绝对路径 `/path/to/local/music/a.flac`，则可将宿主机音乐目录挂载到容器内相同路径：
+
+```yaml
+volumes:
+  - /path/to/local/music:/path/to/local/music:ro
+environment:
+  - MUSIC_VAULT_MUSIC_DIRS=/path/to/local/music
+```
+
+这种方式适合临时联调和验证路径兼容性，不适合正式 NAS / 生产部署，也不应把真实音乐目录、数据库或 token 写入可提交文件。
+
+已验证的星语音乐盒局域网联调接口范围：
+
+```text
+GET /api/open/v1/server/info
+GET /api/open/v1/sync/state
+GET /api/open/v1/tracks
+GET /api/open/v1/tracks/{id}
+GET /api/open/v1/tracks/{id}/lyrics/meta
+GET /api/open/v1/tracks/{id}/lyrics
+GET /api/open/v1/tracks/{id}/artwork/meta
+GET /api/open/v1/tracks/{id}/artwork
+GET /api/open/v1/artists
+GET /api/open/v1/artists/{artistName}/tracks
+GET /api/open/v1/albums
+GET /api/open/v1/albums/tracks
+GET /api/open/v1/match/track
+```
+
+本地联调不新增 OpenAPI 语义，不代表 v0.9.4 业务能力完成，也不包含音频 stream 或客户端写入元数据。
+
+## 正式 Docker / NAS 部署模式
+
+正式 Docker / NAS 部署建议使用标准容器路径，避免依赖开发机绝对路径：
+
+```text
+/app/data    # SQLite 与运行数据
+/music       # 音乐目录，只读挂载
+/app/logs    # 日志目录，如需要文件化日志
+```
+
+标准 Compose 示例仍以 `deploy/docker-compose.yml` 为准。正式部署时建议将宿主机音乐目录挂载为 `/music:ro`，设置 `MUSIC_VAULT_MUSIC_DIRS=/music`，并将 SQLite 持久化到 `/app/data/music-vault.db`。如果歌词目录与音乐目录分离，再额外挂载歌词目录并覆盖 `MUSIC_VAULT_LYRIC_DIRS`。
+
 ## 目录挂载
 
 `./data` 和 `./config` 均相对于 `docker-compose.yml` 所在目录（当前为 `deploy/`）。
