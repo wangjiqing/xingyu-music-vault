@@ -1,0 +1,42 @@
+services:
+  music-vault:
+    image: xingyu-music-vault:latest
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: music-vault-debugging
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/data/logs
+      # Local debugging mode can preserve host paths inside the container
+      # when an existing SQLite database stores absolute file paths.
+      - /path/to/local/music:/path/to/local/music:ro
+      - /path/to/local/lyrics:/path/to/local/lyrics:ro
+      - /path/to/local/artworks:/path/to/local/artworks:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - QUARKUS_HTTP_HOST=0.0.0.0
+      - QUARKUS_HTTP_PORT=8080
+      - MUSIC_VAULT_DATA_DIR=/app/data
+      - MUSIC_VAULT_CONFIG_DIR=/app/config
+      - MUSIC_VAULT_MUSIC_DIRS=/path/to/local/music
+      - MUSIC_VAULT_LYRIC_DIRS=/path/to/local/lyrics
+      - APP_ARTWORK_SCAN_DIR=/path/to/local/artworks
+      - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
+      - MUSIC_VAULT_API_TOKEN=<api-token-placeholder>
+      - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
+      - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
+      - XINGYU_OPENAPI_AUTH_ENABLED=false
+      - XINGYU_OPENAPI_AUTH_TOKEN=<openapi-token-placeholder>
+      - XINGYU_OPENAPI_RATE_LIMIT_ENABLED=false
+      - XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE=120
+      - XINGYU_OPENAPI_ACCESS_LOG_ENABLED=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
