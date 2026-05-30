@@ -73,7 +73,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("0.9.3"));
+                .body("serviceVersion", equalTo("0.9.5"));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -81,7 +81,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("0.9.3"))
+                .body("serviceVersion", equalTo("0.9.5"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -132,6 +132,42 @@ class OpenApiResourceTest {
                 .body("lyricsCount", equalTo(1))
                 .body("artworkCount", equalTo(1))
                 .body("changesAvailable", equalTo(true));
+    }
+
+    @Test
+    void orphanLyricBindingDoesNotAdvertiseAvailableResourceOrInflateSyncState() {
+        Long trackId = createTrack("orphan-lyric.flac", "Orphan Lyric", "星语", "Contract", 2026, "Pop", 180_000L);
+        bindLyric(trackId, "Orphan Lyric", "星语", "Contract", "LRC", "[00:01.00]orphan");
+        deleteLyricByTitle("Orphan Lyric");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/sync/state")
+                .then()
+                .statusCode(200)
+                .body("trackCount", equalTo(1))
+                .body("lyricsCount", equalTo(0));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("keyword", "Orphan Lyric")
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("items[0].lyricsAvailable", equalTo(false))
+                .body("items[0].lyricsStatus", equalTo("NO_LYRIC"))
+                .body("items[0].lyricId", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(false))
+                .body("lyricId", nullValue());
     }
 
     @Test
@@ -314,6 +350,149 @@ class OpenApiResourceTest {
                 .statusCode(200)
                 .body("matched", equalTo(false))
                 .body("track", nullValue());
+    }
+
+    @Test
+    void trackAvailableFlagsStayConsistentWithLyricsAndArtworkMeta() throws IOException {
+        Long readyId = createTrack("ready.flac", "Ready", "星语", "Contract", 2026, "Pop", 180_000L);
+        Long emptyId = createTrack("empty.flac", "Empty", "星语", "Contract", 2026, "Pop", 181_000L);
+        bindLyric(readyId, "Ready", "星语", "Contract", "LRC", "[00:01.00]ready");
+        bindArtwork(readyId, "ready.png");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("keyword", "Ready")
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("items[0].lyricsAvailable", equalTo(true))
+                .body("items[0].lyricsStatus", equalTo("BOUND"))
+                .body("items[0].lyricId", notNullValue())
+                .body("items[0].artworkAvailable", equalTo(true))
+                .body("items[0].artworkStatus", equalTo("BOUND"))
+                .body("items[0].artworkId", notNullValue())
+                .body("items[0].artworkUrl", equalTo("/api/open/v1/tracks/" + readyId + "/artwork"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", readyId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", readyId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("keyword", "Empty")
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("items[0].id", equalTo(emptyId.intValue()))
+                .body("items[0].lyricsAvailable", equalTo(false))
+                .body("items[0].lyricsStatus", equalTo("NO_LYRIC"))
+                .body("items[0].lyricId", nullValue())
+                .body("items[0].artworkAvailable", equalTo(false))
+                .body("items[0].artworkStatus", equalTo("MISSING"))
+                .body("items[0].artworkId", nullValue())
+                .body("items[0].artworkUrl", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", emptyId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(false))
+                .body("lyricId", nullValue())
+                .body("hash", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", emptyId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(false))
+                .body("artworkId", nullValue())
+                .body("hash", nullValue());
+    }
+
+    @Test
+    void missingArtworkFileDoesNotAdvertiseAvailableResource() throws IOException {
+        Long trackId = createTrack("missing-cover.flac", "Missing Cover", "星语", "Contract", 2026, "Pop", 180_000L);
+        Path imagePath = bindArtwork(trackId, "missing-cover.png");
+        Files.delete(imagePath);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("keyword", "Missing Cover")
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("items[0].id", equalTo(trackId.intValue()))
+                .body("items[0].artworkAvailable", equalTo(false))
+                .body("items[0].artworkStatus", equalTo("MISSING"))
+                .body("items[0].artworkId", nullValue())
+                .body("items[0].artworkUrl", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(false))
+                .body("artworkId", nullValue())
+                .body("etag", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}/artwork", trackId)
+                .then()
+                .statusCode(404)
+                .body("code", equalTo("OPENAPI_ARTWORK_NOT_FOUND"));
+    }
+
+    @Test
+    void controlPlaneMetadataChangesAreVisibleInOpenApiDetailAndList() {
+        Long trackId = createTrack("metadata.flac", "Before", "Old Artist", "Old Album", 2025, "Pop", 180_000L);
+        updateTrackMetadata(trackId, "After", "New Artist", "New Album", 2026, "Folk");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/open/v1/tracks/{id}", trackId)
+                .then()
+                .statusCode(200)
+                .body("title", equalTo("After"))
+                .body("artist", equalTo("New Artist"))
+                .body("album", equalTo("New Album"))
+                .body("year", equalTo(2026))
+                .body("genre", equalTo("Folk"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .queryParam("keyword", "After")
+                .when()
+                .get("/api/open/v1/tracks")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(trackId.intValue()))
+                .body("items[0].artist", equalTo("New Artist"))
+                .body("items[0].album", equalTo("New Album"));
     }
 
     @Test
@@ -603,6 +782,27 @@ class OpenApiResourceTest {
         QuarkusTransaction.requiringNew().run(() -> {
             Lyric lyric = Lyric.find("title", title).firstResult();
             lyric.content = content;
+        });
+    }
+
+    private void deleteLyricByTitle(String title) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            Lyric lyric = Lyric.find("title", title).firstResult();
+            lyric.delete();
+        });
+    }
+
+    private void updateTrackMetadata(Long trackFileId, String title, String artist, String album, Integer year, String genre) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            TrackFile trackFile = TrackFile.findById(trackFileId);
+            Track track = Track.findById(trackFile.trackId);
+            track.title = title;
+            track.normalizedTitle = title.toLowerCase();
+            track.artist = artist;
+            track.album = album;
+            track.albumArtist = artist;
+            track.year = year;
+            track.genre = genre;
         });
     }
 

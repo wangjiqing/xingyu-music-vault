@@ -90,7 +90,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "0.9.3",
+                "0.9.5",
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(
@@ -283,6 +283,9 @@ public class OpenApiResource {
         if (artwork == null) {
             return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null, null);
         }
+        if (!artworkAvailable(artwork)) {
+            return new ArtworkMetaResponse(id, false, null, null, null, null, null, null, null, null);
+        }
         java.nio.file.Path path = safeArtworkPath(artwork);
         String hash = hashService.artworkHash(artwork, path);
         return new ArtworkMetaResponse(
@@ -396,6 +399,7 @@ public class OpenApiResource {
     }
 
     private OpenTrackResponse toTrackResponse(TrackFile trackFile, Track track, Lyric lyric, Artwork artwork) {
+        Artwork availableArtwork = artworkAvailable(artwork) ? artwork : null;
         return new OpenTrackResponse(
                 trackFile.id,
                 titleOf(track, trackFile),
@@ -408,15 +412,15 @@ public class OpenApiResource {
                 track == null ? null : track.genre,
                 track == null ? null : track.metadataStatus,
                 lyric == null ? "NO_LYRIC" : "BOUND",
-                artwork == null ? "MISSING" : "BOUND",
+                availableArtwork == null ? "MISSING" : "BOUND",
                 trackFile.fileName,
                 trackFile.fileExt,
                 trackFile.fileSize,
                 lyric != null,
                 lyric == null ? null : lyric.id,
-                artwork != null,
-                artwork == null ? null : artwork.id,
-                artwork == null ? null : "/api/open/v1/tracks/" + trackFile.id + "/artwork",
+                availableArtwork != null,
+                availableArtwork == null ? null : availableArtwork.id,
+                availableArtwork == null ? null : "/api/open/v1/tracks/" + trackFile.id + "/artwork",
                 trackFile.createdAt,
                 max(trackFile.updatedAt, track == null ? null : track.updatedAt)
         );
@@ -699,7 +703,20 @@ public class OpenApiResource {
         ).stream().collect(Collectors.toMap(artwork -> artwork.id, Function.identity()));
         return bindings.stream()
                 .filter(binding -> artworks.containsKey(binding.artworkId))
+                .filter(binding -> artworkAvailable(artworks.get(binding.artworkId)))
                 .collect(Collectors.toMap(binding -> binding.musicId, binding -> artworks.get(binding.artworkId), (left, right) -> left));
+    }
+
+    private boolean artworkAvailable(Artwork artwork) {
+        if (artwork == null || !hasText(artwork.filePath)) {
+            return false;
+        }
+        try {
+            java.nio.file.Path path = safeArtworkPath(artwork);
+            return Files.isRegularFile(path) && Files.isReadable(path);
+        } catch (OpenApiException exception) {
+            return false;
+        }
     }
 
     private List<TrackFile> activeTrackFiles() {
@@ -711,19 +728,11 @@ public class OpenApiResource {
         if (trackIds.isEmpty()) {
             return 0;
         }
-        return SongLyric.count("songId in ?1 and isPrimary = true", trackIds);
+        return SongLyric.count("songId in ?1 and isPrimary = true and lyricId in (select lyric.id from Lyric lyric)", trackIds);
     }
 
     private long activeArtworkCount(List<TrackFile> trackFiles) {
-        List<Long> trackIds = trackFiles.stream().map(trackFile -> trackFile.id).toList();
-        if (trackIds.isEmpty()) {
-            return 0;
-        }
-        return MusicArtworkBinding.count(
-                "musicId in ?1 and relationType = ?2 and isPrimary = true",
-                trackIds,
-                ArtworkService.TRACK_COVER
-        );
+        return primaryArtworks(trackFiles.stream().map(trackFile -> trackFile.id).toList()).size();
     }
 
     private Map<Long, Track> tracksById(List<TrackFile> trackFiles) {
