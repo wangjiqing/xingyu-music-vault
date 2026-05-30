@@ -67,7 +67,7 @@ cd deploy
 docker compose up --build
 ```
 
-Compose 示例默认映射 `8080:8080`，持久化 `./data`，将占位音乐目录 `/your/music/path` 只读挂载到容器 `/music:ro`。使用前请把 `/your/music/path` 改成自己的音乐目录。更多环境变量、NAS 目录规划和 OpenAPI baseUrl 说明见 [docs/deployment.md](/Users/wangjiqing/Project/xingyu-music-vault/docs/deployment.md)。
+Compose 示例默认映射 `8080:8080`，持久化 `./data`，将占位音乐目录 `/your/music/path` 只读挂载到容器 `/music:ro`。使用前请把 `/your/music/path` 改成自己的音乐目录。更多环境变量、NAS 目录规划和 OpenAPI baseUrl 说明见 [docs/deployment.md](docs/deployment.md)。
 
 ## 仓库结构
 
