@@ -2,6 +2,34 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.5 — OpenAPI 联调反馈收口与契约稳定
+
+**发布日期：** 2026-05-30
+
+v0.9.5 基于星语音乐盒局域网真机联调反馈收口 OpenAPI 资源状态契约。本版本不新增写接口，不修改星语音乐盒项目，不做公网 HTTPS、正式 NAS 部署、AI 刮削或多端协议扩展。
+
+### 新增 / 补强
+
+- **封面可用状态一致性修复**：`tracks` 列表和详情只有在主封面绑定存在、文件真实可读且路径位于允许根目录内时才返回 `artworkAvailable=true`、`artworkId` 和 `artworkUrl`
+- **封面 meta 降级语义收敛**：存在封面绑定但文件缺失、不可读或 Docker / local-dev 路径不一致导致不可访问时，`/artwork/meta` 返回 `available=false`；封面二进制接口仍返回 `404 OPENAPI_ARTWORK_NOT_FOUND`
+- **歌词状态契约固定**：补充测试确认 `lyricsAvailable=true` 时 `/lyrics/meta` 返回 `available=true` 且正文可取；无歌词时 `/lyrics/meta` 返回 `available=false`，正文 `404` 是可降级业务状态
+- **客户端降级契约说明**：文档明确 `available=true` 表示客户端可继续请求资源，`available=false` 表示应降级为无歌词 / 无封面，`404` 对客户端是可降级状态，`500` 才表示服务端异常
+- **星语音乐盒真实联调反馈记录**：文档记录已验证 `server/info`、`sync/state`、`match/track`、歌词、封面、基础元数据同步，以及控制面修改元数据 / 歌词 / 封面后客户端刷新可见
+- **测试补强**：补充列表 available 字段、歌词 / 封面 meta、封面文件缺失、match/track 和控制面元数据变更后的 OpenAPI 可见性测试
+
+### 暂不支持
+
+- OpenAPI 写接口
+- 公网 HTTPS / 正式 NAS 部署
+- 音频 stream
+- 客户端写入元数据
+- AI 刮削
+- 完整客户端同步中心
+- 多端协议扩展
+- 前端大改
+
+---
+
 ## v0.9.3 — 打包部署与 Docker 基础验证
 
 **发布日期：** 2026-05-30

@@ -1528,7 +1528,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "0.9.3",
+  "serviceVersion": "0.9.5",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
@@ -1580,7 +1580,7 @@ GET /api/open/v1/sync/state
 `lastUpdatedAt` 保留用于兼容旧客户端，
 它表示活跃歌曲 `track_files.updatedAt` 与关联 `tracks.updatedAt` 中的最大值（取较新者）。
 各计数字段（trackCount、artistCount、albumCount、lyricsCount、artworkCount）
-均统计当前活跃曲目及其主绑定资源，不含已删除曲目。
+均统计当前活跃曲目及其主绑定资源，不含已删除曲目；`lyricsCount` 仅统计主绑定存在且歌词记录仍存在的资源，`artworkCount` 仅统计主封面文件真实可读的资源。
 
 ### 增量变更
 
@@ -1643,6 +1643,8 @@ GET /api/open/v1/tracks?page=0&pageSize=20&keyword=周杰伦&metadataStatus=comp
 | `updatedAfter` | ISO-8601 日期时间，返回 `updatedAt` 严格晚于该时间的曲目（`updatedAt > updatedAfter`） |
 | `sort` | 排序字段：`updatedAt`（默认）、`title`、`artist`、`album`、`year`、`durationMs`、`trackNo`、`metadataStatus`、`lyricsStatus`、`artworkStatus`、`fileName`、`createdAt` |
 | `order` | 排序方向：`asc` 或 `desc`（默认 `desc`） |
+
+`lyricsStatus=BOUND` 与 `artworkStatus=BOUND` 过滤器基于数据库主绑定关系筛选；响应中的 `lyricsAvailable` / `artworkAvailable` 才表示客户端是否可以继续请求对应资源。若封面绑定存在但文件缺失或路径不可访问，`artworkStatus=BOUND` 过滤仍可能命中该曲目，但响应会返回 `artworkAvailable=false`、`artworkUrl=null`。
 
 响应示例：
 
@@ -1730,7 +1732,7 @@ GET /api/open/v1/tracks/{id}
 GET /api/open/v1/tracks/{id}/lyrics
 ```
 
-无歌词时返回 `404`。
+无歌词时返回 `404 OPENAPI_LYRICS_NOT_FOUND`。这对客户端是可降级业务状态，不应视为致命错误。
 
 响应示例：
 
@@ -1767,7 +1769,7 @@ GET /api/open/v1/tracks/{id}/lyrics/meta
 }
 ```
 
-`available` 为 `true` 表示该曲目有主绑定歌词。
+`available` 为 `true` 表示该曲目有主绑定歌词，客户端可以继续请求 `/lyrics`。`available=false` 表示无歌词、未绑定或歌词资源不可提供，客户端应降级为无歌词状态。
 本接口不返回 `language` 和 `hasTimeTag`。
 `hash` 由歌词内容、歌词格式和语言组合后计算 SHA-256，格式为 `sha256:<hex>`。
 `etag` 使用当前歌词 hash 生成，供 `/lyrics` 条件请求使用。
@@ -1778,7 +1780,7 @@ GET /api/open/v1/tracks/{id}/lyrics/meta
 GET /api/open/v1/tracks/{id}/artwork
 ```
 
-无封面时返回 `404`。
+无封面、封面文件缺失、不可读或路径不在允许根目录内时返回 `404 OPENAPI_ARTWORK_NOT_FOUND`。这对客户端是可降级业务状态，不应视为致命错误。
 成功时直接返回图片二进制流，`Content-Type` 为图片 MIME 类型，
 支持 PNG/JPEG/WebP，含 HTTP 缓存头（`Cache-Control: max-age=3600`）和 ETag。
 客户端再次请求时可携带 `If-None-Match`，
@@ -1810,6 +1812,23 @@ GET /api/open/v1/tracks/{id}/artwork/meta
 ```
 
 本接口不返回 `fileName`。
+
+`available=true` 表示封面文件真实可读，且路径位于服务端允许的封面 / 音乐根目录内，客户端可以继续请求 `/artwork`。`available=false` 表示无封面、未绑定、文件缺失、Docker / local-dev 路径不一致或路径不可访问，客户端应降级为无封面状态。
+
+### 资源可用状态契约（v0.9.5）
+
+`tracks` 列表和详情中的 `lyricsAvailable` / `artworkAvailable` 必须与 meta 接口一致：
+
+| 字段 | 语义 |
+|------|------|
+| `lyricsAvailable=true` | `/lyrics/meta` 返回 `available=true`，客户端可请求 `/lyrics` |
+| `lyricsAvailable=false` | 客户端不应继续请求 `/lyrics`，可直接进入无歌词状态 |
+| `artworkAvailable=true` | `/artwork/meta` 返回 `available=true`，客户端可请求 `/artwork` |
+| `artworkAvailable=false` | 客户端不应继续请求 `/artwork`，可直接进入无封面状态 |
+
+`404` 表示资源不存在或当前不可提供，客户端应降级；`500` 表示服务端异常，客户端应降级并可记录错误。
+
+星语音乐盒当前歌词来源策略为：本地已有缓存歌词 → 星语音库 OpenAPI 歌词 → 无歌词状态。客户端不再假设会请求公网 LRCLIB。
 
 ### 歌手列表
 
@@ -1994,7 +2013,7 @@ xingyu.openapi.rate-limit.requests-per-minute=120
 
 ### 暂不支持
 
-v0.9.2 是 OpenAPI 安全与访问控制增强版本，以下能力不提供：
+v0.9.5 是 OpenAPI 联调反馈收口与契约稳定版本，以下能力不提供：
 
 - 音频流播放（`GET /api/open/v1/tracks/{id}/stream`）
 - 客户端修改元数据（`PUT /api/open/v1/tracks/{id}` 等）
@@ -2008,15 +2027,13 @@ v0.9.2 是 OpenAPI 安全与访问控制增强版本，以下能力不提供：
 - OAuth / OIDC / JWT
 - 多 Token 管理
 - 前端 Token 管理页面
-- 星语音乐盒真实联调
-- 部署验证
 - 反向代理配置
 - 公网部署完整安全方案
 - 通过 `X-Forwarded-For` 伪造 IP 的防护（v0.9.2 仅取第一个 IP，不校验真实性）
 
 OpenAPI `/api/open/v1/*` 默认不要求独立 token；开启 `xingyu.openapi.auth.enabled=true` 后，需要携带 OpenAPI API Token。后台管理 API 仍使用原有全局 Bearer Token。
 
-### 客户端接入建议（v0.9.2）
+### 客户端接入建议（v0.9.5）
 
 1. **调用 `/api/open/v1/server/info`**，验证 `apiVersion` 与客户端预期一致，检查 `features` 中需要的功能是否为 `true`
 2. **调用 `/api/open/v1/sync/state`**，获取 `libraryVersion`，与本地保存的版本比对
