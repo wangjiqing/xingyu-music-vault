@@ -37,6 +37,7 @@ Xingyu Music Vault 是一个**后台元数据管理系统**，而非播放器。
 - [ ] 元数据审核工作流（规划中）
 - [x] RESTful API 基础能力（持续完善）
 - [x] OpenAPI 客户端缓存、增量同步与安全访问控制（v0.9.2，面向播放器客户端只读 API，缓存、同步、认证、限流与访问日志能力增强）
+- [x] 后端打包部署与 Docker 基础验证（v0.9.3，Maven 打包、独立 Jar 启动、Dockerfile、Compose 示例、目录挂载与部署文档）
 - [x] Web 管理后台（持续完善）
 
 ## 技术栈
@@ -48,6 +49,25 @@ Xingyu Music Vault 是一个**后台元数据管理系统**，而非播放器。
 | 数据库 | SQLite（开发）/ PostgreSQL（生产） |
 | 存储   | 本地文件系统            |
 | 部署   | Docker Compose         |
+
+## 打包与部署
+
+后端采用 Quarkus JVM 模式打包：
+
+```bash
+cd backend
+mvn package
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+Docker 镜像从 `backend` 目录构建，`deploy/docker-compose.yml` 提供本机 / NAS 基础部署示例：
+
+```bash
+cd deploy
+docker compose up --build
+```
+
+Compose 示例默认映射 `8080:8080`，持久化 `./data`，将占位音乐目录 `/your/music/path` 只读挂载到容器 `/music:ro`。使用前请把 `/your/music/path` 改成自己的音乐目录。更多环境变量、NAS 目录规划和 OpenAPI baseUrl 说明见 [docs/deployment.md](docs/deployment.md)。
 
 ## 仓库结构
 
@@ -133,5 +153,6 @@ v0.8.7 [✓] v0.8 功能冻结与回归测试
 v0.9.0 [✓] OpenAPI 与外部集成基础
 v0.9.1 [✓] 客户端缓存与增量同步增强（OpenAPI 缓存与同步能力增强）
 v0.9.2 [✓] OpenAPI 安全与访问控制（可选 API Token、简单 IP 限流、访问日志、错误码完善）
+v0.9.3 [✓] 打包部署与 Docker 基础验证（Maven 打包、独立启动、Dockerfile、Compose 示例、挂载和文档同步）
 v1.0.0 [ ] 稳定可运行版本
 ```

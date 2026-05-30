@@ -1,25 +1,34 @@
-version: "3.8"
-
 services:
   music-vault:
     image: xingyu-music-vault:latest
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
     container_name: music-vault
     ports:
-      - "18080:8080"
+      - "8080:8080"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      - /path/to/music:/music:ro
+      - ./logs:/app/data/logs
+      - /Users/wangjiqing/Project/Musics/Music:/music:ro
     environment:
       - TZ=Asia/Shanghai
       - QUARKUS_HTTP_HOST=0.0.0.0
+      - QUARKUS_HTTP_PORT=8080
       - MUSIC_VAULT_DATA_DIR=/app/data
       - MUSIC_VAULT_CONFIG_DIR=/app/config
       - MUSIC_VAULT_MUSIC_DIRS=/music
+      - MUSIC_VAULT_LYRIC_DIRS=/music
       - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
       - MUSIC_VAULT_API_TOKEN=change-me
       - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
       - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
+      - XINGYU_OPENAPI_AUTH_ENABLED=false
+      - XINGYU_OPENAPI_AUTH_TOKEN=change-me-openapi
+      - XINGYU_OPENAPI_RATE_LIMIT_ENABLED=false
+      - XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE=120
+      - XINGYU_OPENAPI_ACCESS_LOG_ENABLED=true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]

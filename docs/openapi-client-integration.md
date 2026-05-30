@@ -4,12 +4,12 @@
 
 ## 概述
 
-星语音库 OpenAPI v0.9.2 提供面向播放器客户端的只读音乐库查询接口，
+星语音库 OpenAPI v0.9.3 提供面向播放器客户端的只读音乐库查询接口，
 在 v0.9.0 / v0.9.1 基础上补强缓存、增量同步、安全与访问控制能力。
 客户端可通过本 API 查询曲目、歌词、封面、歌手、专辑等元数据，
 并建立本地音乐与服务端元数据的关联。
 
-**v0.9.2 只做 OpenAPI 安全与访问控制增强，不做：星语音乐盒真实联调、部署验证、反向代理配置、音频流、客户端写入元数据、WebSocket 推送。**
+**v0.9.3 已完成后端打包与 Docker 基础启动验证，但仍不做：星语音乐盒真实联调、公网 HTTPS、CI/CD、音频流、客户端写入元数据、WebSocket 推送。**
 
 **当前版本为只读增强版本，不支持音频流、不支持客户端修改元数据、不支持上传音乐。**
 
@@ -36,6 +36,22 @@
 
 所有接口均以此前缀开始。
 
+## baseUrl 配置
+
+客户端应把服务根地址配置为 `musicVaultBaseUrl`，再拼接 OpenAPI 相对路径，不要写死具体主机、端口或完整接口地址。
+
+| 场景 | `musicVaultBaseUrl` 示例 |
+|------|--------------------------|
+| 本机 | `http://localhost:8080` |
+| Mac mini 局域网 | `http://<Mac-mini-LAN-IP>:8080` |
+| NAS | `http://<NAS-LAN-IP>:8080` |
+
+例如服务信息接口应拼接为：
+
+```text
+{musicVaultBaseUrl}/api/open/v1/server/info
+```
+
 ## 接入流程
 
 ### 第一步：验证服务可用性
@@ -49,7 +65,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "0.9.2",
+  "serviceVersion": "0.9.3",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {

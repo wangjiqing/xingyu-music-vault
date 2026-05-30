@@ -2,7 +2,54 @@
 
 ## 部署方式
 
-Docker Compose 部署，面向 NAS / 家庭服务器 / 自托管环境。
+v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
+
+本版本不做公网 HTTPS、不做 CI/CD、不做自动镜像发布、不做多架构镜像发布，也不强制完成 NAS 实机部署硬验收。
+
+## 后端打包运行
+
+后端位于 `backend/`，采用 Quarkus JVM 模式打包：
+
+```bash
+cd backend
+mvn package
+```
+
+打包产物目录：
+
+```text
+backend/target/quarkus-app
+```
+
+独立启动命令：
+
+```bash
+cd backend
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+如需指定独立运行的数据目录和音乐目录：
+
+```bash
+cd backend
+MUSIC_VAULT_DB_PATH=/private/tmp/xingyu-music-vault/music-vault.db \
+MUSIC_VAULT_DATA_DIR=/private/tmp/xingyu-music-vault \
+MUSIC_VAULT_MUSIC_DIRS=/your/music/path \
+MUSIC_VAULT_LYRIC_DIRS=/your/music/path \
+MUSIC_VAULT_API_TOKEN=change-me \
+java -jar target/quarkus-app/quarkus-run.jar
+```
+
+启动后可验证：
+
+```bash
+curl -i http://localhost:8080/api/open/v1/server/info
+curl -i http://localhost:8080/api/open/v1/sync/state
+curl -i http://localhost:8080/api/open/v1/tracks/1/lyrics/meta
+curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
+```
+
+歌词和封面示例使用曲目 ID `1`。如果本地数据库尚无该曲目，接口返回 `404` 也表示路由、认证开关和服务进程可访问。
 
 ## 服务配置
 
@@ -11,7 +58,36 @@ Docker Compose 部署，面向 NAS / 家庭服务器 / 自托管环境。
 | 服务名 | `music-vault` |
 | 镜像名 | `xingyu-music-vault:latest` |
 | 容器端口 | `8080` |
-| 宿主机端口 | `18080` |
+| 宿主机端口 | `8080` |
+
+## Docker 镜像
+
+Dockerfile 位于 `backend/Dockerfile`，构建上下文必须使用 `backend/`，因为 Dockerfile 复制的是实际打包产物 `target/quarkus-app`：
+
+```bash
+cd backend
+mvn package
+docker build -t xingyu-music-vault:latest .
+```
+
+镜像使用 JRE 21 运行环境，包含 `ffmpeg` / `ffprobe`，不内置本地音乐文件，不内置 SQLite 运行数据。运行数据通过 `/app/data` 挂载，音乐目录通过 `/music:ro` 只读挂载。
+
+## Docker Compose
+
+示例文件位于 `deploy/docker-compose.yml`：
+
+```bash
+cd deploy
+docker compose up --build
+```
+
+Compose 示例会从 `../backend` 构建镜像，并映射：
+
+```text
+http://localhost:8080
+```
+
+请在运行前把示例中的 `/your/music/path` 改成自己的宿主机音乐目录。
 
 ## 目录挂载
 
@@ -21,7 +97,8 @@ Docker Compose 部署，面向 NAS / 家庭服务器 / 自托管环境。
 |------------|------------|------|
 | `./data` | `/app/data` | 数据目录（含数据库），相对于 `docker-compose.yml` 所在目录 |
 | `./config` | `/app/config` | 配置目录，相对于 `docker-compose.yml` 所在目录 |
-| `/path/to/music` | `/music:ro` | 音乐目录（只读） |
+| `./logs` | `/app/data/logs` | 日志目录，可选挂载，当前应用主要输出到容器标准输出 |
+| `/your/music/path` | `/music:ro` | 音乐目录（只读），需要替换为自己的实际路径 |
 
 Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到容器内 `/music:ro`，并将允许扫描目录配置为 `/music`。如需使用其他容器内路径，可通过 `MUSIC_VAULT_MUSIC_DIRS` 覆盖。
 
@@ -29,6 +106,7 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 
 - SQLite 路径：`/app/data/music-vault.db`
 - 初始化由容器启动时自动完成
+- SQLite 文件必须随 `/app/data` 持久化，不应放在镜像内
 
 ## 环境变量
 
@@ -39,14 +117,81 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `MUSIC_VAULT_DATA_DIR` | 数据目录 | `/app/data` |
 | `MUSIC_VAULT_CONFIG_DIR` | 配置目录 | `/app/config` |
 | `MUSIC_VAULT_MUSIC_DIRS` | 音乐目录 | `/music` |
+| `MUSIC_VAULT_LYRIC_DIRS` | 歌词目录 | `/music` |
 | `MUSIC_VAULT_DB_PATH` | 数据库路径 | `/app/data/music-vault.db` |
 | `MUSIC_VAULT_API_TOKEN` | API 鉴权 Token | `change-me` |
 | `MUSIC_VAULT_FFPROBE_PATH` | ffprobe 路径 | `/usr/bin/ffprobe` |
 | `MUSIC_VAULT_FFMPEG_PATH` | ffmpeg 路径 | `/usr/bin/ffmpeg` |
+| `XINGYU_OPENAPI_AUTH_ENABLED` | 是否启用 OpenAPI 独立 Token 认证 | `false` |
+| `XINGYU_OPENAPI_AUTH_TOKEN` | OpenAPI 独立 Token，认证开启时必填 | `change-me-openapi` |
+| `XINGYU_OPENAPI_RATE_LIMIT_ENABLED` | 是否启用 OpenAPI 简单 IP 限流 | `false` |
+| `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` | 每个客户端 IP 每分钟请求数 | `120` |
+| `XINGYU_OPENAPI_ACCESS_LOG_ENABLED` | 是否记录 OpenAPI 访问日志 | `true` |
 
-> 生产环境请务必修改 `MUSIC_VAULT_API_TOKEN`。
+> 生产环境请务必修改 `MUSIC_VAULT_API_TOKEN` 和 `XINGYU_OPENAPI_AUTH_TOKEN`。
 
 `MUSIC_VAULT_MUSIC_DIRS` 是扫描路径安全校验的允许根目录。扫描任务中的 `musicDirs` 必须位于该配置范围内；Docker Compose 场景通常保持 `/music`，并将宿主机真实音乐目录挂载为 `/music:ro`。
+
+Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认与 `MUSIC_VAULT_MUSIC_DIRS` 相同，均为 `/music`。如果歌词文件独立存放在其他目录，请额外挂载歌词目录，并通过 `MUSIC_VAULT_LYRIC_DIRS` 覆盖。
+
+OpenAPI 认证只作用于 `/api/open/v1/*`。当 `XINGYU_OPENAPI_AUTH_ENABLED=true` 时，请求需携带：
+
+```http
+Authorization: Bearer <XINGYU_OPENAPI_AUTH_TOKEN>
+```
+
+或：
+
+```http
+X-Xingyu-Api-Token: <XINGYU_OPENAPI_AUTH_TOKEN>
+```
+
+限流和访问日志同样只作用于 `/api/open/v1/*`。
+
+## OpenAPI 访问地址
+
+后续客户端接入应配置服务根地址 `musicVaultBaseUrl`，再拼接 OpenAPI 相对路径，不要写死具体主机、端口和完整接口地址。
+
+| 场景 | `musicVaultBaseUrl` 示例 |
+|------|--------------------------|
+| 本机 | `http://localhost:8080` |
+| Mac mini 局域网 | `http://<Mac-mini-LAN-IP>:8080` |
+| NAS | `http://<NAS-LAN-IP>:8080` |
+
+客户端拼接示例：
+
+```text
+{musicVaultBaseUrl}/api/open/v1/server/info
+```
+
+常用验证接口：
+
+```text
+{musicVaultBaseUrl}/api/open/v1/server/info
+{musicVaultBaseUrl}/api/open/v1/sync/state
+{musicVaultBaseUrl}/api/open/v1/tracks/{id}/lyrics/meta
+{musicVaultBaseUrl}/api/open/v1/tracks/{id}/artwork/meta
+```
+
+## NAS 目录规划
+
+群晖 NAS 可参考以下目录，实际部署时请按自己的卷名和音乐库位置调整：
+
+```text
+/volume1/docker/xingyu-music-vault/data
+/volume1/docker/xingyu-music-vault/logs
+/volume1/music
+```
+
+建议挂载关系：
+
+| NAS 路径 | 容器路径 | 说明 |
+|----------|----------|------|
+| `/volume1/docker/xingyu-music-vault/data` | `/app/data` | 持久化 SQLite 和运行数据 |
+| `/volume1/docker/xingyu-music-vault/logs` | `/app/data/logs` | 可选日志目录 |
+| `/volume1/music` | `/music:ro` | 音乐目录，只读挂载 |
+
+音乐目录建议只读挂载，避免容器误改原始音乐库。SQLite 和运行数据必须持久化到 NAS 数据目录。v0.9.3 只提供目录规划和 Docker 基础验证，不要求完成正式 NAS 实机部署验收。
 
 ## 日志
 
@@ -59,6 +204,9 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 ## 部署检查清单
 
 - [ ] 修改 `MUSIC_VAULT_API_TOKEN` 为强密码
-- [ ] 确认音乐目录路径正确
-- [ ] 确认端口 `18080` 未被占用
-- [ ] 准备好 PostgreSQL（如需生产级部署）
+- [ ] 如开启 OpenAPI 认证，设置 `XINGYU_OPENAPI_AUTH_ENABLED=true` 并修改 `XINGYU_OPENAPI_AUTH_TOKEN`
+- [ ] 如开启 OpenAPI 限流，确认 `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` 合理
+- [ ] 确认音乐目录路径正确，并以只读方式挂载为 `/music:ro`
+- [ ] 确认 `/app/data` 已持久化，SQLite 文件不会随容器删除而丢失
+- [ ] 确认端口 `8080` 未被占用，或按需调整宿主机端口映射
+- [ ] 确认客户端只配置 `musicVaultBaseUrl`，接口路径由客户端拼接

@@ -1528,7 +1528,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "0.9.2",
+  "serviceVersion": "0.9.3",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
