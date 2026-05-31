@@ -37,6 +37,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install ffmpeg (Test Runtime Dependency)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Backend Maven Test
         working-directory: backend
         run: mvn -B test
