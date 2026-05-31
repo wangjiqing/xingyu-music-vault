@@ -1,6 +1,6 @@
 # 镜像拉取部署（不从源码构建）
 
-本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。
+本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。v0.9.8 起 GHCR 支持 GitHub Actions 自动发布。
 
 ## 前置要求
 
@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.8}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.8}
 ```
 
 ## 修改 IMAGE_TAG
@@ -36,7 +36,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v0.9.7
+IMAGE_TAG=v0.9.8
 ```
 
 `latest` 适合快速体验，不建议用于长期稳定部署。

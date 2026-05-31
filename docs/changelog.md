@@ -2,6 +2,31 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.8 — GitHub Actions 与 GHCR 自动镜像发布
+
+**发布日期：** 2026-05-31
+
+v0.9.8 不新增业务能力，聚焦基础 CI 与 GHCR 自动镜像发布能力，为后续 v1.0 正式发布做准备。
+
+### 新增 / 补强
+
+- **基础 CI workflow**：新增 `.github/workflows/ci.yml`，在 `main`、`feat/**`、`fix/**` push 以及 `pull_request -> main` 触发，执行后端 Maven 测试、前端 `npm ci && npm run build`、Docker build（不推送）
+- **GHCR 自动发布 workflow**：新增 `.github/workflows/publish-ghcr.yml`，支持 `push tag v*` 和 `workflow_dispatch`，使用 `GITHUB_TOKEN` 推送 GHCR
+- **发布 tag 规则自动化**：当 tag 为 `v0.9.8` 时，自动发布 `v0.9.8`、`v0.9`、`latest`
+- **镜像构建参数对齐**：Actions 构建复用 `NPM_REGISTRY` 与 `MAVEN_MIRROR_URL` 参数
+- **发布与部署文档更新**：补充 GHCR 自动发布说明、镜像拉取部署说明与 v0.9.8 发布检查清单
+- **Docker Hub 策略明确**：Docker Hub 仍为手动发布流程，后续版本再评估自动化
+
+### 暂不支持
+
+- Docker Hub 自动发布
+- GitHub Release 正式发布
+- 多架构 buildx 强制发布
+- 镜像签名 / SBOM
+- 新业务接口与协议扩展
+
+---
+
 ## v0.9.7 — 镜像发布与 Packages 准备
 
 **发布日期：** 2026-05-31

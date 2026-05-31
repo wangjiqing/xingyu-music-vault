@@ -1,0 +1,77 @@
+name: Publish GHCR Image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag, for example v0.9.8"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/wangjiqing/xingyu-music-vault
+  NPM_REGISTRY: https://registry.npmmirror.com
+  MAVEN_MIRROR_URL: https://maven.aliyun.com/repository/public
+
+jobs:
+  publish:
+    name: Build and Push GHCR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve Release Tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${{ github.event.inputs.release_tag }}"
+          fi
+
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $TAG"
+            echo "Expected format: v<major>.<minor>.<patch>"
+            exit 1
+          fi
+
+          MAJOR_MINOR="$(echo "$TAG" | cut -d. -f1,2)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "series_tag=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
+          echo "Resolved tags: $TAG, $MAJOR_MINOR, latest"
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            NPM_REGISTRY=${{ env.NPM_REGISTRY }}
+            MAVEN_MIRROR_URL=${{ env.MAVEN_MIRROR_URL }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.series_tag }}
+            ${{ env.IMAGE_NAME }}:latest
