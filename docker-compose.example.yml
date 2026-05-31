@@ -1,0 +1,44 @@
+services:
+  xingyu-music-vault:
+    image: xingyu-music-vault:${IMAGE_TAG:-v0.9.6}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+    container_name: xingyu-music-vault
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - ${DATA_DIR:-./data}:/app/data
+      - ${CONFIG_DIR:-./config}:/app/config
+      - ${LOGS_DIR:-./logs}:/app/logs
+      - ${MUSIC_DIR:-./music}:/music:ro
+      - ${LYRICS_DIR:-./lyrics}:/lyrics:ro
+      - ${ARTWORK_DIR:-./artwork}:/artwork
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      QUARKUS_HTTP_HOST: 0.0.0.0
+      QUARKUS_HTTP_PORT: 8080
+      MUSIC_VAULT_DATA_DIR: /app/data
+      MUSIC_VAULT_CONFIG_DIR: /app/config
+      MUSIC_VAULT_MUSIC_DIRS: /music
+      MUSIC_VAULT_LYRIC_DIRS: /lyrics
+      MUSIC_VAULT_DB_PATH: /app/data/music-vault.db
+      MUSIC_SCAN_DEFAULT_PATH: /music
+      APP_ARTWORK_SCAN_DIR: /artwork
+      MUSIC_VAULT_API_TOKEN: ${MUSIC_VAULT_API_TOKEN:-change-me}
+      MUSIC_VAULT_FFPROBE_PATH: /usr/bin/ffprobe
+      MUSIC_VAULT_FFMPEG_PATH: /usr/bin/ffmpeg
+      XINGYU_OPENAPI_AUTH_ENABLED: ${XINGYU_OPENAPI_AUTH_ENABLED:-false}
+      XINGYU_OPENAPI_AUTH_TOKEN: ${XINGYU_OPENAPI_AUTH_TOKEN:-change-me-openapi}
+      XINGYU_OPENAPI_RATE_LIMIT_ENABLED: ${XINGYU_OPENAPI_RATE_LIMIT_ENABLED:-false}
+      XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE: ${XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
+      XINGYU_OPENAPI_ACCESS_LOG_ENABLED: ${XINGYU_OPENAPI_ACCESS_LOG_ENABLED:-true}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

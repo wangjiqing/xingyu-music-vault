@@ -30,8 +30,8 @@ quarkus:
 music-vault:
   data-dir: ${MUSIC_VAULT_DATA_DIR:/app/data}
   config-dir: ${MUSIC_VAULT_CONFIG_DIR:/app/config}
-  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/Users/wangjiqing/Project/Musics/Music}
-  lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/Users/wangjiqing/Project/Musics/Lyrics}
+  music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/music}
+  lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/lyrics}
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
@@ -39,11 +39,11 @@ music-vault:
 
 music:
   scan:
-    default-path: ${MUSIC_SCAN_DEFAULT_PATH:/Users/wangjiqing/Project/Musics/Music}
+    default-path: ${MUSIC_SCAN_DEFAULT_PATH:/music}
 
 app:
   artwork:
-    scan-dir: ${APP_ARTWORK_SCAN_DIR:/Users/wangjiqing/Project/Musics/Artworks}
+    scan-dir: ${APP_ARTWORK_SCAN_DIR:/artwork}
 
 xingyu:
   openapi:
@@ -67,12 +67,12 @@ xingyu:
   music-vault:
     data-dir: data
     config-dir: config
-    music-dirs: /Users/wangjiqing/Project/Musics/Music
-    lyric-dirs: /Users/wangjiqing/Project/Musics/Lyrics
+    music-dirs: music
+    lyric-dirs: lyrics
     db-path: data/music-vault.db
   app:
     artwork:
-      scan-dir: /Users/wangjiqing/Project/Musics/Artworks
+      scan-dir: artwork
 
 "%test":
   quarkus:

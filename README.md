@@ -52,22 +52,23 @@ Xingyu Music Vault 是一个**后台元数据管理系统**，而非播放器。
 
 ## 打包与部署
 
-后端采用 Quarkus JVM 模式打包：
+v0.9.6 推荐使用根目录 Docker Compose 一键部署，镜像构建会先构建 Vue 管理后台，再把前端产物打入 Quarkus 后端静态资源：
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+cp .env.example .env
+docker compose up -d --build
+```
+
+详细步骤见 [Docker 一键部署](docs/deployment/docker.md)，备份和升级策略见 [备份与升级](docs/deployment/backup-and-upgrade.md)。
+
+后端也可以单独采用 Quarkus JVM 模式打包：
 
 ```bash
 cd backend
 mvn package
 java -jar target/quarkus-app/quarkus-run.jar
 ```
-
-Docker 镜像从 `backend` 目录构建，`deploy/docker-compose.yml` 提供本机 / NAS 基础部署示例：
-
-```bash
-cd deploy
-docker compose up --build
-```
-
-Compose 示例默认映射 `8080:8080`，持久化 `./data`，将占位音乐目录 `/your/music/path` 只读挂载到容器 `/music:ro`。使用前请把 `/your/music/path` 改成自己的音乐目录。更多环境变量、NAS 目录规划和 OpenAPI baseUrl 说明见 [docs/deployment.md](docs/deployment.md)。
 
 ## 仓库结构
 
@@ -83,11 +84,12 @@ xingyu-music-vault/
 
 ## 快速开始
 
-后端本地开发默认目录：
+后端本地开发默认目录可通过环境变量覆盖；Docker 部署默认使用容器内 `/music`、`/lyrics`、`/artwork`，本地开发 profile 默认使用仓库内相对目录：
 
 ```text
-音乐：/Users/wangjiqing/Project/Musics/Music
-歌词：/Users/wangjiqing/Project/Musics/Lyrics
+音乐：backend/music
+歌词：backend/lyrics
+封面：backend/artwork
 ```
 
 启动后端后可触发一次本地音乐扫描：
@@ -112,7 +114,7 @@ curl "http://localhost:8080/api/music?page=0&size=20" \
 curl -X POST http://localhost:8080/api/lyrics/scan \
   -H "Authorization: Bearer change-me" \
   -H "Content-Type: application/json" \
-  -d '{"path":"/Users/wangjiqing/Project/Musics/Lyrics"}'
+  -d '{"path":"lyrics"}'
 ```
 
 查询歌词管理页列表：
@@ -124,7 +126,7 @@ curl "http://localhost:8080/api/lyrics?page=0&size=20&bindStatus=BOUND" \
 
 ## 开发状态
 
-项目处于 **早期开发阶段**，后端基础能力已覆盖 v0.9.5（OpenAPI 联调反馈收口与契约稳定），前端已推进至 v0.8.4，核心功能陆续实现中。
+项目处于 **早期开发阶段**，后端基础能力已覆盖 v0.9.6（Docker 一键部署与运行规范化），前端已推进至 v0.8.4，核心功能陆续实现中。
 
 ```
 v0.1 [✓] 后端骨架与 Track CRUD
@@ -156,5 +158,6 @@ v0.9.2 [✓] OpenAPI 安全与访问控制（可选 API Token、简单 IP 限流
 v0.9.3 [✓] 打包部署与 Docker 基础验证（Maven 打包、独立启动、Dockerfile、Compose 示例、挂载和文档同步）
 v0.9.4 [✓] 星语音乐盒本地联调部署说明（局域网联调环境配置、Compose 模板、已验证接口记录）
 v0.9.5 [✓] OpenAPI 联调反馈收口与契约稳定（资源状态一致性修复、歌词/封面降级语义收敛、客户端契约说明、测试补强）
+v0.9.6 [✓] Docker 一键部署与运行规范化（前后端一体镜像、Compose 示例、环境变量模板、部署/备份文档）
 v1.0.0 [ ] 稳定可运行版本
 ```
