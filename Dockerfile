@@ -13,24 +13,28 @@ RUN npm run build
 
 FROM maven:3.9.9-eclipse-temurin-21 AS backend-build
 
-ARG MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public
+ARG MAVEN_MIRROR_URL=""
 
 WORKDIR /workspace
 COPY backend/pom.xml backend/pom.xml
 
 WORKDIR /workspace/backend
 RUN mkdir -p /root/.m2 \
-    && printf '%s\n' \
-      '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">' \
-      '  <mirrors>' \
-      '    <mirror>' \
-      '      <id>build-mirror</id>' \
-      '      <mirrorOf>central</mirrorOf>' \
-      "      <url>${MAVEN_MIRROR_URL}</url>" \
-      '    </mirror>' \
-      '  </mirrors>' \
-      '</settings>' \
-      > /root/.m2/settings.xml
+    && if [ -n "${MAVEN_MIRROR_URL}" ]; then \
+      printf '%s\n' \
+        '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">' \
+        '  <mirrors>' \
+        '    <mirror>' \
+        '      <id>build-mirror</id>' \
+        '      <mirrorOf>central</mirrorOf>' \
+        "      <url>${MAVEN_MIRROR_URL}</url>" \
+        '    </mirror>' \
+        '  </mirrors>' \
+        '</settings>' \
+        > /root/.m2/settings.xml; \
+    else \
+      rm -f /root/.m2/settings.xml; \
+    fi
 RUN --mount=type=cache,target=/root/.m2/repository \
     mvn -B -DskipTests dependency:go-offline
 
