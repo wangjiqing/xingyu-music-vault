@@ -1,6 +1,6 @@
 # 镜像发布说明（v0.9.8）
 
-v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手动构建与手动发布流程。当前不包含 Docker Hub 自动发布、多架构 buildx、镜像签名与 SBOM。
+v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手动构建与手动发布流程。当前不包含 Docker Hub 自动发布、镜像签名与 SBOM。
 
 构建源策略：
 
@@ -48,6 +48,20 @@ v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手
 - `ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8`
 - `ghcr.io/wangjiqing/xingyu-music-vault:v0.9`
 - `ghcr.io/wangjiqing/xingyu-music-vault:latest`
+
+默认发布平台：
+
+- `linux/amd64`
+- `linux/arm64`
+
+可用性说明：
+
+- Apple Silicon（如 Mac mini M4）可直接拉取 `linux/arm64` 镜像。
+- 如需临时验证 `amd64`，可显式拉取：
+
+```bash
+docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8
+```
 
 构建参数默认值：
 

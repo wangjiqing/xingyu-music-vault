@@ -16,6 +16,7 @@ v0.9.8 不新增业务能力，聚焦基础 CI 与 GHCR 自动镜像发布能力
 - **镜像构建参数对齐**：Actions 构建复用 `NPM_REGISTRY` 与 `MAVEN_MIRROR_URL` 参数
 - **构建源策略分层**：GitHub Actions 默认使用官方源（npmjs + Maven Central），本地 Docker/Compose 模板保留国内镜像源默认值用于本地加速
 - **缓存补强**：CI 持续使用 Maven / npm 缓存与 Docker layer cache，GHCR 发布 workflow 增加 Docker layer cache
+- **GHCR 多架构发布**：GHCR 自动发布支持 `linux/amd64` 与 `linux/arm64` manifest，Apple Silicon 可直接拉取 `arm64` 镜像
 - **发布与部署文档更新**：补充 GHCR 自动发布说明、镜像拉取部署说明与 v0.9.8 发布检查清单
 - **Docker Hub 策略明确**：Docker Hub 仍为手动发布流程，后续版本再评估自动化
 
@@ -23,7 +24,6 @@ v0.9.8 不新增业务能力，聚焦基础 CI 与 GHCR 自动镜像发布能力
 
 - Docker Hub 自动发布
 - GitHub Release 正式发布
-- 多架构 buildx 强制发布
 - 镜像签名 / SBOM
 - 新业务接口与协议扩展
 
