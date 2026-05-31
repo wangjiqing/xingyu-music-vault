@@ -2,6 +2,32 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v1.0.0 — 首个正式稳定版本
+
+**发布日期：** 待发布
+
+v1.0.0 不新增业务能力，聚焦首个正式稳定版本的发布整理、文档入口、版本历史展示和发布检查清单。
+
+### 新增 / 补强
+
+- **完成首个正式稳定版本发布整理**：明确 v1.0.0 作为首个正式稳定版本的定位与发布边界
+- **整理 README 与文档入口**：README 收敛为项目定位、镜像部署、源码构建和核心文档入口
+- **将版本历史调整为倒序展示**：README 版本里程碑与 roadmap 按最新版本在前展示
+- **更新镜像部署示例到 v1.0.0**：`IMAGE_TAG` 与 image fallback 默认值更新为 `v1.0.0`
+- **完善 v1.0.0 Release Notes**：新增 `docs/release/v1.0.0-release-notes.md`
+- **完善 v1.0 发布检查清单**：补充 GHCR / Docker Hub、manifest、Mac mini arm64、GitHub Release 与 tag 验证项
+- **发布流程说明收口**：明确 tag `v1.0.0` 会触发 GHCR / Docker Hub 镜像发布，GitHub Release 可手动创建
+
+### 暂不支持
+
+- 新业务接口
+- 在线歌词抓取 / 在线封面刮削 / AI 元数据补全
+- UI 大改
+- 公网 HTTPS / 域名反向代理
+- 镜像签名 / SBOM
+
+---
+
 ## v0.9.9 — Docker Hub 发布与 v1.0 开源规范收口
 
 **发布日期：** 未发布

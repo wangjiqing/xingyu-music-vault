@@ -49,9 +49,12 @@ TBD
 - [ ] Docker 镜像构建通过
 - [ ] GHCR 镜像发布成功
 - [ ] Docker Hub 镜像发布成功
+- [ ] GHCR manifest 已检查
+- [ ] Docker Hub manifest 已检查
 - [ ] `linux/amd64` 镜像可拉取
 - [ ] `linux/arm64` 镜像可拉取
 - [ ] image 模式 Docker Compose 可启动
 - [ ] 后台页面可访问
 - [ ] OpenAPI 服务信息接口可访问
 - [ ] healthcheck 正常
+- [ ] 如需 GitHub Release，已手动创建并关联 Release Notes

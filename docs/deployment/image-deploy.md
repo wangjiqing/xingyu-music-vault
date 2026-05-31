@@ -1,6 +1,6 @@
 # 镜像拉取部署（不从源码构建）
 
-本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。v0.9.9 起 GHCR 与 Docker Hub 均支持自动发布多架构镜像。
+本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。v1.0.0 继续使用 GHCR 与 Docker Hub 双仓库多架构镜像。
 
 ## 前置要求
 
@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.9}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.9}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.9}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v0.9.9
+IMAGE_TAG=v1.0.0
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -76,7 +76,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v0.9.9`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.0.0`），然后执行：
 
 ```bash
 cd deploy
@@ -86,7 +86,7 @@ docker compose up -d
 
 ## 回滚到旧 tag
 
-将 `IMAGE_TAG` 改回旧版本（例如 `v0.9.8`），然后执行：
+将 `IMAGE_TAG` 改回旧版本（例如 `v0.9.9`），然后执行：
 
 ```bash
 cd deploy
