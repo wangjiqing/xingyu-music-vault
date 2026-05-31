@@ -2,7 +2,12 @@
 
 ## 部署方式
 
-v0.9.6 推荐使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 完成前后端一体 Docker Compose 部署。详细步骤见 [Docker 一键部署](deployment/docker.md)，备份和升级策略见 [备份与升级](deployment/backup-and-upgrade.md)。
+v0.9.7 提供两种主部署模式：
+
+- 源码构建部署：使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 本地构建镜像，见 [Docker 一键部署](deployment/docker.md)
+- 镜像拉取部署：直接拉取 GHCR / Docker Hub 已发布镜像，见 [镜像拉取部署](deployment/image-deploy.md)
+
+备份和升级策略见 [备份与升级](deployment/backup-and-upgrade.md)。
 
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
@@ -58,16 +63,16 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 | 配置项 | 值 |
 |--------|---|
 | 服务名 | `xingyu-music-vault` |
-| 镜像名 | `xingyu-music-vault:v0.9.6` |
+| 镜像名 | `xingyu-music-vault:v0.9.7` |
 | 容器端口 | `8080` |
 | 宿主机端口 | `8080` |
 
 ## Docker 镜像
 
-v0.9.6 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
+v0.9.7 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:v0.9.6 .
+docker build -t xingyu-music-vault:v0.9.7 .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -84,7 +89,7 @@ docker build -t xingyu-music-vault:latest .
 
 ## Docker Compose
 
-v0.9.6 推荐从仓库根目录复制模板启动：
+v0.9.7 推荐从仓库根目录复制模板启动：
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml
@@ -209,7 +214,7 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `MUSIC_VAULT_DATA_DIR` | 数据目录 | `/app/data` |
 | `MUSIC_VAULT_CONFIG_DIR` | 配置目录 | `/app/config` |
 | `MUSIC_VAULT_MUSIC_DIRS` | 音乐目录 | `/music` |
-| `MUSIC_VAULT_LYRIC_DIRS` | 歌词目录 | `/music` |
+| `MUSIC_VAULT_LYRIC_DIRS` | 歌词目录 | `/lyrics` |
 | `MUSIC_VAULT_DB_PATH` | 数据库路径 | `/app/data/music-vault.db` |
 | `MUSIC_VAULT_API_TOKEN` | API 鉴权 Token | `change-me` |
 | `MUSIC_VAULT_FFPROBE_PATH` | ffprobe 路径 | `/usr/bin/ffprobe` |

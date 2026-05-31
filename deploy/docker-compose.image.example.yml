@@ -1,12 +1,6 @@
 services:
   xingyu-music-vault:
-    image: xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
-    build:
-      context: ..
-      dockerfile: Dockerfile
-      args:
-        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
-        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
     container_name: xingyu-music-vault
     ports:
       - "${APP_PORT:-8080}:8080"
