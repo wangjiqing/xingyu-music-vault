@@ -51,6 +51,7 @@ config/application.yaml
 
 # Docker
 .docker/
+docker-compose.yml
 deploy/*local*.yml
 
 # Misc

@@ -2,6 +2,33 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.6 — Docker 一键部署与运行规范化
+
+**发布日期：** 2026-05-31
+
+v0.9.6 聚焦 Docker / Docker Compose 一键部署形态，为 v1.0 正式发布前的运行规范化做准备。本版本不新增业务接口，不修改星语音乐盒项目，不发布 Docker Hub / GHCR 镜像，不做公网 HTTPS 或 CI/CD。
+
+### 新增 / 补强
+
+- **前后端一体 Dockerfile**：新增根目录 `Dockerfile`，多阶段构建 Vue 管理后台与 Quarkus 后端，并将前端产物打入后端静态资源目录
+- **国内构建源与缓存**：Dockerfile 默认使用 `registry.npmmirror.com` 与阿里云 Maven public 仓库，并通过 BuildKit cache 缓存 npm 与 Maven 依赖；`docker-compose.example.yml` 可通过 `.env` 覆盖构建源
+- **Compose 一键部署模板**：新增根目录 `docker-compose.example.yml`，通过 `.env` 配置端口、数据目录、音乐目录、歌词目录、封面目录、OpenAPI 认证、限流和访问日志
+- **环境变量模板**：新增 `.env.example`，所有关键路径使用示例值，不包含个人本机路径或真实 token
+- **路径规范化**：Docker 默认运行路径统一为 `/app/data`、`/app/config`、`/music`、`/lyrics`、`/artwork`，SQLite 必须通过数据目录持久化
+- **部署文档**：新增 `docs/deployment/docker.md`，说明目录准备、复制模板、启动、访问后台、验证 OpenAPI、查看日志、停止服务和常见问题
+- **备份与升级说明**：新增 `docs/deployment/backup-and-upgrade.md`，说明 SQLite、歌词、封面、配置和音乐库的备份建议，以及后续镜像发布后的升级 / 回滚流程
+- **旧 Compose 示例去个人路径化**：`deploy/docker-compose.yml` 改为变量化路径，避免提交本机绝对路径
+
+### 暂不支持
+
+- GitHub Actions / CI/CD
+- Docker Hub / GHCR 自动发布
+- GitHub Release
+- 公网 HTTPS / 域名反向代理
+- 新业务接口或新数据库类型
+
+---
+
 ## v0.9.5 — OpenAPI 联调反馈收口与契约稳定
 
 **发布日期：** 2026-05-30

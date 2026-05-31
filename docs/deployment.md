@@ -2,6 +2,8 @@
 
 ## 部署方式
 
+v0.9.6 推荐使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 完成前后端一体 Docker Compose 部署。详细步骤见 [Docker 一键部署](deployment/docker.md)，备份和升级策略见 [备份与升级](deployment/backup-and-upgrade.md)。
+
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
 本版本不做公网 HTTPS、不做 CI/CD、不做自动镜像发布、不做多架构镜像发布，也不强制完成 NAS 实机部署硬验收。
@@ -55,14 +57,22 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 
 | 配置项 | 值 |
 |--------|---|
-| 服务名 | `music-vault` |
-| 镜像名 | `xingyu-music-vault:latest` |
+| 服务名 | `xingyu-music-vault` |
+| 镜像名 | `xingyu-music-vault:v0.9.6` |
 | 容器端口 | `8080` |
 | 宿主机端口 | `8080` |
 
 ## Docker 镜像
 
-Dockerfile 位于 `backend/Dockerfile`，构建上下文必须使用 `backend/`，因为 Dockerfile 复制的是实际打包产物 `target/quarkus-app`：
+v0.9.6 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
+
+```bash
+docker build -t xingyu-music-vault:v0.9.6 .
+```
+
+运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
+
+`backend/Dockerfile` 仍可用于只构建后端运行镜像，构建上下文必须使用 `backend/`，因为它复制的是实际打包产物 `target/quarkus-app`：
 
 ```bash
 cd backend
@@ -74,20 +84,36 @@ docker build -t xingyu-music-vault:latest .
 
 ## Docker Compose
 
-示例文件位于 `deploy/docker-compose.yml`：
+v0.9.6 推荐从仓库根目录复制模板启动：
+
+```bash
+cp docker-compose.example.yml docker-compose.yml
+cp .env.example .env
+docker compose up -d --build
+```
+
+根目录 Compose 模板默认映射：
+
+```text
+http://localhost:8080
+```
+
+并通过 `.env` 配置 `APP_PORT`、`DATA_DIR`、`MUSIC_DIR`、`LYRICS_DIR`、`ARTWORK_DIR`、`MUSIC_VAULT_API_TOKEN` 和 OpenAPI 安全配置。
+
+兼容示例文件位于 `deploy/docker-compose.yml`：
 
 ```bash
 cd deploy
 docker compose up --build
 ```
 
-Compose 示例会从 `../backend` 构建镜像，并映射：
+该示例同样使用根目录 Dockerfile 构建镜像，并映射：
 
 ```text
 http://localhost:8080
 ```
 
-请在运行前把示例中的 `/your/music/path` 改成自己的宿主机音乐目录。
+请在运行前通过 `.env` 或 shell 环境变量设置 `MUSIC_DIR`、`LYRICS_DIR`、`ARTWORK_DIR` 等路径。
 
 ## 本地联调模式
 
@@ -163,7 +189,7 @@ GET /api/open/v1/match/track
 |------------|------------|------|
 | `./data` | `/app/data` | 数据目录（含数据库），相对于 `docker-compose.yml` 所在目录 |
 | `./config` | `/app/config` | 配置目录，相对于 `docker-compose.yml` 所在目录 |
-| `./logs` | `/app/data/logs` | 日志目录，可选挂载，当前应用主要输出到容器标准输出 |
+| `./logs` | `/app/logs` | 日志目录，可选挂载，当前应用主要输出到容器标准输出 |
 | `/your/music/path` | `/music:ro` | 音乐目录（只读），需要替换为自己的实际路径 |
 
 Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到容器内 `/music:ro`，并将允许扫描目录配置为 `/music`。如需使用其他容器内路径，可通过 `MUSIC_VAULT_MUSIC_DIRS` 覆盖。
@@ -198,7 +224,7 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 
 `MUSIC_VAULT_MUSIC_DIRS` 是扫描路径安全校验的允许根目录。扫描任务中的 `musicDirs` 必须位于该配置范围内；Docker Compose 场景通常保持 `/music`，并将宿主机真实音乐目录挂载为 `/music:ro`。
 
-Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认与 `MUSIC_VAULT_MUSIC_DIRS` 相同，均为 `/music`。如果歌词文件独立存放在其他目录，请额外挂载歌词目录，并通过 `MUSIC_VAULT_LYRIC_DIRS` 覆盖。
+Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认为 `/lyrics`（独立挂载于 `/lyrics:ro`）。如果歌词文件存放在音乐目录下，可改为 `/music` 并调整挂载路径。
 
 OpenAPI 认证只作用于 `/api/open/v1/*`。当 `XINGYU_OPENAPI_AUTH_ENABLED=true` 时，请求需携带：
 
@@ -254,7 +280,7 @@ X-Xingyu-Api-Token: <XINGYU_OPENAPI_AUTH_TOKEN>
 | NAS 路径 | 容器路径 | 说明 |
 |----------|----------|------|
 | `/volume1/docker/xingyu-music-vault/data` | `/app/data` | 持久化 SQLite 和运行数据 |
-| `/volume1/docker/xingyu-music-vault/logs` | `/app/data/logs` | 可选日志目录 |
+| `/volume1/docker/xingyu-music-vault/logs` | `/app/logs` | 可选日志目录 |
 | `/volume1/music` | `/music:ro` | 音乐目录，只读挂载 |
 
 音乐目录建议只读挂载，避免容器误改原始音乐库。SQLite 和运行数据必须持久化到 NAS 数据目录。v0.9.3 只提供目录规划和 Docker 基础验证，不要求完成正式 NAS 实机部署验收。
