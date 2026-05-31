@@ -1,6 +1,6 @@
 services:
   xingyu-music-vault:
-    image: xingyu-music-vault:${IMAGE_TAG:-v0.9.8}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.9}
     build:
       context: ..
       dockerfile: Dockerfile

@@ -1,8 +1,8 @@
 services:
   music-vault:
-    image: xingyu-music-vault:latest
+    image: ghcr.io/wangjiqing/xingyu-music-vault:latest
     build:
-      context: ../backend
+      context: ..
       dockerfile: Dockerfile
     container_name: music-vault-debugging
     ports:
