@@ -1,6 +1,6 @@
 # Docker 一键部署
 
-本文档面向 v0.9.6 Docker / Docker Compose 本机、NAS、家庭服务器部署。当前不包含公网 HTTPS、域名反向代理、CI/CD、镜像仓库自动发布。
+本文档面向 v0.9.7 Docker / Docker Compose 本机、NAS、家庭服务器部署。当前不包含公网 HTTPS、域名反向代理、CI/CD、镜像仓库自动发布。若已发布镜像并希望直接拉取部署，请使用 [镜像拉取部署](image-deploy.md)。
 
 ## 前置要求
 

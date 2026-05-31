@@ -2,6 +2,33 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.7 — 镜像发布与 Packages 准备
+
+**发布日期：** 2026-05-31
+
+v0.9.7 不新增业务能力，聚焦正式镜像发布链路准备，补齐 GHCR / Docker Hub 手动发布与镜像拉取部署文档。
+
+### 新增 / 补强
+
+- **镜像命名规范明确**：统一主镜像 `xingyu-music-vault`，并明确 GHCR `ghcr.io/wangjiqing/xingyu-music-vault` 与 Docker Hub `wangjiqing/xingyu-music-vault` 命名
+- **镜像 tag 规则明确**：定义 `v0.9.7`（精确版本）、`v0.9`（系列稳定）、`latest`（最新稳定）三类 tag，用于发布与回滚策略
+- **新增 image 模式 Compose 模板**：新增 `deploy/docker-compose.image.example.yml`，支持直接拉取已发布镜像部署，不依赖源码构建
+- **新增镜像拉取部署文档**：新增 `docs/deployment/image-deploy.md`，覆盖 pull / up、验证、升级与回滚流程
+- **新增镜像手动发布文档**：新增 `docs/release/image-publish.md`，覆盖本地 build、打 tag、GHCR 登录推送、Docker Hub 登录推送
+- **新增发布前检查清单**：新增 `docs/release/v0.9.7-checklist.md`，用于发布前自检
+- **README 部署入口补全**：README 增加 Docker 镜像部署、源码构建部署、镜像发布说明入口
+
+### 暂不支持
+
+- GitHub Actions / 自动发布镜像
+- GitHub Release
+- 公网 HTTPS / 域名反向代理
+- 多架构 buildx 强制流程
+- 镜像签名 / SBOM
+- 新业务接口与协议扩展
+
+---
+
 ## v0.9.6 — Docker 一键部署与运行规范化
 
 **发布日期：** 2026-05-31
