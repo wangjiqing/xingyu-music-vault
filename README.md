@@ -1,189 +1,108 @@
 # Xingyu Music Vault / 星语音库
 
-> 音乐元数据管理后台系统，面向个人音乐库、NAS、家庭服务器、自托管环境。
+> 自托管音乐元数据管理与 OpenAPI 服务，面向个人音乐库、NAS、家庭服务器和私有部署环境。
 
 ## 项目定位
 
-Xingyu Music Vault 是一个**后台元数据管理系统**，而非播放器。它负责：
+Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。
 
-- 扫描音乐文件，提取元数据
-- 清洗、确认、补充元数据（歌手、专辑、封面、歌词）
-- 提供 API 供客户端消费
-- 支持自托管环境下的私有部署
+核心边界：
 
-## 核心功能
+- 管理音乐库元数据、歌词、封面和文件状态
+- 提供 Web 管理后台与 REST / OpenAPI 只读接口
+- 支持 Docker Compose 自托管部署
+- 不提供在线播放、音频流、客户端写入或公网托管能力
 
-- [x] 本地音乐扫描与入库（v0.3，文件信息 + 文件名兜底元数据，重复扫描跳过）
-- [x] 全部歌曲页面（v0.8.0，表格视图 + 卡片视图切换）
-- [x] 左侧导航瘦身（v0.8.0，音乐库 → 全部歌曲，隐藏扫描任务入口）
-- [x] 歌手浏览视图（v0.8.1，按歌手聚合，支持搜索、排序、分页）
-- [x] 歌手详情页（v0.8.2，支持通过 artistKey 查询歌手详情、展示统计概览和专辑分组）
-- [x] 专辑浏览视图（v0.8.3，按专辑聚合，支持搜索、排序、分页）
-- [x] 专辑详情页（v0.8.3，展示统计概览和曲目列表）
-- [x] 歌手详情页支持从专辑分组跳转到专辑详情（v0.8.3）
-- [x] 歌词管理页（v0.5.2，歌词列表 + 详情查看 + 扫描触发）
-- [x] 本地 LRC 歌词导入、歌曲绑定与歌词管理页查询 API（v0.5/v0.5.2）
-- [x] 音乐元数据管理最小闭环（v0.7.1，基础元数据字段展示、编辑和保存）
-- [x] 文件信息、安全删除与回收站管理（v0.7.2，移动到音乐库 .music-vault-trash）
-- [x] 管理后台 UI 体验优化（v0.7.3，统计卡片、工具栏、列表展示、状态标签、空状态、错误提示）
-- [x] 音乐列表多选、批量编辑共同元数据字段（v0.7.4，artist / album / year / genre）
-- [x] 待整理 / 已整理筛选（v0.7.4）
-- [x] 本地封面扫描、去重、文件访问与音乐绑定（v0.6）
-- [x] 封面导入/选择/绑定体验优化（v0.6.1，支持本地图片导入并立即绑定）
-- [x] 封面能力稳定性与体验收口（v0.6.2，文件缺失状态、绑定状态筛选、错误提示优化）
-- [x] 元数据同步能力（v0.8.4，支持读取音频文件内嵌 Tag、数据库与文件 Tag 差异比较、单曲/批量同步、数据库元数据写回音频文件 Tag；v0.8.5 补充审计历史与回滚基础能力，v0.8.6 补强参数校验、强化批量操作 100 条限制、明确回滚规则与风险说明，v0.8.7 完成 v0.8 功能冻结与回归测试）
-- [ ] 在线歌词抓取与多版本管理（规划中）
-- [ ] 歌手/专辑/曲目元数据管理（规划中，后续版本）
-- [ ] 元数据审核工作流（规划中）
-- [x] RESTful API 基础能力（持续完善）
-- [x] OpenAPI 客户端缓存、增量同步与安全访问控制（v0.9.2，面向播放器客户端只读 API，缓存、同步、认证、限流与访问日志能力增强）
-- [x] 后端打包部署与 Docker 基础验证（v0.9.3，Maven 打包、独立 Jar 启动、Dockerfile、Compose 示例、目录挂载与部署文档）
-- [x] Web 管理后台（持续完善）
+## 核心能力
 
-## 技术栈
+- 本地音乐扫描、入库、重复扫描跳过
+- 歌曲、歌手、专辑维度的浏览与管理
+- 本地 LRC 歌词导入、绑定与查询
+- 本地封面扫描、导入、绑定与文件访问
+- 音乐元数据编辑、批量整理、音频 Tag 差异比较与受控写回
+- 文件信息、安全删除、回收站与恢复
+- 只读 OpenAPI：服务信息、同步状态、增量变更、曲目、歌词、封面、歌手、专辑与本地匹配
+- Docker / Docker Compose 一体化部署
 
-| 层级   | 技术选型                |
-|--------|------------------------|
-| 后端   | Quarkus (Java 21)      |
-| 前端   | Vue 3 + TypeScript      |
-| 数据库 | SQLite（开发）/ PostgreSQL（生产） |
-| 存储   | 本地文件系统            |
-| 部署   | Docker Compose         |
+## 镜像部署
 
-## 打包与部署
+v1.0.0 推荐使用精确版本 tag 部署。`latest` 适合快速体验，不建议作为长期生产固定版本。
 
-v0.9.6 起可使用根目录 Docker Compose 一键部署，镜像构建会先构建 Vue 管理后台，再把前端产物打入 Quarkus 后端静态资源：
-
-```bash
-cp docker-compose.example.yml docker-compose.yml
-cp .env.example .env
-docker compose up -d --build
-```
-
-详细步骤见 [Docker 一键部署](docs/deployment/docker.md)，备份和升级策略见 [备份与升级](docs/deployment/backup-and-upgrade.md)。
-
-v0.9.9 起支持 GHCR 与 Docker Hub 双仓库自动镜像发布：
+镜像地址：
 
 - GHCR：`ghcr.io/wangjiqing/xingyu-music-vault`
 - Docker Hub：`wangjiqing/xingyu-music-vault`
 
-推荐生产部署固定精确版本 tag，例如 `v0.9.9`。`latest` 适合快速体验，不建议作为长期生产固定版本。
+默认 GHCR image 模式：
 
-- [Docker 部署（源码构建）](docs/deployment/docker.md)
-- [镜像部署（拉取已发布镜像）](docs/deployment/image-deploy.md)
-- [镜像发布说明（GHCR + Docker Hub 自动发布）](docs/release/image-publish.md)
-- [备份与升级](docs/deployment/backup-and-upgrade.md)
+```bash
+cp deploy/.env.example deploy/.env
+cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
+cd deploy
+docker compose pull
+docker compose up -d
+```
+
+源码构建模式：
+
+```bash
+cp .env.example .env
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d --build
+```
+
+构建源策略：
+
+- GitHub Actions 发布镜像使用官方 npm registry 与 Maven Central。
+- 本地 Compose 模板默认使用国内镜像源，便于本地构建加速。
+
+## 文档入口
+
+- [Docker 部署](docs/deployment/docker.md)
+- [镜像部署](docs/deployment/image-deploy.md)
 - [OpenAPI 接入](docs/openapi-client-integration.md)
+- [备份与升级](docs/deployment/backup-and-upgrade.md)
+- [镜像发布](docs/release/image-publish.md)
+- [Release Notes](docs/release/v1.0.0-release-notes.md)
+- [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
 
-构建源策略说明：
+## 技术栈
 
-- 本地源码构建默认使用国内镜像源（便于国内网络环境加速）。
-- GitHub Actions（CI / 镜像自动发布）默认使用官方 npm 与 Maven Central 构建源。
+| 层级 | 技术选型 |
+|------|----------|
+| 后端 | Quarkus (Java 21) |
+| 前端 | Vue 3 + TypeScript |
+| 数据库 | SQLite |
+| 存储 | 本地文件系统 |
+| 部署 | Docker Compose |
 
-后端也可以单独采用 Quarkus JVM 模式打包：
-
-```bash
-cd backend
-mvn package
-java -jar target/quarkus-app/quarkus-run.jar
-```
-
-## 仓库结构
-
-```
-xingyu-music-vault/
-├── backend/           # Quarkus 后端服务
-├── frontend/          # Vue 3 管理后台
-├── docs/              # 项目文档
-├── deploy/            # 部署配置
-├── README.md
-└── .gitignore
-```
-
-## 快速开始
-
-后端本地开发默认目录可通过环境变量覆盖；Docker 部署默认使用容器内 `/music`、`/lyrics`、`/artwork`，本地开发 profile 默认使用仓库内相对目录：
+## 版本里程碑
 
 ```text
-音乐：backend/music
-歌词：backend/lyrics
-封面：backend/artwork
+v1.0.0 [ ] 首个正式稳定版本
+v0.9.9 [x] Docker Hub 发布与 v1.0 开源规范收口
+v0.9.8 [x] GitHub Actions 与 GHCR 自动镜像发布
+v0.9.7 [x] 镜像发布与 Packages 准备
+v0.9.6 [x] Docker 一键部署与运行规范化
+v0.9.5 [x] OpenAPI 联调反馈收口与契约稳定
+v0.9.4 [x] 星语音乐盒本地联调部署说明
+v0.9.3 [x] 打包部署与 Docker 基础验证
+v0.9.2 [x] OpenAPI 安全与访问控制
+v0.9.1 [x] 客户端缓存与增量同步增强
+v0.9.0 [x] OpenAPI 与外部集成基础
+v0.8.x [x] 歌手、专辑、歌曲浏览与元数据同步能力
+v0.7.x [x] 元数据编辑、文件管理、回收站与管理后台体验
+v0.6.x [x] 本地封面扫描、导入与绑定
+v0.5.x [x] 本地 LRC 歌词导入、绑定与管理
+v0.4.0 [x] 前端音乐列表页 MVP
+v0.3.0 [x] 本地音乐扫描与入库
+v0.2.x [x] 音乐库扫描与扫描稳定性增强
+v0.1.0 [x] 后端骨架与 Track CRUD
 ```
 
-启动后端后可触发一次本地音乐扫描：
-
-```bash
-curl -X POST http://localhost:8080/api/music/scan \
-  -H "Authorization: Bearer change-me" \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-查询扫描入库结果：
-
-```bash
-curl "http://localhost:8080/api/music?page=0&size=20" \
-  -H "Authorization: Bearer change-me"
-```
-
-导入并绑定本地 LRC 歌词：
-
-```bash
-curl -X POST http://localhost:8080/api/lyrics/scan \
-  -H "Authorization: Bearer change-me" \
-  -H "Content-Type: application/json" \
-  -d '{"path":"lyrics"}'
-```
-
-查询歌词管理页列表：
-
-```bash
-curl "http://localhost:8080/api/lyrics?page=0&size=20&bindStatus=BOUND" \
-  -H "Authorization: Bearer change-me"
-```
-
-## 开发状态
-
-项目处于 **早期开发阶段**，后端基础能力已覆盖 v0.9.9（GHCR / Docker Hub 双仓库自动镜像发布与开源规范收口），前端已推进至 v0.8.4，核心功能陆续实现中。
-
-```
-v0.1 [✓] 后端骨架与 Track CRUD
-v0.2 [✓] 音乐库扫描
-v0.2.1 [✓] 扫描稳定性与前端体验增强
-v0.3 [✓] 本地音乐扫描与入库（后端）
-v0.4 [✓] 前端音乐列表页 MVP（分页 + 扫描触发 + 刷新）
-v0.5 [✓] 歌词管理后端基础能力（本地 LRC 导入 + 绑定 + 状态查询）
-v0.5.1 [✓] 歌词基础能力稳定性修复与文档整理
-v0.5.2 [✓] 歌词管理页后端查询 API（列表 + 详情 + 筛选） + 前端歌词管理页 MVP
-v0.6 [✓] 本地封面扫描、去重、文件访问与音乐绑定
-v0.6.1 [✓] 封面导入/选择/绑定体验优化（本地图片导入并立即绑定）
-v0.6.2 [✓] 封面能力稳定性与体验收口（绑定状态筛选、文件缺失状态、错误提示）
-v0.7.1 [✓] 音乐元数据管理最小闭环（展示 + 编辑 + 保存）
-v0.7.2 [✓] 文件信息、安全删除与回收站管理（移动到音乐库 .music-vault-trash）
-v0.7.3 [✓] 管理后台 UI 体验优化（统计卡片、工具栏、列表展示、状态标签、空状态、错误提示）
-v0.7.4 [✓] 批量整理与待整理筛选（多选、批量编辑 artist/album/year/genre、保存前影响数量提示）
-v0.8.0 [✓] 导航瘦身与歌曲卡片视图（左侧菜单调整、表格/卡片视图切换、预留歌手/专辑入口）
-v0.8.1 [✓] 歌手浏览视图（歌手聚合列表接口、歌手浏览页面、搜索、排序、分页、卡片统计）
-v0.8.2 [✓] 歌手详情页（歌手详情接口、统计概览、专辑分组、歌曲列表）
-v0.8.3 [✓] 专辑浏览与详情（专辑列表接口、专辑浏览页面、专辑详情接口、专辑详情页、歌手详情跳转专辑详情）
-v0.8.4 [✓] 元数据同步（内嵌 Tag 读取、数据库与文件 Tag 差异比较、单曲/批量同步、数据库写回音频文件；当前同步范围为歌曲名、歌手、专辑三个核心字段）
-v0.8.5 [✓] 元数据同步审计基础能力与回滚（审计历史查看、单条回滚、批量回滚预览与执行）
-v0.8.6 [✓] 元数据同步稳定性修复与边界收敛（补强参数校验、强化批量操作 100 条限制、明确回滚规则与风险说明）
-v0.8.7 [✓] v0.8 功能冻结与回归测试
-v0.9.0 [✓] OpenAPI 与外部集成基础
-v0.9.1 [✓] 客户端缓存与增量同步增强（OpenAPI 缓存与同步能力增强）
-v0.9.2 [✓] OpenAPI 安全与访问控制（可选 API Token、简单 IP 限流、访问日志、错误码完善）
-v0.9.3 [✓] 打包部署与 Docker 基础验证（Maven 打包、独立启动、Dockerfile、Compose 示例、挂载和文档同步）
-v0.9.4 [✓] 星语音乐盒本地联调部署说明（局域网联调环境配置、Compose 模板、已验证接口记录）
-v0.9.5 [✓] OpenAPI 联调反馈收口与契约稳定（资源状态一致性修复、歌词/封面降级语义收敛、客户端契约说明、测试补强）
-v0.9.6 [✓] Docker 一键部署与运行规范化（前后端一体镜像、Compose 示例、环境变量模板、部署/备份文档）
-v0.9.7 [✓] 镜像发布与 Packages 准备（镜像命名规范、tag 规则、image 模式 Compose、镜像部署文档、手动发布流程与发布前检查清单）
-v0.9.8 [✓] GitHub Actions 与 GHCR 自动镜像发布（基础 CI、tag 自动发布 GHCR、发布前检查补强；Docker Hub 仍手动）
-v0.9.9 [✓] Docker Hub 发布与 v1.0 开源规范收口（双仓库自动发布、Apache-2.0、贡献与安全说明、Release Notes 模板）
-v1.0.0 [ ] 稳定可运行版本
-```
+完整历史见 [更新日志](docs/changelog.md) 与 [开发路线图](docs/roadmap.md)。
 
 ## 许可证
 
