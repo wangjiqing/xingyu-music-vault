@@ -68,6 +68,11 @@ v0.9.8 补充了 GitHub Actions 基础 CI 与 GHCR 自动镜像发布流程，Do
 - [源码构建部署（本地构建镜像）](docs/deployment/docker.md)
 - [镜像发布说明（GHCR 自动发布 + Docker Hub 手动流程）](docs/release/image-publish.md)
 
+构建源策略说明：
+
+- 本地源码构建默认使用国内镜像源（便于国内网络环境加速）。
+- GitHub Actions（CI / GHCR 自动发布）默认使用官方 npm 与 Maven Central 构建源。
+
 后端也可以单独采用 Quarkus JVM 模式打包：
 
 ```bash

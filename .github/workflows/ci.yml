@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      - feat/**
-      - fix/**
   pull_request:
     branches:
       - main
@@ -62,9 +60,9 @@ jobs:
         with:
           context: .
           push: false
-          tags: xingyu-music-vault:ci-${{ github.sha }}
+          tags: xingyu-music-vault:ci
           build-args: |
-            NPM_REGISTRY=https://registry.npmmirror.com
-            MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public
+            NPM_REGISTRY=https://registry.npmjs.org
+            MAVEN_MIRROR_URL=
           cache-from: type=gha
           cache-to: type=gha,mode=max

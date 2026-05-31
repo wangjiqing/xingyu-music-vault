@@ -17,8 +17,8 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/wangjiqing/xingyu-music-vault
-  NPM_REGISTRY: https://registry.npmmirror.com
-  MAVEN_MIRROR_URL: https://maven.aliyun.com/repository/public
+  NPM_REGISTRY: https://registry.npmjs.org
+  MAVEN_MIRROR_URL: ""
 
 jobs:
   publish:
@@ -75,3 +75,5 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
             ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.series_tag }}
             ${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

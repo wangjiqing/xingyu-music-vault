@@ -2,6 +2,13 @@
 
 v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手动构建与手动发布流程。当前不包含 Docker Hub 自动发布、多架构 buildx、镜像签名与 SBOM。
 
+构建源策略：
+
+- 本地源码构建默认使用国内镜像源（`npmmirror` + 阿里云 Maven）以提升国内网络环境下构建速度。
+- GitHub Actions（CI / GHCR 自动发布）默认使用官方源（`https://registry.npmjs.org` + Maven Central）。
+- 如使用自建 runner 或特定网络环境，可按需覆盖 `NPM_REGISTRY` 与 `MAVEN_MIRROR_URL`。
+- 生产镜像发布以 GitHub Actions 官方源构建结果为准。
+
 ## 镜像命名规范
 
 - 本地主镜像名：`xingyu-music-vault`
@@ -44,8 +51,8 @@ v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手
 
 构建参数默认值：
 
-- `NPM_REGISTRY=https://registry.npmmirror.com`
-- `MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public`
+- `NPM_REGISTRY=https://registry.npmjs.org`
+- `MAVEN_MIRROR_URL=`（留空即使用 Maven Central）
 
 首次自动发布后需要到 GitHub Packages 页面确认镜像可见性（public/private）设置是否符合预期。
 
@@ -55,7 +62,7 @@ v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手
 
 触发方式：
 
-- push 到 `main`、`feat/**`、`fix/**`
+- push 到 `main`
 - `pull_request` 到 `main`
 - `workflow_dispatch` 手动触发（用于不改代码时复跑 CI）
 
@@ -64,6 +71,11 @@ v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手
 - 后端 Maven 测试
 - 前端 `npm ci` 与 `npm run build`
 - Docker 镜像构建（仅构建，不推送，启用 GitHub Actions layer cache）
+
+构建参数默认值（Actions）：
+
+- `NPM_REGISTRY=https://registry.npmjs.org`
+- `MAVEN_MIRROR_URL=`（留空即使用 Maven Central）
 
 权限：
 
