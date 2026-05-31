@@ -1,12 +1,12 @@
-# 镜像发布说明（v0.9.8）
+# 镜像发布说明（v0.9.9）
 
-v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手动构建与手动发布流程。当前不包含 Docker Hub 自动发布、镜像签名与 SBOM。
+v0.9.9 起支持 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜像，同时保留本地手动构建与手动发布流程。当前不创建 GitHub Release，不包含镜像签名与 SBOM。
 
 构建源策略：
 
 - 本地源码构建默认使用国内镜像源（`npmmirror` + 阿里云 Maven）以提升国内网络环境下构建速度。
-- GitHub Actions（CI / GHCR 自动发布）默认使用官方源（`https://registry.npmjs.org` + Maven Central）。
-- 如使用自建 runner 或特定网络环境，可按需覆盖 `NPM_REGISTRY` 与 `MAVEN_MIRROR_URL`。
+- GitHub Actions（CI / 镜像自动发布）默认使用官方源（`https://registry.npmjs.org` + Maven Central）。
+- Actions 中 `MAVEN_MIRROR_URL` 留空，Dockerfile 不会生成空 Maven mirror。
 - 生产镜像发布以 GitHub Actions 官方源构建结果为准。
 
 ## 镜像命名规范
@@ -15,85 +15,56 @@ v0.9.8 起支持 GitHub Actions 自动发布 GHCR 镜像，同时保留本地手
 - GHCR：`ghcr.io/wangjiqing/xingyu-music-vault`
 - Docker Hub：`wangjiqing/xingyu-music-vault`
 
-如果后续仓库组织名或 Docker Hub 用户名发生变化，请按实际账户更新命名。
-
 ## tag 规则
 
-- `v0.9.8`：精确版本 tag，推荐生产部署使用
-- `v0.9`：`v0.9` 系列最新稳定版本
-- `latest`：当前最新稳定版本
+以 `v0.9.9` 为例，自动发布：
 
-生产部署推荐使用精确版本 tag，例如 `v0.9.8`。`latest` 适合快速体验，不建议用于需要稳定回滚的长期部署。
+- `ghcr.io/wangjiqing/xingyu-music-vault:v0.9.9`
+- `ghcr.io/wangjiqing/xingyu-music-vault:v0.9`
+- `ghcr.io/wangjiqing/xingyu-music-vault:latest`
+- `wangjiqing/xingyu-music-vault:v0.9.9`
+- `wangjiqing/xingyu-music-vault:v0.9`
+- `wangjiqing/xingyu-music-vault:latest`
 
-## GHCR 自动发布（GitHub Actions）
+生产部署推荐使用精确版本 tag，例如 `v0.9.9`。`latest` 适合快速体验，不建议作为长期生产固定版本。
+
+## 自动发布（GitHub Actions）
 
 工作流文件：`.github/workflows/publish-ghcr.yml`
 
 触发方式：
 
-- push tag `v*`（例如 `v0.9.8`）
+- push tag `v*`（例如 `v0.9.9`）
 - `workflow_dispatch` 手动触发（输入 `release_tag`）
-
-补充说明：
-
-- 如果需要对已存在的版本 tag 重新构建，可直接使用 `workflow_dispatch` 输入相同 `release_tag` 重新发布同名镜像 tag（例如再次发布 `v0.9.8`）。
 
 工作流权限：
 
 - `contents: read`
 - `packages: write`
 
-构建并推送：
+仓库 Secrets：
 
-- `ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8`
-- `ghcr.io/wangjiqing/xingyu-music-vault:v0.9`
-- `ghcr.io/wangjiqing/xingyu-music-vault:latest`
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+登录与推送策略：
+
+- GHCR 使用 `GITHUB_TOKEN` 登录 `ghcr.io`。
+- Docker Hub 使用 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN` 登录。
+- 使用 `docker/build-push-action@v6` 一次构建、多 tag 推送。
+- 不在日志中打印 token，不把凭证写入文件。
 
 默认发布平台：
 
 - `linux/amd64`
 - `linux/arm64`
 
-可用性说明：
-
-- Apple Silicon（如 Mac mini M4）可直接拉取 `linux/arm64` 镜像。
-- 如需临时验证 `amd64`，可显式拉取：
+Apple Silicon 可直接拉取 `linux/arm64` 镜像。如需临时验证 `amd64`：
 
 ```bash
-docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8
+docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.9
+docker pull --platform linux/amd64 wangjiqing/xingyu-music-vault:v0.9.9
 ```
-
-构建参数默认值：
-
-- `NPM_REGISTRY=https://registry.npmjs.org`
-- `MAVEN_MIRROR_URL=`（留空即使用 Maven Central）
-
-首次自动发布后需要到 GitHub Packages 页面确认镜像可见性（public/private）设置是否符合预期。
-
-## 基础 CI（GitHub Actions）
-
-工作流文件：`.github/workflows/ci.yml`
-
-触发方式：
-
-- push 到 `main`
-- `pull_request` 到 `main`
-- `workflow_dispatch` 手动触发（用于不改代码时复跑 CI）
-
-校验内容：
-
-- 后端 Maven 测试
-- 前端 `npm ci` 与 `npm run build`
-- Docker 镜像构建（仅构建，不推送，启用 GitHub Actions layer cache）
-
-构建参数默认值（Actions）：
-
-- `NPM_REGISTRY=https://registry.npmjs.org`
-- `MAVEN_MIRROR_URL=`（留空即使用 Maven Central）
-
-权限：
-
-- `contents: read`
 
 ## 本地构建
 
@@ -101,62 +72,44 @@ docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8
 docker build \
   --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
   --build-arg MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public \
-  -t xingyu-music-vault:v0.9.8 \
+  -t xingyu-music-vault:v0.9.9 \
   .
 ```
 
 ## 本地打 tag
 
 ```bash
-docker tag xingyu-music-vault:v0.9.8 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8
-docker tag xingyu-music-vault:v0.9.8 ghcr.io/wangjiqing/xingyu-music-vault:v0.9
-docker tag xingyu-music-vault:v0.9.8 ghcr.io/wangjiqing/xingyu-music-vault:latest
+docker tag xingyu-music-vault:v0.9.9 ghcr.io/wangjiqing/xingyu-music-vault:v0.9.9
+docker tag xingyu-music-vault:v0.9.9 ghcr.io/wangjiqing/xingyu-music-vault:v0.9
+docker tag xingyu-music-vault:v0.9.9 ghcr.io/wangjiqing/xingyu-music-vault:latest
 
-docker tag xingyu-music-vault:v0.9.8 wangjiqing/xingyu-music-vault:v0.9.8
-docker tag xingyu-music-vault:v0.9.8 wangjiqing/xingyu-music-vault:v0.9
-docker tag xingyu-music-vault:v0.9.8 wangjiqing/xingyu-music-vault:latest
+docker tag xingyu-music-vault:v0.9.9 wangjiqing/xingyu-music-vault:v0.9.9
+docker tag xingyu-music-vault:v0.9.9 wangjiqing/xingyu-music-vault:v0.9
+docker tag xingyu-music-vault:v0.9.9 wangjiqing/xingyu-music-vault:latest
 ```
 
-## GHCR 手动发布流程
+## 手动发布兜底流程
 
-登录 GHCR：
+GHCR：
 
 ```bash
 echo "<GITHUB_TOKEN>" | docker login ghcr.io -u wangjiqing --password-stdin
-```
-
-推送镜像：
-
-```bash
-docker push ghcr.io/wangjiqing/xingyu-music-vault:v0.9.8
+docker push ghcr.io/wangjiqing/xingyu-music-vault:v0.9.9
 docker push ghcr.io/wangjiqing/xingyu-music-vault:v0.9
 docker push ghcr.io/wangjiqing/xingyu-music-vault:latest
 ```
 
-注意事项：
-
-- `GITHUB_TOKEN` 需要具备 Packages 写入权限（例如 `write:packages`）。
-- 首次发布后需在 GitHub Packages 页面确认镜像可见性。
-- 如果尚未准备公开发布，可先保持 private。
-
-## Docker Hub 手动发布流程
-
-登录 Docker Hub：
+Docker Hub：
 
 ```bash
 docker login
-```
-
-推送镜像：
-
-```bash
-docker push wangjiqing/xingyu-music-vault:v0.9.8
+docker push wangjiqing/xingyu-music-vault:v0.9.9
 docker push wangjiqing/xingyu-music-vault:v0.9
 docker push wangjiqing/xingyu-music-vault:latest
 ```
 
 注意事项：
 
+- `GITHUB_TOKEN` 需要具备 Packages 写入权限（例如 `write:packages`）。
 - Docker Hub 需要提前创建仓库，或账号具备自动创建权限。
-- 生产部署推荐使用精确版本 tag。
-- Docker Hub 自动发布不在 v0.9.8 范围内，当前仍为手动流程或后续版本处理。
+- 首次发布后需确认 GHCR Package 可见性符合预期。

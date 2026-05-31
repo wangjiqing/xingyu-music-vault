@@ -494,7 +494,7 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/Users/wangjiqing/Project/Musics"
+  "path": "/path/to/music"
 }
 ```
 
@@ -568,7 +568,7 @@ Authorization: Bearer change-me
       "artworkPreviewUrl": "/api/artworks/1/file",
       "artworkFileName": "周杰伦 - 晴天.png",
       "artworkFileExists": true,
-      "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+      "filePath": "/path/to/music/周杰伦 - 晴天.flac",
       "fileName": "周杰伦 - 晴天.flac",
       "fileExtension": "flac",
       "fileSize": 123456,
@@ -643,8 +643,8 @@ Authorization: Bearer change-me
     "artist": "周杰伦",
     "album": "叶惠美",
     "fileName": "周杰伦 - 晴天.flac",
-    "originalPath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
-    "trashPath": "/Users/wangjiqing/Project/Musics/.music-vault-trash/1/周杰伦 - 晴天.flac",
+    "originalPath": "/path/to/music/周杰伦 - 晴天.flac",
+    "trashPath": "/path/to/music/.music-vault-trash/1/周杰伦 - 晴天.flac",
     "deletedAt": "2026-05-18T07:30:00",
     "trashFileExists": true,
     "deleteStatus": "trashed"
@@ -1102,7 +1102,7 @@ v0.6 只支持本地封面文件扫描、去重、查询、文件访问和音乐
 ```yaml
 app:
   artwork:
-    scan-dir: /Users/wangjiqing/Project/Musics/Artworks
+    scan-dir: /path/to/artwork
 ```
 
 | Method | Path | 说明 |
@@ -1136,7 +1136,7 @@ Authorization: Bearer change-me
       "height": 600,
       "hash": "a3f5e2d...",
       "sourceType": "local",
-      "sourcePath": "/Users/wangjiqing/Project/Musics/Artworks/周杰伦 - 晴天.png",
+      "sourcePath": "/path/to/artwork/周杰伦 - 晴天.png",
       "title": "周杰伦 - 晴天",
       "description": null,
       "previewUrl": "/api/artworks/1/file",
@@ -1177,7 +1177,7 @@ Authorization: Bearer change-me
       "musicId": 1,
       "trackId": 1,
       "fileName": "周杰伦 - 晴天.flac",
-      "filePath": "/Users/wangjiqing/Project/Musics/周杰伦 - 晴天.flac",
+      "filePath": "/path/to/music/周杰伦 - 晴天.flac",
       "title": "晴天",
       "artist": "周杰伦"
     }
@@ -1209,7 +1209,7 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/Users/wangjiqing/Project/Musics/Artworks"
+  "path": "/path/to/artwork"
 }
 ```
 
@@ -1230,7 +1230,7 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/Users/wangjiqing/Project/Musics/Artworks",
+  "path": "/path/to/artwork",
   "totalFiles": 278,
   "imported": 200,
   "duplicateFiles": 78,
@@ -1275,7 +1275,7 @@ Authorization: Bearer change-me
       "language": null,
       "releaseYear": null,
       "sourceType": "LOCAL_FILE",
-      "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+      "sourcePath": "/path/to/lyrics/周杰伦 - 晴天.lrc",
       "format": "LRC",
       "parseStatus": "SUCCESS",
       "parseMessage": null,
@@ -1319,7 +1319,7 @@ Authorization: Bearer change-me
   "language": null,
   "releaseYear": null,
   "sourceType": "LOCAL_FILE",
-  "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+  "sourcePath": "/path/to/lyrics/周杰伦 - 晴天.lrc",
   "format": "LRC",
   "content": "[ti:晴天]\n[ar:周杰伦]\n[al:叶惠美]\n[00:00.00] 作曲 : 周杰伦\n[00:05.00] 作词 : 方文山\n[00:10.00] 故事的小黄花\n...",
   "contentHash": "a3f5e2d...",
@@ -1366,7 +1366,7 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/Users/wangjiqing/Project/Musics/Lyrics",
+  "path": "/path/to/lyrics",
   "overwritePrimary": false
 }
 ```
@@ -1379,7 +1379,7 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/Users/wangjiqing/Project/Musics/Lyrics",
+  "path": "/path/to/lyrics",
   "totalFiles": 278,
   "imported": 0,
   "duplicateFiles": 278,
@@ -1420,7 +1420,7 @@ Authorization: Bearer change-me
   "language": null,
   "releaseYear": null,
   "sourceType": "LOCAL_FILE",
-  "sourcePath": "/Users/wangjiqing/Project/Musics/Lyrics/周杰伦 - 晴天.lrc",
+  "sourcePath": "/path/to/lyrics/周杰伦 - 晴天.lrc",
   "format": "LRC",
   "parseStatus": "PARSED",
   "parseMessage": null,

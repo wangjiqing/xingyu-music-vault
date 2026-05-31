@@ -2,6 +2,32 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v0.9.9 — Docker Hub 发布与 v1.0 开源规范收口
+
+**发布日期：** 未发布
+
+v0.9.9 不新增业务能力，聚焦 Docker Hub 自动发布与 v1.0 前开源发布规范收口。
+
+### 新增 / 补强
+
+- **支持 Docker Hub 自动镜像发布**：发布 workflow 增加 Docker Hub 登录与推送，使用 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` 仓库 Secrets
+- **保持 GHCR 与 Docker Hub 多架构镜像发布**：同一次 buildx 构建推送 GHCR 与 Docker Hub，平台为 `linux/amd64`、`linux/arm64`
+- **更新 image compose 示例与镜像部署文档**：默认继续推荐 GHCR，补充 Docker Hub image 替换方式，默认 `IMAGE_TAG` 更新为 `v0.9.9`
+- **新增 Apache-2.0 LICENSE 与 NOTICE**：明确项目开源许可证与版权声明
+- **新增 SECURITY.md / CONTRIBUTING.md**：补充安全问题处理、Issue / PR 协作、开发与 Docker 构建基本命令
+- **新增 Release Notes 模板**：提供版本说明、部署说明、镜像信息、兼容性、已知限制与验证清单结构
+- **新增 v1.0 发布检查清单**：覆盖开源文件、镜像发布、多架构拉取、部署验证与发布流程确认
+- **README 收口**：增加许可证说明、镜像地址、部署 / 发布 / OpenAPI / 贡献 / 安全文档入口
+
+### 暂不支持
+
+- GitHub Release 正式发布
+- v1.0.0 正式发布
+- 镜像签名 / SBOM
+- 新业务接口与协议扩展
+
+---
+
 ## v0.9.8 — GitHub Actions 与 GHCR 自动镜像发布
 
 **发布日期：** 2026-05-31

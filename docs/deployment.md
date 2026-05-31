@@ -2,7 +2,7 @@
 
 ## 部署方式
 
-v0.9.8 提供两种主部署模式：
+v0.9.9 提供两种主部署模式：
 
 - 源码构建部署：使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 本地构建镜像，见 [Docker 一键部署](deployment/docker.md)
 - 镜像拉取部署：直接拉取 GHCR / Docker Hub 已发布镜像，见 [镜像拉取部署](deployment/image-deploy.md)
@@ -11,7 +11,7 @@ v0.9.8 提供两种主部署模式：
 
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
-本版本不做公网 HTTPS、不做 Docker Hub 自动发布、不做多架构 buildx 强制发布，也不强制完成 NAS 实机部署硬验收。
+本版本不做公网 HTTPS、不正式发布 v1.0.0，也不强制完成 NAS 实机部署硬验收。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
 
 ## 后端打包运行
 
@@ -63,16 +63,16 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 | 配置项 | 值 |
 |--------|---|
 | 服务名 | `xingyu-music-vault` |
-| 镜像名 | `xingyu-music-vault:v0.9.8` |
+| 镜像名 | `xingyu-music-vault:v0.9.9` |
 | 容器端口 | `8080` |
 | 宿主机端口 | `8080` |
 
 ## Docker 镜像
 
-v0.9.8 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
+v0.9.9 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:v0.9.8 .
+docker build -t xingyu-music-vault:v0.9.9 .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -89,7 +89,7 @@ docker build -t xingyu-music-vault:latest .
 
 ## Docker Compose
 
-v0.9.8 推荐从仓库根目录复制模板启动：
+v0.9.9 推荐从仓库根目录复制模板启动：
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml

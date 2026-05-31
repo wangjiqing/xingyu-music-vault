@@ -7,7 +7,7 @@ cd backend
 mvn quarkus:dev
 ```
 
-服务监听 `http://localhost:8080`。开发环境默认音乐目录为 `/Users/wangjiqing/Project/Musics/Music`，默认歌词目录为 `/Users/wangjiqing/Project/Musics/Lyrics`。
+服务监听 `http://localhost:8080`。开发环境默认音乐目录为 `/path/to/music`，默认歌词目录为 `/path/to/lyrics`。
 
 ## 2. 触发扫描
 
@@ -70,7 +70,7 @@ curl 'http://localhost:8080/api/music/1' \
 curl -i -X POST http://localhost:8080/api/lyrics/scan \
   -H 'Authorization: Bearer change-me' \
   -H 'Content-Type: application/json' \
-  -d '{"path": "/Users/wangjiqing/Project/Musics/Lyrics"}'
+  -d '{"path": "/path/to/lyrics"}'
 ```
 
 歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。
@@ -172,7 +172,7 @@ npm run dev
 
 ### 5. 触发歌词扫描
 
-1. 确保本地 LRC 文件存放在配置目录（如 `/Users/wangjiqing/Project/Musics/Lyrics`）
+1. 确保本地 LRC 文件存放在配置目录（如 `/path/to/lyrics`）
 2. 点击「扫描歌词」按钮
 3. 等待扫描完成（按钮恢复可点击）
 4. 扫描完成后自动刷新列表，显示扫描结果统计
