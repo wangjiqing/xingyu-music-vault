@@ -1,6 +1,6 @@
 services:
   xingyu-music-vault:
-    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.7}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v0.9.8}
     container_name: xingyu-music-vault
     ports:
       - "${APP_PORT:-8080}:8080"

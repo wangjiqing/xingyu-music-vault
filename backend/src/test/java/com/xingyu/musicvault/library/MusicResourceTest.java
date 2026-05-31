@@ -949,7 +949,8 @@ class MusicResourceTest {
 
     @Test
     void deleteRejectsFileOutsideLibraryRoot() throws IOException {
-        Path outsideDir = Files.createTempDirectory(Path.of("/private/tmp"), "music-delete-outside-");
+        Path outsideBaseDir = Path.of(System.getProperty("java.io.tmpdir"));
+        Path outsideDir = Files.createTempDirectory(outsideBaseDir, "music-delete-outside-");
         Path outsideFile = outsideDir.resolve("outside.flac");
         Files.writeString(outsideFile, "audio");
         Long musicId = createMusicRecordForPath(outsideFile, "Outside", "Tester");
