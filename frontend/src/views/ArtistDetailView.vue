@@ -43,6 +43,13 @@ const songQuery = reactive({
   size: 20,
 })
 const songError = ref('')
+const songLoadingMore = ref(false)
+const songLoadedCount = computed(() => songList.value.length)
+const songHasMoreRows = computed(() => songLoadedCount.value < songTotal.value)
+const songLoadedRangeText = computed(() => {
+  if (songTotal.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(songLoadedCount.value, songTotal.value)}`
+})
 
 const activeTab = ref('songs')
 
@@ -84,17 +91,26 @@ async function loadDetail() {
   }
 }
 
+function songListParams(page: number) {
+  return {
+    page: page - 1,
+    size: songQuery.size,
+    artistKey: artistKey.value,
+  }
+}
+
 async function loadSongList() {
   songLoading.value = true
   songError.value = ''
   try {
-    const res = await fetchMusicList({
-      page: songQuery.page - 1,
-      size: songQuery.size,
-      artistKey: artistKey.value,
-    })
-    songList.value = res.items
-    songTotal.value = res.total
+    songQuery.page = 1
+    const [currentRes, nextRes] = await Promise.all([
+      fetchMusicList(songListParams(1)),
+      fetchMusicList(songListParams(2)),
+    ])
+    songList.value = [...currentRes.items, ...nextRes.items]
+    songTotal.value = nextRes.total || currentRes.total
+    songQuery.page = nextRes.items.length > 0 ? 2 : 1
   } catch {
     songError.value = '加载歌曲列表失败'
     ElMessage.error('加载歌曲列表失败')
@@ -103,15 +119,33 @@ async function loadSongList() {
   }
 }
 
-function handleSongPageChange(page: number) {
-  songQuery.page = page
-  loadSongList()
-}
-
 function handleSongSizeChange(size: number) {
   songQuery.size = size
   songQuery.page = 1
   loadSongList()
+}
+
+async function appendNextSongPage() {
+  if (songLoadingMore.value || !songHasMoreRows.value) return
+  songLoadingMore.value = true
+  try {
+    const nextPage = songQuery.page + 1
+    const res = await fetchMusicList(songListParams(nextPage))
+    songList.value = [...songList.value, ...res.items]
+    songTotal.value = res.total
+    if (res.items.length > 0) {
+      songQuery.page = nextPage
+    }
+  } finally {
+    songLoadingMore.value = false
+  }
+}
+
+function handleSongTableScroll(event: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  const distanceToBottom = (event.scrollHeight ?? 0) - (event.scrollTop ?? 0) - (event.clientHeight ?? 0)
+  if (distanceToBottom <= 520) {
+    appendNextSongPage()
+  }
 }
 
 function goBack() {
@@ -287,8 +321,10 @@ onMounted(() => {
             <el-table
               :data="songList"
               v-loading="songLoading"
+              height="calc(100vh - 430px)"
               empty-text="暂无歌曲"
               style="width: 100%"
+              @scroll="handleSongTableScroll"
             >
               <el-table-column label="歌曲名" min-width="160" show-overflow-tooltip>
                 <template #default="{ row }">
@@ -339,57 +375,69 @@ onMounted(() => {
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="180" fixed="right">
+              <el-table-column label="操作" width="300" fixed="right">
                 <template #default="{ row }">
-                  <el-button
-                    type="primary"
-                    size="small"
-                    text
-                    :icon="Edit"
-                    @click="openEditDialog(row)"
-                  >
-                    编辑
-                  </el-button>
-                  <el-button
-                    type="primary"
-                    size="small"
-                    text
-                    :icon="Connection"
-                    @click="openMetadataSync(row)"
-                  >
-                    同步
-                  </el-button>
-                  <el-button
-                    v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
-                    type="primary"
-                    size="small"
-                    text
-                    :icon="View"
-                    @click="handleViewLyric(row)"
-                  >
-                    歌词
-                  </el-button>
-                  <el-button
-                    type="danger"
-                    size="small"
-                    text
-                    :icon="Delete"
-                    @click="openDeleteDialog(row)"
-                  />
+                  <div class="row-actions">
+                    <el-button
+                      type="primary"
+                      size="small"
+                      text
+                      :icon="Edit"
+                      @click="openEditDialog(row)"
+                    >
+                      编辑
+                    </el-button>
+                    <el-button
+                      type="primary"
+                      size="small"
+                      text
+                      :icon="Connection"
+                      @click="openMetadataSync(row)"
+                    >
+                      同步
+                    </el-button>
+                    <el-button
+                      v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+                      type="primary"
+                      size="small"
+                      text
+                      :icon="View"
+                      @click="handleViewLyric(row)"
+                    >
+                      歌词
+                    </el-button>
+                    <el-button
+                      type="danger"
+                      size="small"
+                      text
+                      :icon="Delete"
+                      @click="openDeleteDialog(row)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
 
-            <div style="margin-top: 12px; display: flex; justify-content: flex-end">
-              <el-pagination
-                v-model:current-page="songQuery.page"
-                v-model:page-size="songQuery.size"
-                :total="songTotal"
-                :page-sizes="[10, 20, 50, 100]"
-                layout="total, sizes, prev, pager, next"
-                @current-change="handleSongPageChange"
-                @size-change="handleSongSizeChange"
-              />
+            <div class="cursor-pager">
+              <div class="cursor-pager-meta">
+                <span>共 {{ songTotal }} 首歌曲</span>
+                <span>{{ songLoadedRangeText }}</span>
+                <span v-if="songLoadingMore">加载下一页...</span>
+                <span v-else-if="!songHasMoreRows">已加载全部</span>
+              </div>
+              <el-select
+                v-model="songQuery.size"
+                size="small"
+                style="width: 96px"
+                @change="handleSongSizeChange"
+              >
+                <el-option label="10 条" :value="10" />
+                <el-option label="20 条" :value="20" />
+                <el-option label="50 条" :value="50" />
+                <el-option label="100 条" :value="100" />
+              </el-select>
             </div>
           </el-tab-pane>
 
@@ -527,6 +575,33 @@ onMounted(() => {
 }
 .artist-detail {
   min-height: 200px;
+}
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(220, 223, 230, 0.72);
+}
+.cursor-pager-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: #606266;
+  font-size: 12px;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .lyric-content {
   background: #f5f7fa;

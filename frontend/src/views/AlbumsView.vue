@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, RefreshRight } from '@element-plus/icons-vue'
@@ -20,6 +20,13 @@ const query = reactive({
 })
 
 const total = ref(0)
+const loadingMore = ref(false)
+const loadedCount = computed(() => list.value.length)
+const hasMoreRows = computed(() => loadedCount.value < total.value)
+const loadedRangeText = computed(() => {
+  if (total.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(loadedCount.value, total.value)}`
+})
 
 const sortOptions = [
   { label: '曲目数 ↓', value: 'trackCountDesc' },
@@ -28,18 +35,27 @@ const sortOptions = [
   { label: '待整理 ↓', value: 'metadataIncompleteDesc' },
 ]
 
+function listParams(page: number) {
+  return {
+    page,
+    pageSize: query.pageSize,
+    keyword: query.keyword || undefined,
+    sort: query.sort,
+  }
+}
+
 async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const res = await fetchAlbumList({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword || undefined,
-      sort: query.sort,
-    })
-    list.value = res.items
-    total.value = res.total
+    query.page = 1
+    const [currentRes, nextRes] = await Promise.all([
+      fetchAlbumList(listParams(1)),
+      fetchAlbumList(listParams(2)),
+    ])
+    list.value = [...currentRes.items, ...nextRes.items]
+    total.value = nextRes.total || currentRes.total
+    query.page = nextRes.items.length > 0 ? 2 : 1
   } catch {
     errorMessage.value = '加载专辑列表失败，请检查后端服务是否运行'
     ElMessage.error('加载专辑列表失败')
@@ -58,15 +74,34 @@ function handleSortChange() {
   loadList()
 }
 
-function handlePageChange(page: number) {
-  query.page = page
-  loadList()
-}
-
 function handleSizeChange(size: number) {
   query.pageSize = size
   query.page = 1
   loadList()
+}
+
+async function appendNextPage() {
+  if (loadingMore.value || !hasMoreRows.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = query.page + 1
+    const res = await fetchAlbumList(listParams(nextPage))
+    list.value = [...list.value, ...res.items]
+    total.value = res.total
+    if (res.items.length > 0) {
+      query.page = nextPage
+    }
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function handleListScroll(event: Event) {
+  const target = event.currentTarget as HTMLElement
+  const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (distanceToBottom <= 720) {
+    appendNextPage()
+  }
 }
 
 function handleAlbumClick(item: AlbumItem) {
@@ -81,6 +116,10 @@ function handleAlbumClick(item: AlbumItem) {
 
 function emptyText(): string {
   return query.keyword ? '没有匹配的专辑' : '暂无专辑数据，请先扫描音乐目录'
+}
+
+function emptyImage(): string {
+  return '/themes/midsummer-starlight/empty-states/empty-albums.png'
 }
 
 onMounted(() => {
@@ -135,7 +174,7 @@ onMounted(() => {
       </el-select>
     </div>
 
-    <div v-loading="loading" class="album-view">
+    <div v-loading="loading" class="album-view" @scroll="handleListScroll">
       <div v-if="list.length > 0" class="album-card-grid">
         <AlbumCard
           v-for="item in list"
@@ -144,19 +183,27 @@ onMounted(() => {
           @click="handleAlbumClick"
         />
       </div>
-      <el-empty v-else :description="emptyText()" />
+      <el-empty v-else :description="emptyText()" :image="emptyImage()" :image-size="180" />
     </div>
 
-    <div style="margin-top: 16px; display: flex; justify-content: flex-end">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.pageSize"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="handlePageChange"
-        @size-change="handleSizeChange"
-      />
+    <div class="cursor-pager">
+      <div class="cursor-pager-meta">
+        <span>共 {{ total }} 张专辑</span>
+        <span>{{ loadedRangeText }}</span>
+        <span v-if="loadingMore">加载下一页...</span>
+        <span v-else-if="!hasMoreRows">已加载全部</span>
+      </div>
+      <el-select
+        v-model="query.pageSize"
+        size="small"
+        style="width: 96px"
+        @change="handleSizeChange"
+      >
+        <el-option label="10 条" :value="10" />
+        <el-option label="20 条" :value="20" />
+        <el-option label="50 条" :value="50" />
+        <el-option label="100 条" :value="100" />
+      </el-select>
     </div>
   </el-card>
 </template>
@@ -177,12 +224,33 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 .album-view {
-  min-height: 240px;
+  height: calc(100vh - 318px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .album-card-grid {
   display: grid;
   grid-template-columns: repeat(10, minmax(0, 1fr));
   gap: 14px;
+}
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: #606266;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(221, 234, 245, 0.9);
+  border-radius: 6px;
+}
+.cursor-pager-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
 }
 @media (max-width: 1680px) {
   .album-card-grid {

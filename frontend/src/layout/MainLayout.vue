@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   DataBoard,
@@ -13,6 +13,8 @@ import {
   Collection,
   Connection,
 } from '@element-plus/icons-vue'
+import { fetchServerInfo } from '../api/openapi'
+import { fetchCurrentTheme, type CurrentThemeConfig } from '../theme/currentTheme'
 
 const router = useRouter()
 const route = useRoute()
@@ -20,6 +22,34 @@ const route = useRoute()
 const isCollapsed = ref(false)
 
 const activeMenu = computed(() => route.path)
+const serviceVersion = ref('')
+const currentTheme = ref<CurrentThemeConfig | null>(null)
+
+function normalizeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function formatVersion(version: string): string {
+  const normalized = version.trim()
+  if (!normalized) return ''
+  return normalized.startsWith('v') ? normalized : `v${normalized}`
+}
+
+const footerText = computed(() => {
+  const parts = ['星语音库', 'Xingyu Music Vault']
+  const versionLabel = formatVersion(serviceVersion.value)
+  if (versionLabel) {
+    parts.push(versionLabel)
+  }
+  if (currentTheme.value) {
+    const themeNames = [currentTheme.value.name, currentTheme.value.englishName].filter(Boolean)
+    if (themeNames.length > 0) {
+      parts.push(`当前主题：${themeNames.join(' / ')}`)
+    }
+  }
+  parts.push('Apache License 2.0')
+  return parts.join(' · ')
+})
 
 const menuItems = [
   { path: '/dashboard', title: '首页', icon: DataBoard },
@@ -39,20 +69,47 @@ function navigate(path: string) {
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
 }
+
+async function loadServiceVersion() {
+  try {
+    const info = await fetchServerInfo()
+    serviceVersion.value = normalizeText(info.serviceVersion)
+  } catch {
+    serviceVersion.value = ''
+  }
+}
+
+async function loadCurrentTheme() {
+  try {
+    currentTheme.value = await fetchCurrentTheme()
+  } catch {
+    currentTheme.value = null
+  }
+}
+
+onMounted(() => {
+  loadServiceVersion()
+  loadCurrentTheme()
+})
 </script>
 
 <template>
   <el-container class="main-container">
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="main-aside">
       <div class="logo">
+        <img
+          class="logo-mark"
+          src="/themes/midsummer-starlight/logo/logo-mark.png"
+          alt=""
+          aria-hidden="true"
+        />
         <span v-if="!isCollapsed" class="logo-text">星语音库</span>
-        <span v-else class="logo-text-small">星语</span>
       </div>
       <el-menu
         :default-active="activeMenu"
         :collapse="isCollapsed"
         :collapse-transition="false"
-        background-color="#1d1e2b"
+        background-color="transparent"
         text-color="#a0a4b8"
         active-text-color="#409eff"
         @select="navigate"
@@ -78,6 +135,9 @@ function toggleCollapse() {
       <el-main class="main-content">
         <router-view />
       </el-main>
+      <el-footer class="main-footer">
+        <span>{{ footerText }}</span>
+      </el-footer>
     </el-container>
   </el-container>
 </template>
@@ -87,29 +147,52 @@ function toggleCollapse() {
   height: 100vh;
 }
 .main-aside {
-  background-color: #1d1e2b;
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(19, 21, 38, 0.78), rgba(19, 21, 38, 0.93)),
+    url('/themes/midsummer-starlight/background/background-mobile.webp') center bottom / cover;
   overflow: hidden;
   transition: width 0.2s;
 }
+.main-aside::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(142, 205, 248, 0.18), transparent 36%),
+    linear-gradient(90deg, rgba(12, 14, 26, 0.32), rgba(12, 14, 26, 0.08));
+}
 .logo {
+  position: relative;
+  z-index: 1;
   height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   color: #fff;
   font-size: 18px;
   font-weight: bold;
   border-bottom: 1px solid #2d2e3b;
 }
-.logo-text-small {
-  font-size: 14px;
+.logo-mark {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(142, 205, 248, 0.32));
 }
 .main-header {
-  background: #fff;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.82)),
+    url('/themes/midsummer-starlight/banner/readme-banner.webp') center 44% / cover;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid rgba(221, 234, 245, 0.92);
+  box-shadow: 0 2px 12px rgba(38, 56, 77, 0.05);
   padding: 0 20px;
 }
 .header-left {
@@ -123,10 +206,58 @@ function toggleCollapse() {
   color: #303133;
 }
 .main-content {
+  position: relative;
+  isolation: isolate;
+  overflow: auto;
   background: #f5f7fa;
   padding: 20px;
 }
+.main-content::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: url('/themes/midsummer-starlight/background/background-desktop.webp') center bottom / cover;
+  opacity: 0.44;
+}
+.main-content::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgba(246, 251, 255, 0);
+}
+.main-footer {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 20px;
+  font-size: 12px;
+  color: rgba(38, 56, 77, 0.72);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76)),
+    url('/themes/midsummer-starlight/banner/readme-banner.webp') center 72% / cover;
+  border-top: 1px solid rgba(221, 234, 245, 0.9);
+}
+.footer-divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(110, 129, 152, 0.28);
+}
 .el-menu {
+  position: relative;
+  z-index: 1;
   border-right: none;
+}
+.el-menu :deep(.el-menu-item) {
+  background-color: transparent;
+}
+.el-menu :deep(.el-menu-item:hover) {
+  background-color: rgba(142, 205, 248, 0.12);
+}
+.el-menu :deep(.el-menu-item.is-active) {
+  background-color: rgba(142, 205, 248, 0.16);
 }
 </style>
