@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View } from '@element-plus/icons-vue'
 import {
@@ -14,7 +14,6 @@ const loading = ref(false)
 const scanning = ref(false)
 const scanResult = ref<ArtworkScanResponse | null>(null)
 const errorMessage = ref('')
-const brokenThumbs = reactive(new Set<number>())
 
 const query = reactive({
   page: 1,
@@ -22,6 +21,13 @@ const query = reactive({
   boundStatus: '',
 })
 const total = ref(0)
+const loadingMore = ref(false)
+const loadedCount = computed(() => items.value.length)
+const hasMoreRows = computed(() => loadedCount.value < total.value)
+const loadedRangeText = computed(() => {
+  if (total.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(loadedCount.value, total.value)}`
+})
 
 const previewVisible = ref(false)
 const previewUrl = ref('')
@@ -60,18 +66,27 @@ function mimeLabel(mime: string): string {
   return map[mime] || mime
 }
 
+function listParams(page: number) {
+  const params: Record<string, unknown> = {
+    page: page - 1,
+    size: query.size,
+  }
+  if (query.boundStatus) params.boundStatus = query.boundStatus
+  return params
+}
+
 async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params: Record<string, unknown> = {
-      page: query.page - 1,
-      size: query.size,
-    }
-    if (query.boundStatus) params.boundStatus = query.boundStatus
-    const res = await fetchArtworkList(params as any)
-    items.value = res.items
-    total.value = res.total
+    query.page = 1
+    const [currentRes, nextRes] = await Promise.all([
+      fetchArtworkList(listParams(1) as any),
+      fetchArtworkList(listParams(2) as any),
+    ])
+    items.value = [...currentRes.items, ...nextRes.items]
+    total.value = nextRes.total || currentRes.total
+    query.page = nextRes.items.length > 0 ? 2 : 1
   } catch {
     errorMessage.value = '加载封面列表失败，请检查后端服务是否运行'
     ElMessage.error('加载封面列表失败')
@@ -111,15 +126,37 @@ function handleBoundStatusChange() {
   loadList()
 }
 
-function handlePageChange(page: number) {
-  query.page = page
-  loadList()
-}
-
 function handleSizeChange(size: number) {
   query.size = size
   query.page = 1
   loadList()
+}
+
+async function appendNextPage() {
+  if (loadingMore.value || !hasMoreRows.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = query.page + 1
+    const res = await fetchArtworkList(listParams(nextPage) as any)
+    items.value = [...items.value, ...res.items]
+    total.value = res.total
+    if (res.items.length > 0) {
+      query.page = nextPage
+    }
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function handleTableScroll(event: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  const distanceToBottom = (event.scrollHeight ?? 0) - (event.scrollTop ?? 0) - (event.clientHeight ?? 0)
+  if (distanceToBottom <= 520) {
+    appendNextPage()
+  }
+}
+
+function emptyImage(): string {
+  return '/themes/midsummer-starlight/empty-states/empty-cover.png'
 }
 
 onMounted(() => {
@@ -183,19 +220,22 @@ onMounted(() => {
     <el-table
       :data="items"
       v-loading="loading"
-      empty-text="暂无封面，请点击「扫描封面」导入"
+      height="calc(100vh - 356px)"
       style="width: 100%"
+      @scroll="handleTableScroll"
     >
-      <el-table-column label="缩略图" width="80" align="center">
+      <template #empty>
+        <el-empty
+          description="暂无封面，请点击「扫描封面」导入"
+          :image="emptyImage()"
+          :image-size="180"
+        />
+      </template>
+      <el-table-column label="预览" width="90" align="center">
         <template #default="{ row }">
-          <img
-            v-if="row.previewUrl && row.fileExists && !brokenThumbs.has(row.id)"
-            :src="row.previewUrl"
-            class="artwork-thumb"
-            @error="brokenThumbs.add(row.id)"
-          />
+          <el-tag v-if="row.previewUrl && row.fileExists" size="small" type="success">可预览</el-tag>
           <el-tag v-else-if="!row.fileExists" size="small" type="danger">缺失</el-tag>
-          <span v-else style="color: #c0c4cc; font-size: 12px">无</span>
+          <el-tag v-else size="small" type="info">无预览</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="fileName" label="文件名" min-width="200" show-overflow-tooltip />
@@ -236,6 +276,7 @@ onMounted(() => {
             size="small"
             text
             :icon="View"
+            :disabled="!row.previewUrl || !row.fileExists"
             @click="handlePreview(row)"
           >
             预览
@@ -244,16 +285,24 @@ onMounted(() => {
       </el-table-column>
     </el-table>
 
-    <div style="margin-top: 16px; display: flex; justify-content: flex-end">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.size"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="handlePageChange"
-        @size-change="handleSizeChange"
-      />
+    <div class="cursor-pager">
+      <div class="cursor-pager-meta">
+        <span>共 {{ total }} 张封面</span>
+        <span>{{ loadedRangeText }}</span>
+        <span v-if="loadingMore">加载下一页...</span>
+        <span v-else-if="!hasMoreRows">已加载全部</span>
+      </div>
+      <el-select
+        v-model="query.size"
+        size="small"
+        style="width: 96px"
+        @change="handleSizeChange"
+      >
+        <el-option label="10 条" :value="10" />
+        <el-option label="20 条" :value="20" />
+        <el-option label="50 条" :value="50" />
+        <el-option label="100 条" :value="100" />
+      </el-select>
     </div>
   </el-card>
 
@@ -288,12 +337,23 @@ onMounted(() => {
 .filter-bar {
   margin-bottom: 4px;
 }
-.artwork-thumb {
-  width: 48px;
-  height: 48px;
-  object-fit: cover;
-  border-radius: 4px;
-  cursor: pointer;
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(220, 223, 230, 0.72);
+}
+.cursor-pager-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: #606266;
+  font-size: 12px;
 }
 .preview-container {
   display: flex;

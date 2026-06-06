@@ -2,6 +2,12 @@
 
 > 自托管音乐元数据管理与 OpenAPI 服务，面向个人音乐库、NAS、家庭服务器和私有部署环境。
 
+## 主题预览
+
+![仲夏星河 / Midsummer Starlight 主题预览](frontend/public/themes/midsummer-starlight/banner/readme-banner.png)
+
+「仲夏星河 / Midsummer Starlight」主题资源已完成低风险试接，当前作为生成素材工程化试点版使用。v1.0.1 主要补充管理后台首页、导航、列表、空状态和 footer 的主题化展示。资源说明见 [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)。
+
 ## 项目定位
 
 Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。
@@ -63,7 +69,8 @@ docker compose up -d --build
 - [OpenAPI 接入](docs/openapi-client-integration.md)
 - [备份与升级](docs/deployment/backup-and-upgrade.md)
 - [镜像发布](docs/release/image-publish.md)
-- [Release Notes](docs/release/v1.0.0-release-notes.md)
+- [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
+- [Release Notes](docs/release/v1.0.1-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -81,7 +88,8 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
-v1.0.0 [ ] 首个正式稳定版本
+v1.0.1 [ ] 仲夏星河主题资源试接与管理后台体验微调
+v1.0.0 [x] 首个正式稳定版本
 v0.9.9 [x] Docker Hub 发布与 v1.0 开源规范收口
 v0.9.8 [x] GitHub Actions 与 GHCR 自动镜像发布
 v0.9.7 [x] 镜像发布与 Packages 准备

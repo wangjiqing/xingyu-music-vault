@@ -1,0 +1,102 @@
+{
+  "themeId": "midsummer-starlight",
+  "name": "仲夏星河",
+  "englishName": "Midsummer Starlight",
+  "season": "summer",
+  "assets": {
+    "banner": {
+      "readme": "banner/readme-banner.png",
+      "readme2x": "banner/readme-banner@2x.png",
+      "webp": "banner/readme-banner.webp",
+      "quality": "preview-derived"
+    },
+    "logo": {
+      "horizontal": {
+        "path": "logo/logo-horizontal.png",
+        "quality": "needs-original-vector"
+      },
+      "square": {
+        "path": "logo/logo-square.png",
+        "quality": "needs-original-vector"
+      },
+      "mark": {
+        "path": "logo/logo-mark.png",
+        "quality": "needs-original-vector"
+      },
+      "guidePreview": "logo/logo-guide-preview.png"
+    },
+    "background": {
+      "desktop": "background/background-desktop.png",
+      "desktopWebp": "background/background-desktop.webp",
+      "mobile": "background/background-mobile.webp",
+      "aliases": {
+        "legacyDesktop4k": "background/background-desktop.png",
+        "legacyDesktop4kWebp": "background/background-desktop.webp",
+        "desktop2k": "background/background-desktop.webp",
+        "desktop1080p": "background/background-desktop.webp"
+      },
+      "sourceResolution": "1672x941",
+      "mobileResolution": "529x941",
+      "isNative4K": false,
+      "quality": "source-resolution-limited"
+    },
+    "favicon": {
+      "ico": "favicon/favicon.ico",
+      "small": "favicon/favicon-32x32.png",
+      "appleTouchIcon": "favicon/apple-touch-icon.png",
+      "pwa192": "favicon/icon-192.png",
+      "pwa512": "favicon/icon-512.png"
+    },
+    "emptyStates": {
+      "home": {
+        "path": "empty-states/empty-home.png",
+        "quality": "needs-redraw"
+      },
+      "songs": {
+        "path": "empty-states/empty-songs.png",
+        "quality": "needs-redraw"
+      },
+      "albums": {
+        "path": "empty-states/empty-albums.png",
+        "quality": "needs-redraw"
+      },
+      "artists": {
+        "path": "empty-states/empty-artists.png",
+        "quality": "needs-redraw"
+      },
+      "lyrics": {
+        "path": "empty-states/empty-lyrics.png",
+        "quality": "needs-redraw"
+      },
+      "cover": {
+        "path": "empty-states/empty-cover.png",
+        "quality": "needs-redraw"
+      },
+      "search": {
+        "path": "empty-states/empty-search.png",
+        "quality": "needs-redraw"
+      },
+      "loadingScan": {
+        "path": "empty-states/loading-scan.png",
+        "quality": "needs-redraw"
+      },
+      "syncing": {
+        "path": "empty-states/syncing.png",
+        "quality": "needs-redraw"
+      },
+      "errorGeneric": {
+        "path": "empty-states/error-generic.png",
+        "quality": "needs-redraw"
+      },
+      "metadataPending": {
+        "path": "empty-states/metadata-pending.png",
+        "quality": "needs-redraw"
+      }
+    },
+    "palette": {
+      "image": "palette/theme-palette.png",
+      "css": "palette/theme-palette.css",
+      "json": "palette/theme-palette.json"
+    }
+  }
+}

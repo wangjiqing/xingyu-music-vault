@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
-  fetchMusicStats,
   triggerMusicScan,
   updateMusicMetadata,
   batchUpdateMusicMetadata,
@@ -15,7 +14,6 @@ import {
   type MusicItem,
   type MusicMetadataUpdate,
   type MusicTrashItem,
-  type MusicStats,
 } from '../api/music'
 import { fetchSongLyric, triggerLyricScan, type SongLyric } from '../api/lyrics'
 import {
@@ -36,7 +34,6 @@ import {
   lyricStatusTagType,
   sourceTypeLabel,
 } from '../constants/musicStatus'
-import ArtworkImage from '../components/music/ArtworkImage.vue'
 import MusicCard from '../components/music/MusicCard.vue'
 import MetadataCompareDialog from '../components/music/MetadataCompareDialog.vue'
 import MetadataBatchCompareDialog from '../components/music/MetadataBatchCompareDialog.vue'
@@ -63,8 +60,13 @@ const query = reactive({
   metadata: '',
 })
 const total = ref(0)
-
-const stats = ref<MusicStats | null>(null)
+const prefetching = ref(false)
+const loadedCount = computed(() => list.value.length)
+const hasMoreRows = computed(() => loadedCount.value < total.value)
+const loadedRangeText = computed(() => {
+  if (total.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(loadedCount.value, total.value)}`
+})
 
 const selectedRows = ref<MusicItem[]>([])
 const batchDialogVisible = ref(false)
@@ -82,6 +84,10 @@ const lyricLoading = ref(false)
 const currentLyric = ref<SongLyric | null>(null)
 const currentSongTitle = ref('')
 const currentSongArtist = ref('')
+
+const artworkPreviewVisible = ref(false)
+const artworkPreviewUrl = ref('')
+const artworkPreviewTitle = ref('')
 
 const bindDialogVisible = ref(false)
 const bindDialogLoading = ref(false)
@@ -140,10 +146,8 @@ watch(viewMode, (mode) => {
     selectedRows.value = []
     tableRef.value?.clearSelection?.()
   }
-})
-
-onUnmounted(() => {
-  viewMode.value // avoid unused warning
+  query.page = 1
+  loadList()
 })
 
 function formatSize(bytes: number): string {
@@ -169,34 +173,37 @@ function formatDuration(duration: number | null): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+function musicListParams(page: number) {
+  return {
+    page: page - 1,
+    size: query.size,
+    keyword: query.keyword || undefined,
+    hasLyrics: query.hasLyrics ?? undefined,
+    hasArtwork: query.hasArtwork ?? undefined,
+    metadata: query.metadata || undefined,
+  }
+}
+
 async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params = {
-      page: query.page - 1,
-      size: query.size,
-      keyword: query.keyword || undefined,
-      hasLyrics: query.hasLyrics ?? undefined,
-      hasArtwork: query.hasArtwork ?? undefined,
-      metadata: query.metadata || undefined,
-    }
-    const res = await fetchMusicList(params)
-    list.value = res.items
-    total.value = res.total
+    const page = 1
+    query.page = page
+    prefetching.value = true
+    const [currentRes, nextRes] = await Promise.all([
+      fetchMusicList(musicListParams(page)),
+      fetchMusicList(musicListParams(page + 1)),
+    ])
+    list.value = [...currentRes.items, ...nextRes.items]
+    total.value = nextRes.total || currentRes.total
+    query.page = nextRes.items.length > 0 ? page + 1 : page
   } catch {
     errorMessage.value = '加载音乐列表失败，请检查后端服务是否运行'
     ElMessage.error('加载音乐列表失败')
   } finally {
+    prefetching.value = false
     loading.value = false
-  }
-}
-
-async function loadStats() {
-  try {
-    stats.value = await fetchMusicStats()
-  } catch {
-    // stats unavailable, silently ignore
   }
 }
 
@@ -208,6 +215,41 @@ function handleSearch() {
 function handleFilterChange() {
   query.page = 1
   loadList()
+}
+
+async function appendPrefetchedPage() {
+  if (prefetching.value || !hasMoreRows.value) return
+  prefetching.value = true
+  try {
+    const nextPage = query.page + 1
+    const res = await fetchMusicList(musicListParams(nextPage))
+    list.value = [...list.value, ...res.items]
+    total.value = res.total
+    if (res.items.length > 0) {
+      query.page = nextPage
+    }
+  } finally {
+    prefetching.value = false
+  }
+}
+
+function handleTableScroll(event: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  const wrapper = tableRef.value?.$el?.querySelector?.('.el-scrollbar__wrap') as HTMLElement | null
+  const scrollTop = event.scrollTop ?? wrapper?.scrollTop ?? 0
+  const scrollHeight = event.scrollHeight ?? wrapper?.scrollHeight ?? 0
+  const clientHeight = event.clientHeight ?? wrapper?.clientHeight ?? 0
+  if (scrollHeight > 0 && scrollHeight - scrollTop - clientHeight <= 520) {
+    appendPrefetchedPage()
+  }
+}
+
+function handleCardScroll(event: Event) {
+  if (viewMode.value !== MUSIC_LIST_VIEW_MODE.CARD) return
+  const target = event.currentTarget as HTMLElement
+  const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+  if (distanceToBottom <= 720) {
+    appendPrefetchedPage()
+  }
 }
 
 async function handleScan() {
@@ -353,6 +395,20 @@ async function handleUnbind(row: MusicItem) {
   }
 }
 
+function canPreviewArtwork(row: MusicItem): boolean {
+  return row.artworkStatus === ARTWORK_STATUS.BOUND && row.artworkFileExists !== false && Boolean(row.artworkPreviewUrl)
+}
+
+function handleViewArtwork(row: MusicItem) {
+  if (!canPreviewArtwork(row)) {
+    ElMessage.warning('当前歌曲没有可预览的封面')
+    return
+  }
+  artworkPreviewUrl.value = row.artworkPreviewUrl || ''
+  artworkPreviewTitle.value = displayTitle(row)
+  artworkPreviewVisible.value = true
+}
+
 function displayTitle(row: MusicItem): string {
   return row.title || row.fileName || '--'
 }
@@ -450,7 +506,6 @@ async function handleBatchSave() {
     batchConfirmVisible.value = false
     selectedRows.value = []
     await loadList()
-    await loadStats()
   } catch (e: any) {
     const msg = e?.response?.data?.message || '批量编辑失败'
     ElMessage.error(msg)
@@ -549,9 +604,8 @@ function emptyText(): string {
     : '暂无音乐文件，请点击「扫描音乐目录」导入'
 }
 
-function handlePageChange(page: number) {
-  query.page = page
-  loadList()
+function emptyImage(): string {
+  return '/themes/midsummer-starlight/empty-states/empty-songs.png'
 }
 
 function handleSizeChange(size: number) {
@@ -568,7 +622,6 @@ async function openMetadataSync(row: MusicItem) {
 
 function onMetadataSyncDone() {
   loadList()
-  loadStats()
 }
 
 const MAX_BATCH_SYNC = 100
@@ -588,12 +641,10 @@ function openBatchMetadataSync() {
 function onBatchMetadataSyncDone() {
   selectedRows.value = []
   loadList()
-  loadStats()
 }
 
 onMounted(() => {
   loadList()
-  loadStats()
 })
 </script>
 
@@ -640,39 +691,6 @@ onMounted(() => {
       style="margin-bottom: 12px"
       @close="errorMessage = ''"
     />
-
-    <el-row v-if="stats" :gutter="12" style="margin-bottom: 12px">
-      <el-col :span="4">
-        <div class="stat-card">
-          <div class="stat-num">{{ stats.total }}</div>
-          <div class="stat-label">音乐总数</div>
-        </div>
-      </el-col>
-      <el-col :span="5">
-        <div class="stat-card stat-warning">
-          <div class="stat-num">{{ stats.metadataIncomplete }}</div>
-          <div class="stat-label">待整理</div>
-        </div>
-      </el-col>
-      <el-col :span="5">
-        <div class="stat-card stat-success">
-          <div class="stat-num">{{ stats.lyricsReady }}</div>
-          <div class="stat-label">有歌词</div>
-        </div>
-      </el-col>
-      <el-col :span="5">
-        <div class="stat-card stat-success">
-          <div class="stat-num">{{ stats.artworkReady }}</div>
-          <div class="stat-label">有封面</div>
-        </div>
-      </el-col>
-      <el-col :span="5">
-        <div class="stat-card stat-info">
-          <div class="stat-num">{{ stats.trashed }}</div>
-          <div class="stat-label">回收站</div>
-        </div>
-      </el-col>
-    </el-row>
 
     <div class="search-bar">
       <el-input
@@ -749,22 +767,26 @@ onMounted(() => {
       ref="tableRef"
       :data="list"
       v-loading="loading"
+      height="calc(100vh - 318px)"
       @selection-change="handleSelectionChange"
-      :empty-text="emptyText()"
+      @scroll="handleTableScroll"
       style="width: 100%"
     >
+      <template #empty>
+        <el-empty :description="emptyText()" :image="emptyImage()" :image-size="180" />
+      </template>
       <el-table-column type="selection" width="40" />
-      <el-table-column label="歌曲名" min-width="180" show-overflow-tooltip>
+      <el-table-column label="歌曲名" min-width="150" show-overflow-tooltip>
         <template #default="{ row }">
           {{ displayTitle(row) }}
         </template>
       </el-table-column>
-      <el-table-column label="歌手" min-width="120" show-overflow-tooltip>
+      <el-table-column label="歌手" min-width="100" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.artist || 'Unknown' }}
         </template>
       </el-table-column>
-      <el-table-column label="专辑" min-width="140" show-overflow-tooltip>
+      <el-table-column label="专辑" min-width="120" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.album || '--' }}
         </template>
@@ -798,62 +820,76 @@ onMounted(() => {
       </el-table-column>
       <el-table-column label="封面" width="80" align="center">
         <template #default="{ row }">
-          <ArtworkImage
-            v-if="row.artworkStatus === ARTWORK_STATUS.BOUND"
-            :src="row.artworkPreviewUrl"
-            :file-exists="row.artworkFileExists"
-            :alt="displayTitle(row)"
-            :size="48"
-            :radius="4"
-          />
+          <el-tag
+            v-if="row.artworkStatus === ARTWORK_STATUS.BOUND && row.artworkFileExists === false"
+            size="small"
+            type="danger"
+          >
+            缺失
+          </el-tag>
+          <el-tag v-else-if="row.artworkStatus === ARTWORK_STATUS.BOUND" size="small" type="success">
+            有封面
+          </el-tag>
           <el-tag v-else size="small" type="info">无封面</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button
-            type="primary"
-            size="small"
-            text
-            :icon="Edit"
-            @click="openEditDialog(row)"
-          >
-            编辑
-          </el-button>
-          <el-button
-            v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
-            type="primary"
-            size="small"
-            text
-            :icon="View"
-            @click="handleViewLyric(row)"
-          >
-            歌词
-          </el-button>
-          <el-dropdown trigger="click" @command="(cmd: string) => { if (cmd === 'sync') openMetadataSync(row); if (cmd === 'bind') handleBindOpen(row); if (cmd === 'unbind') handleUnbind(row); if (cmd === 'delete') openDeleteDialog(row); }">
-            <el-button size="small" text :icon="MoreFilled" />
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="sync" :icon="Connection">
-                  元数据同步
-                </el-dropdown-item>
-                <el-dropdown-item command="bind" :icon="PictureFilled" divided>
-                  {{ row.artworkStatus === ARTWORK_STATUS.BOUND ? '更换封面' : '选择/导入封面' }}
-                </el-dropdown-item>
-                <el-dropdown-item v-if="row.artworkStatus === ARTWORK_STATUS.BOUND" command="unbind" divided>
-                  取消封面
-                </el-dropdown-item>
-                <el-dropdown-item command="delete" divided style="color: #f56c6c" :icon="Delete">
-                  移入回收站
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div class="table-actions">
+            <el-button
+              v-if="canPreviewArtwork(row)"
+              type="primary"
+              size="small"
+              text
+              :icon="View"
+              @click="handleViewArtwork(row)"
+            >
+              封面
+            </el-button>
+            <el-button
+              v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+              type="primary"
+              size="small"
+              text
+              :icon="View"
+              @click="handleViewLyric(row)"
+            >
+              歌词
+            </el-button>
+            <el-button
+              type="primary"
+              size="small"
+              text
+              :icon="Edit"
+              @click="openEditDialog(row)"
+            >
+              编辑
+            </el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => { if (cmd === 'sync') openMetadataSync(row); if (cmd === 'bind') handleBindOpen(row); if (cmd === 'unbind') handleUnbind(row); if (cmd === 'delete') openDeleteDialog(row); }">
+              <el-button size="small" text :icon="MoreFilled" />
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="sync" :icon="Connection">
+                    元数据同步
+                  </el-dropdown-item>
+                  <el-dropdown-item command="bind" :icon="PictureFilled" divided>
+                    {{ row.artworkStatus === ARTWORK_STATUS.BOUND ? '更换封面' : '选择/导入封面' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="row.artworkStatus === ARTWORK_STATUS.BOUND" command="unbind" divided>
+                    取消封面
+                  </el-dropdown-item>
+                  <el-dropdown-item command="delete" divided style="color: #f56c6c" :icon="Delete">
+                    移入回收站
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
 
-    <div v-else v-loading="loading" class="card-view">
+    <div v-else v-loading="loading" class="card-view" @scroll="handleCardScroll">
       <div v-if="list.length > 0" class="music-card-grid">
         <MusicCard
           v-for="item in list"
@@ -867,20 +903,31 @@ onMounted(() => {
           @sync="openMetadataSync"
         />
       </div>
-      <el-empty v-else :description="emptyText()" />
+      <el-empty v-else :description="emptyText()" :image="emptyImage()" :image-size="180" />
     </div>
 
-    <div style="margin-top: 16px; display: flex; justify-content: flex-end">
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.size"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="handlePageChange"
-        @size-change="handleSizeChange"
-      />
+    <div class="cursor-pager">
+      <div class="cursor-pager-meta">
+        <span>共 {{ total }} 首</span>
+        <span>{{ loadedRangeText }}</span>
+        <span v-if="prefetching">加载下一页...</span>
+        <span v-else-if="!hasMoreRows">已加载全部</span>
+      </div>
+      <div class="cursor-pager-actions">
+        <el-select
+          v-model="query.size"
+          size="small"
+          style="width: 96px"
+          @change="handleSizeChange"
+        >
+          <el-option label="10 条" :value="10" />
+          <el-option label="20 条" :value="20" />
+          <el-option label="50 条" :value="50" />
+          <el-option label="100 条" :value="100" />
+        </el-select>
+      </div>
     </div>
+
   </el-card>
 
   <el-dialog
@@ -1037,6 +1084,23 @@ onMounted(() => {
         </div>
       </el-tab-pane>
     </el-tabs>
+  </el-dialog>
+
+  <el-dialog
+    v-model="artworkPreviewVisible"
+    :title="`封面预览 - ${artworkPreviewTitle}`"
+    width="560px"
+    destroy-on-close
+  >
+    <div class="artwork-preview-container">
+      <el-image
+        :src="artworkPreviewUrl"
+        fit="contain"
+        style="max-width: 100%; max-height: 480px"
+        :preview-src-list="[artworkPreviewUrl]"
+        :preview-teleported="true"
+      />
+    </div>
   </el-dialog>
 
   <el-dialog
@@ -1365,26 +1429,24 @@ onMounted(() => {
 .upload-file-info {
   margin-top: 12px;
 }
-.stat-card {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  padding: 10px 14px;
-  text-align: center;
+.table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  white-space: nowrap;
 }
-.stat-num {
-  font-size: 22px;
-  font-weight: 700;
-  color: #303133;
+.table-actions :deep(.el-button) {
+  margin-left: 0;
+  padding-left: 4px;
+  padding-right: 4px;
 }
-.stat-label {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 2px;
+.artwork-preview-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
 }
-.stat-warning .stat-num { color: #e6a23c; }
-.stat-success .stat-num { color: #67c23a; }
-.stat-info .stat-num { color: #409eff; }
 .search-bar {
   display: flex;
   align-items: center;
@@ -1402,8 +1464,32 @@ onMounted(() => {
   justify-content: center;
   gap: 4px;
 }
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: #606266;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(221, 234, 245, 0.9);
+  border-radius: 6px;
+}
+.cursor-pager-meta,
+.cursor-pager-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cursor-pager-meta {
+  flex-wrap: wrap;
+  font-size: 12px;
+}
 .card-view {
-  min-height: 240px;
+  height: calc(100vh - 318px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .music-card-grid {
   display: grid;
@@ -1437,6 +1523,13 @@ onMounted(() => {
   .view-switch {
     width: 100%;
     margin-left: 0;
+  }
+  .cursor-pager {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .cursor-pager-actions {
+    justify-content: flex-end;
   }
   .music-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

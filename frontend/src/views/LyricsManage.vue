@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { View } from '@element-plus/icons-vue'
 import {
@@ -34,6 +34,13 @@ const filter = reactive({
   sourceType: '',
 })
 const total = ref(0)
+const loadingMore = ref(false)
+const loadedCount = computed(() => list.value.length)
+const hasMoreRows = computed(() => loadedCount.value < total.value)
+const loadedRangeText = computed(() => {
+  if (total.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(loadedCount.value, total.value)}`
+})
 
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
@@ -53,21 +60,30 @@ function formatTime(iso: string): string {
   return iso.replace('T', ' ').substring(0, 19)
 }
 
+function listParams(page: number) {
+  const params: Record<string, unknown> = {
+    page: page - 1,
+    size: filter.size,
+  }
+  if (filter.keyword) params.keyword = filter.keyword
+  if (filter.bindStatus) params.bindStatus = filter.bindStatus
+  if (filter.parseStatus) params.parseStatus = filter.parseStatus
+  if (filter.sourceType) params.sourceType = filter.sourceType
+  return params
+}
+
 async function loadList() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const params: Record<string, unknown> = {
-      page: filter.page - 1,
-      size: filter.size,
-    }
-    if (filter.keyword) params.keyword = filter.keyword
-    if (filter.bindStatus) params.bindStatus = filter.bindStatus
-    if (filter.parseStatus) params.parseStatus = filter.parseStatus
-    if (filter.sourceType) params.sourceType = filter.sourceType
-    const res = await fetchLyricList(params as any)
-    list.value = res.items
-    total.value = res.total
+    filter.page = 1
+    const [currentRes, nextRes] = await Promise.all([
+      fetchLyricList(listParams(1) as any),
+      fetchLyricList(listParams(2) as any),
+    ])
+    list.value = [...currentRes.items, ...nextRes.items]
+    total.value = nextRes.total || currentRes.total
+    filter.page = nextRes.items.length > 0 ? 2 : 1
   } catch {
     errorMessage.value = '加载歌词列表失败，请检查后端服务是否运行'
     ElMessage.error('加载歌词列表失败')
@@ -122,15 +138,39 @@ async function handleViewLyric(row: LyricListItem) {
   }
 }
 
-function handlePageChange(page: number) {
-  filter.page = page
-  loadList()
-}
-
 function handleSizeChange(size: number) {
   filter.size = size
   filter.page = 1
   loadList()
+}
+
+async function appendNextPage() {
+  if (loadingMore.value || !hasMoreRows.value) return
+  loadingMore.value = true
+  try {
+    const nextPage = filter.page + 1
+    const res = await fetchLyricList(listParams(nextPage) as any)
+    list.value = [...list.value, ...res.items]
+    total.value = res.total
+    if (res.items.length > 0) {
+      filter.page = nextPage
+    }
+  } finally {
+    loadingMore.value = false
+  }
+}
+
+function handleTableScroll(event: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  const scrollTop = event.scrollTop ?? 0
+  const scrollHeight = event.scrollHeight ?? 0
+  const clientHeight = event.clientHeight ?? 0
+  if (scrollHeight > 0 && scrollHeight - scrollTop - clientHeight <= 520) {
+    appendNextPage()
+  }
+}
+
+function emptyImage(): string {
+  return '/themes/midsummer-starlight/empty-states/empty-lyrics.png'
 }
 
 onMounted(() => {
@@ -221,9 +261,17 @@ onMounted(() => {
     <el-table
       :data="list"
       v-loading="loading"
-      empty-text="暂无歌词数据，可先扫描本地 LRC 文件"
+      height="calc(100vh - 348px)"
+      @scroll="handleTableScroll"
       style="margin-top: 12px; width: 100%"
     >
+      <template #empty>
+        <el-empty
+          description="暂无歌词数据，可先扫描本地 LRC 文件"
+          :image="emptyImage()"
+          :image-size="180"
+        />
+      </template>
       <el-table-column prop="title" label="歌词标题" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.title || '--' }}
@@ -299,16 +347,24 @@ onMounted(() => {
       </el-table-column>
     </el-table>
 
-    <div style="margin-top: 16px; display: flex; justify-content: flex-end">
-      <el-pagination
-        v-model:current-page="filter.page"
-        v-model:page-size="filter.size"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next"
-        @current-change="handlePageChange"
-        @size-change="handleSizeChange"
-      />
+    <div class="cursor-pager">
+      <div class="cursor-pager-meta">
+        <span>共 {{ total }} 条歌词</span>
+        <span>{{ loadedRangeText }}</span>
+        <span v-if="loadingMore">加载下一页...</span>
+        <span v-else-if="!hasMoreRows">已加载全部</span>
+      </div>
+      <el-select
+        v-model="filter.size"
+        size="small"
+        style="width: 96px"
+        @change="handleSizeChange"
+      >
+        <el-option label="10 条" :value="10" />
+        <el-option label="20 条" :value="20" />
+        <el-option label="50 条" :value="50" />
+        <el-option label="100 条" :value="100" />
+      </el-select>
     </div>
   </el-card>
 
@@ -442,5 +498,24 @@ onMounted(() => {
   max-height: 400px;
   overflow-y: auto;
   margin: 0;
+}
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 8px 10px;
+  color: #606266;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(221, 234, 245, 0.9);
+  border-radius: 6px;
+}
+.cursor-pager-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
 }
 </style>

@@ -42,6 +42,13 @@ const trackQuery = reactive({
   size: 20,
 })
 const trackError = ref('')
+const trackLoadingMore = ref(false)
+const trackLoadedCount = computed(() => trackList.value.length)
+const trackHasMoreRows = computed(() => trackLoadedCount.value < trackTotal.value)
+const trackLoadedRangeText = computed(() => {
+  if (trackTotal.value === 0) return '当前 0 - 0'
+  return `当前 1 - ${Math.min(trackLoadedCount.value, trackTotal.value)}`
+})
 
 const coverUrl = ref<string | null>(null)
 
@@ -87,25 +94,37 @@ async function loadDetail() {
   }
 }
 
+function trackListParams(page: number) {
+  return {
+    page: page - 1,
+    size: trackQuery.size,
+    albumKey: albumKey.value,
+    artistKey: artistKey.value,
+  }
+}
+
+function fillCoverFromTracks(items: MusicItem[]) {
+  if (coverUrl.value) return
+  const first = items.find((item) => item.artworkStatus === ARTWORK_STATUS.BOUND && item.artworkPreviewUrl)
+  if (first?.artworkPreviewUrl) {
+    coverUrl.value = first.artworkPreviewUrl
+  }
+}
+
 async function loadTrackList() {
   if (!albumKey.value || !artistKey.value) return
   trackLoading.value = true
   trackError.value = ''
   try {
-    const res = await fetchMusicList({
-      page: trackQuery.page - 1,
-      size: trackQuery.size,
-      albumKey: albumKey.value,
-      artistKey: artistKey.value,
-    })
-    trackList.value = res.items
-    trackTotal.value = res.total
-    if (res.items.length > 0 && !coverUrl.value) {
-      const first = res.items[0]
-      if (first.artworkStatus === ARTWORK_STATUS.BOUND && first.artworkPreviewUrl) {
-        coverUrl.value = first.artworkPreviewUrl
-      }
-    }
+    trackQuery.page = 1
+    const [currentRes, nextRes] = await Promise.all([
+      fetchMusicList(trackListParams(1)),
+      fetchMusicList(trackListParams(2)),
+    ])
+    trackList.value = [...currentRes.items, ...nextRes.items]
+    trackTotal.value = nextRes.total || currentRes.total
+    trackQuery.page = nextRes.items.length > 0 ? 2 : 1
+    fillCoverFromTracks(trackList.value)
   } catch {
     trackError.value = '加载曲目列表失败'
     ElMessage.error('加载曲目列表失败')
@@ -114,15 +133,34 @@ async function loadTrackList() {
   }
 }
 
-function handleTrackPageChange(page: number) {
-  trackQuery.page = page
-  loadTrackList()
-}
-
 function handleTrackSizeChange(size: number) {
   trackQuery.size = size
   trackQuery.page = 1
   loadTrackList()
+}
+
+async function appendNextTrackPage() {
+  if (trackLoadingMore.value || !trackHasMoreRows.value) return
+  trackLoadingMore.value = true
+  try {
+    const nextPage = trackQuery.page + 1
+    const res = await fetchMusicList(trackListParams(nextPage))
+    trackList.value = [...trackList.value, ...res.items]
+    trackTotal.value = res.total
+    if (res.items.length > 0) {
+      trackQuery.page = nextPage
+      fillCoverFromTracks(res.items)
+    }
+  } finally {
+    trackLoadingMore.value = false
+  }
+}
+
+function handleTrackTableScroll(event: { scrollTop?: number; scrollHeight?: number; clientHeight?: number }) {
+  const distanceToBottom = (event.scrollHeight ?? 0) - (event.scrollTop ?? 0) - (event.clientHeight ?? 0)
+  if (distanceToBottom <= 520) {
+    appendNextTrackPage()
+  }
 }
 
 function goBack() {
@@ -320,8 +358,10 @@ onMounted(() => {
         <el-table
           :data="trackList"
           v-loading="trackLoading"
+          height="calc(100vh - 462px)"
           empty-text="暂无曲目"
           style="width: 100%"
+          @scroll="handleTrackTableScroll"
         >
           <el-table-column label="歌曲名" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">
@@ -372,57 +412,69 @@ onMounted(() => {
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="操作" width="300" fixed="right">
             <template #default="{ row }">
-              <el-button
-                type="primary"
-                size="small"
-                text
-                :icon="Edit"
-                @click="openEditDialog(row)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                type="primary"
-                size="small"
-                text
-                :icon="Connection"
-                @click="openMetadataSync(row)"
-              >
-                同步
-              </el-button>
-              <el-button
-                v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
-                type="primary"
-                size="small"
-                text
-                :icon="View"
-                @click="handleViewLyric(row)"
-              >
-                歌词
-              </el-button>
-              <el-button
-                type="danger"
-                size="small"
-                text
-                :icon="Delete"
-                @click="openDeleteDialog(row)"
-              />
+              <div class="row-actions">
+                <el-button
+                  type="primary"
+                  size="small"
+                  text
+                  :icon="Edit"
+                  @click="openEditDialog(row)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  text
+                  :icon="Connection"
+                  @click="openMetadataSync(row)"
+                >
+                  同步
+                </el-button>
+                <el-button
+                  v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+                  type="primary"
+                  size="small"
+                  text
+                  :icon="View"
+                  @click="handleViewLyric(row)"
+                >
+                  歌词
+                </el-button>
+                <el-button
+                  type="danger"
+                  size="small"
+                  text
+                  :icon="Delete"
+                  @click="openDeleteDialog(row)"
+                >
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
 
-        <div style="margin-top: 12px; display: flex; justify-content: flex-end">
-          <el-pagination
-            v-model:current-page="trackQuery.page"
-            v-model:page-size="trackQuery.size"
-            :total="trackTotal"
-            :page-sizes="[10, 20, 50, 100]"
-            layout="total, sizes, prev, pager, next"
-            @current-change="handleTrackPageChange"
-            @size-change="handleTrackSizeChange"
-          />
+        <div class="cursor-pager">
+          <div class="cursor-pager-meta">
+            <span>共 {{ trackTotal }} 首曲目</span>
+            <span>{{ trackLoadedRangeText }}</span>
+            <span v-if="trackLoadingMore">加载下一页...</span>
+            <span v-else-if="!trackHasMoreRows">已加载全部</span>
+          </div>
+          <el-select
+            v-model="trackQuery.size"
+            size="small"
+            style="width: 96px"
+            @change="handleTrackSizeChange"
+          >
+            <el-option label="10 条" :value="10" />
+            <el-option label="20 条" :value="20" />
+            <el-option label="50 条" :value="50" />
+            <el-option label="100 条" :value="100" />
+          </el-select>
         </div>
       </template>
 
@@ -546,6 +598,33 @@ onMounted(() => {
 }
 .album-detail {
   min-height: 200px;
+}
+.cursor-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(220, 223, 230, 0.72);
+}
+.cursor-pager-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: #606266;
+  font-size: 12px;
+}
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .album-overview {
   display: flex;

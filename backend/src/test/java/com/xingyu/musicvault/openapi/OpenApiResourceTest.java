@@ -73,7 +73,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.0.0"));
+                .body("serviceVersion", equalTo("1.0.1"));
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -81,7 +81,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.0.0"))
+                .body("serviceVersion", equalTo("1.0.1"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
