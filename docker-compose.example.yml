@@ -9,6 +9,9 @@ services:
         MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
     container_name: xingyu-music-vault
     ports:
+      # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
+      # 后续 v1.1.x 将补充管理员初始化、登录认证、OpenAPI Token、
+      # 反向代理建议与 HTTPS / 公网暴露风险说明。
       - "${APP_PORT:-8080}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
