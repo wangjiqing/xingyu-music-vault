@@ -1,5 +1,16 @@
 # 用户手册
 
+## 主题切换
+
+管理后台 header 右侧提供轻量主题切换入口，当前覆盖四套四季主题：
+
+- 春日晨光 / Spring Dawn
+- 仲夏星河 / Midsummer Starlight
+- 秋日唱片 / Autumn Vinyl
+- 冬夜雪境 / Winter Moonlight
+
+切换后，页面背景、Logo、favicon、主题变量 CSS 与页面空状态图会随当前主题更新。主题选择保存在浏览器 `localStorage` 中，刷新页面后会恢复上次选择；默认主题仍为仲夏星河 / Midsummer Starlight。
+
 ## 全部歌曲
 
 全部歌曲是系统的核心页面，承载音乐库的日常浏览和整理工作。

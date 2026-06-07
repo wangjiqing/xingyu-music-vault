@@ -34,6 +34,13 @@ export interface ThemeAssets {
 
 export const availableThemes: ThemeCandidate[] = [
   {
+    id: 'spring-dawn',
+    name: '春日晨光',
+    englishName: 'Spring Dawn',
+    season: 'spring',
+    position: '四季主题中的春季主题',
+  },
+  {
     id: 'midsummer-starlight',
     name: '仲夏星河',
     englishName: 'Midsummer Starlight',
@@ -47,9 +54,16 @@ export const availableThemes: ThemeCandidate[] = [
     season: 'autumn',
     position: '四季主题中的秋季主题',
   },
+  {
+    id: 'winter-moonlight',
+    name: '冬夜雪境',
+    englishName: 'Winter Moonlight',
+    season: 'winter',
+    position: '四季主题中的冬季主题',
+  },
 ]
 
-export const defaultThemeId = availableThemes[0].id
+export const defaultThemeId = 'midsummer-starlight'
 export const themeStorageKey = 'xingyu-music-vault-theme'
 
 function hasBrowserStorage(): boolean {
@@ -81,7 +95,13 @@ export function themeBasePath(themeId = activeThemeId.value): string {
 }
 
 export function themeAssets(themeId = activeThemeId.value): ThemeAssets {
+  const normalizedThemeId = normalizeThemeId(themeId)
   const basePath = themeBasePath(themeId)
+  const metadataPending =
+    normalizedThemeId === 'spring-dawn'
+      ? `${basePath}/empty-states/empty-home.png`
+      : `${basePath}/empty-states/metadata-pending.png`
+
   return {
     logoMark: `${basePath}/logo/logo-mark.png`,
     logoHorizontal: `${basePath}/logo/logo-horizontal.png`,
@@ -100,7 +120,7 @@ export function themeAssets(themeId = activeThemeId.value): ThemeAssets {
       artists: `${basePath}/empty-states/empty-artists.png`,
       lyrics: `${basePath}/empty-states/empty-lyrics.png`,
       cover: `${basePath}/empty-states/empty-cover.png`,
-      metadataPending: `${basePath}/empty-states/metadata-pending.png`,
+      metadataPending,
     },
   }
 }

@@ -1,0 +1,18 @@
+{
+  "themeId": "winter-moonlight",
+  "name": "冬夜雪境",
+  "englishName": "Winter Moonlight",
+  "season": "winter",
+  "primary": "#4A90E2",
+  "secondary": "#6DB7FF",
+  "background": "#0A1224",
+  "card": "#11223A",
+  "accent": "#F7C873",
+  "textPrimary": "#E8F0FF",
+  "textSecondary": "#A2B2C9",
+  "border": "#1F2F4A",
+  "success": "#5CCB9C",
+  "warning": "#F4C45E",
+  "error": "#FF6B6B",
+  "info": "#6FA8FF"
+}

@@ -31,7 +31,7 @@
 - 管理后台 header 右侧提供轻量主题切换入口，选择结果写入浏览器 `localStorage`。
 - 切换主题时，页面皮肤、空状态图、favicon 和 `theme.css` 会跟随当前主题更新。
 - 当前默认展示主题仍为 `midsummer-starlight`，避免在 v1.0.2 扩大为服务端主题管理系统。
-- 秋季主题保留 `theme.json`、`theme.css`、`manifest.json` 与主题 README，后续 Winter Moonlight / Spring Dawn 可沿用同样结构接入。
+- 秋季主题保留 `theme.json`、`theme.css`、`manifest.json` 与主题 README；v1.0.3 已沿用同样结构接入 Winter Moonlight / Spring Dawn。
 - 前端主题资源路径集中到当前主题配置 helper，便于后续接入更多候选主题。
 - Vite 构建会排除所有主题目录下的 `archive/` 备份目录，避免预览源图进入生产产物。
 
@@ -47,7 +47,7 @@
 - Logo 来源于展示板裁切，后续如进入正式主题系统，应重新制作或规范化输出。
 - 空状态图已按统一目录入库，后续可按页面语义重绘或替换。
 - 本版本仅实现本地轻量切换入口；后续如增加完整主题管理，应优先复用当前主题候选配置。
-- Winter Moonlight / Spring Dawn 后续应继续沿用 `frontend/public/themes/<theme-id>/`、`theme.json`、`manifest.json`、`theme.css` 和文档说明结构。
+- v1.0.3 已完成 Winter Moonlight / Spring Dawn 基础接入，四季主题资源进入同一轻量切换体系。
 
 ## 验证
 
