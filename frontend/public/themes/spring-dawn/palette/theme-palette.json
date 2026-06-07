@@ -1,0 +1,18 @@
+{
+  "themeId": "spring-dawn",
+  "name": "春日晨光",
+  "englishName": "Spring Dawn",
+  "season": "spring",
+  "primary": "#7BCF9B",
+  "secondary": "#BEE7E1",
+  "background": "#FAFCF7",
+  "card": "#FFFFFF",
+  "accent": "#FFDFA6",
+  "textPrimary": "#243A32",
+  "textSecondary": "#6C7F73",
+  "border": "#E2EBDC",
+  "success": "#6BC28B",
+  "warning": "#F4C76B",
+  "error": "#F28C8C",
+  "info": "#7FB6F2"
+}

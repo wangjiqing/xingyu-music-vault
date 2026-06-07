@@ -1,5 +1,22 @@
 # 开发路线图
 
+## v1.0.3 — 冬夜雪境与春日晨光主题接入
+
+> 阶段目标：一次性接入冬季与春季主题素材，完成四季主题资源与基础主题切换体验闭环。
+
+- [x] 新增 `frontend/public/themes/winter-moonlight/` 主题资源目录
+- [x] 新增 `frontend/public/themes/spring-dawn/` 主题资源目录
+- [x] 接入 README Banner、Logo、favicon、小图标、背景图、空状态插画和主题色板
+- [x] 新增 Winter Moonlight 与 Spring Dawn 主题候选配置
+- [x] 管理后台 header 轻量主题切换入口展示四套主题
+- [x] 主题切换时同步更新背景、Logo、空状态图、favicon 与主题变量 CSS
+- [x] 保持当前默认主题为 Midsummer Starlight，选择结果继续保存在浏览器本地
+- [x] README、changelog、roadmap、用户手册和主题文档同步说明四套主题资源
+- [x] 去重冬季、春季背景别名文件，使用 manifest alias 记录旧命名映射
+- [x] OpenAPI `server/info` 服务版本更新到 `1.0.3`
+
+**本版本不包含**：后端业务逻辑修改、OpenAPI 契约变更、数据库结构变更、音乐扫描/元数据/歌词/封面能力扩展、服务端主题管理系统、星语音乐盒侧主题同步。`serviceVersion` 仅同步发布版本号。
+
 ## v1.0.2 — 秋日唱片主题素材接入
 
 > 阶段目标：接入第二套四季主题素材，验证 v1.0.1 建立的主题结构可复用。

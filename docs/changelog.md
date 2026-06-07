@@ -2,6 +2,34 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v1.0.3 — 冬夜雪境与春日晨光主题接入
+
+**发布日期：** 2026.06.07
+
+v1.0.3 聚焦「冬夜雪境 / Winter Moonlight」与「春日晨光 / Spring Dawn」两套四季主题素材接入，完成四季主题资源与既有轻量主题切换入口的基础闭环。本版本不修改后端业务逻辑、OpenAPI 契约、数据库结构或音乐扫描、元数据、歌词、封面等业务能力。
+
+### 新增 / 补强
+
+- **接入冬夜雪境主题资源包**：新增 `frontend/public/themes/winter-moonlight/`，放置 README banner、Logo、favicon、小图标、背景图、页面空状态插画、主题色板、`theme.json`、`theme.css` 与 `manifest.json`
+- **接入春日晨光主题资源包**：新增 `frontend/public/themes/spring-dawn/`，放置 README banner、Logo、favicon、小图标、背景图、页面空状态插画、主题色板、`theme.json`、`theme.css` 与 `manifest.json`
+- **补齐四季主题候选配置**：前端主题配置新增 `winter-moonlight` 与 `spring-dawn` 候选项，管理后台 header 右侧轻量主题切换入口已按春夏秋冬顺序覆盖春日、仲夏、秋日、冬夜四套主题
+- **保持主题偏好恢复能力**：主题选择继续写入浏览器 `localStorage`，刷新页面后恢复上次选择；默认主题仍为 `midsummer-starlight`
+- **避免春季缺失资源 404**：春季源素材缺少 `metadata-pending.png`，运行时使用同主题 `empty-home.png` 兜底，并在主题文档中列为待确认素材
+- **延续背景别名去重策略**：未重复拷贝冬季、春季素材包中的 4K/2K/1080p 背景别名文件，改由 `manifest.json` 的 `assets.background.aliases` 记录映射
+- **补充主题文档与 README 展示**：README 展示四套主题资源，新增 `docs/themes/winter-moonlight.md` 与 `docs/themes/spring-dawn.md`
+- **OpenAPI 服务版本同步**：`/api/open/v1/server/info` 的 `serviceVersion` 更新为 `1.0.3`
+
+### 已知限制
+
+- 当前仍未引入服务端主题管理系统；主题切换仅作为浏览器本地轻量入口
+- Winter Moonlight 的 `background/background-desktop.png` 体积约 3.1MB；运行时使用 `.webp` 背景，PNG 作为素材留存，后续可用 `pngquant` 等工具压缩或评估是否继续保留
+- Winter Moonlight 深色主题下仍可能遇到部分浅色硬编码组件对比度不理想的问题，后续页面组件深度美化时统一处理
+- Spring Dawn 源素材缺少 `empty-states/metadata-pending.png` 与 `empty-states/syncing.png`，未伪造文件，已在文档和 manifest 中标记
+- 四套主题 Logo 与空状态图仍带有生成素材工程化版本限制，后续进入正式主题系统前建议重新规范化输出
+- 后续版本可继续推进主题偏好体验优化、主题预览、跟随季节 / 时间自动切换、页面组件深度美化和星语音乐盒侧主题同步
+
+---
+
 ## v1.0.2 — 秋日唱片主题素材接入
 
 **发布日期：** 2026.06.07

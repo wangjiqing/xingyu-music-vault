@@ -1,0 +1,14 @@
+:root {
+  --xy-primary: #4A90E2;
+  --xy-secondary: #6DB7FF;
+  --xy-background: #0A1224;
+  --xy-card: #11223A;
+  --xy-accent: #F7C873;
+  --xy-text-primary: #E8F0FF;
+  --xy-text-secondary: #A2B2C9;
+  --xy-border: #1F2F4A;
+  --xy-success: #5CCB9C;
+  --xy-warning: #F4C45E;
+  --xy-error: #FF6B6B;
+  --xy-info: #6FA8FF;
+}
