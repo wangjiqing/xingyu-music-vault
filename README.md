@@ -6,7 +6,9 @@
 
 ![仲夏星河 / Midsummer Starlight 主题预览](frontend/public/themes/midsummer-starlight/banner/readme-banner.png)
 
-「仲夏星河 / Midsummer Starlight」主题资源已完成低风险试接，当前作为生成素材工程化试点版使用。v1.0.1 主要补充管理后台首页、导航、列表、空状态和 footer 的主题化展示。资源说明见 [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)。
+![秋日唱片 / Autumn Vinyl 主题预览](frontend/public/themes/autumn-vinyl/banner/readme-banner.png)
+
+当前已接入两套四季主题资源候选：「仲夏星河 / Midsummer Starlight」与「秋日唱片 / Autumn Vinyl」。v1.0.2 新增秋季主题素材目录、主题元数据、候选配置和管理后台 header 轻量主题切换入口，继续聚焦主题素材接入与视觉门面建设，暂不包含完整服务端主题管理系统。资源说明见 [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md) 与 [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)。
 
 ## 项目定位
 
@@ -70,7 +72,8 @@ docker compose up -d --build
 - [备份与升级](docs/deployment/backup-and-upgrade.md)
 - [镜像发布](docs/release/image-publish.md)
 - [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
-- [Release Notes](docs/release/v1.0.1-release-notes.md)
+- [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)
+- [Release Notes](docs/release/v1.0.2-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -88,7 +91,8 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
-v1.0.1 [ ] 仲夏星河主题资源试接与管理后台体验微调
+v1.0.2 [ ] 秋日唱片主题素材接入
+v1.0.1 [x] 仲夏星河主题资源试接与管理后台体验微调
 v1.0.0 [x] 首个正式稳定版本
 v0.9.9 [x] Docker Hub 发布与 v1.0 开源规范收口
 v0.9.8 [x] GitHub Actions 与 GHCR 自动镜像发布

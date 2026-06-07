@@ -4,6 +4,8 @@
 
 本次试接以 v1.0.1 为边界：不重构主题系统，不引入复杂主题切换，不修改后端业务逻辑，不接入星语音乐盒项目。
 
+v1.0.2 已沿用同一结构接入第二套主题「秋日唱片 / Autumn Vinyl」，后续 Winter Moonlight / Spring Dawn 应继续复用 `frontend/public/themes/<theme-id>/`、`theme.json`、`manifest.json`、`theme.css` 和主题说明文档结构。
+
 ## 资源路径
 
 - 前端静态资源：`frontend/public/themes/midsummer-starlight/`

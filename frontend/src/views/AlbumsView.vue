@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Search, RefreshRight } from '@element-plus/icons-vue'
 import { fetchAlbumList, type AlbumItem } from '../api/music'
 import AlbumCard from '../components/music/AlbumCard.vue'
+import { currentThemeAssets } from '../theme/currentTheme'
 
 const router = useRouter()
 
@@ -119,7 +120,7 @@ function emptyText(): string {
 }
 
 function emptyImage(): string {
-  return '/themes/midsummer-starlight/empty-states/empty-albums.png'
+  return currentThemeAssets.value.emptyStates.albums
 }
 
 onMounted(() => {

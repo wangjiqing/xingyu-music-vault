@@ -1,52 +1,60 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowRight, Collection, DataAnalysis, Delete, Headset, MagicStick } from '@element-plus/icons-vue'
 import { fetchMusicStats, type MusicStats } from '../api/music'
-import { fetchCurrentTheme, type CurrentThemeConfig } from '../theme/currentTheme'
+import {
+  activeThemeId,
+  currentThemeAssets,
+  fetchCurrentTheme,
+  type CurrentThemeConfig,
+} from '../theme/currentTheme'
 
-const quickEntries = [
+const quickEntries = computed(() => [
   {
     title: '全部歌曲',
     description: '浏览、筛选和整理音乐库',
     path: '/music',
-    image: '/themes/midsummer-starlight/empty-states/empty-songs.png',
+    image: currentThemeAssets.value.emptyStates.songs,
   },
   {
     title: '歌手',
     description: '按歌手聚合音乐、专辑和整理状态',
     path: '/artists',
-    image: '/themes/midsummer-starlight/empty-states/empty-artists.png',
+    image: currentThemeAssets.value.emptyStates.artists,
   },
   {
     title: '专辑',
     description: '按专辑查看曲目、封面和歌词覆盖情况',
     path: '/albums',
-    image: '/themes/midsummer-starlight/empty-states/empty-albums.png',
+    image: currentThemeAssets.value.emptyStates.albums,
   },
   {
     title: '歌词',
     description: '扫描和查看歌词绑定状态',
     path: '/lyrics',
-    image: '/themes/midsummer-starlight/empty-states/empty-lyrics.png',
+    image: currentThemeAssets.value.emptyStates.lyrics,
   },
   {
     title: '封面',
     description: '管理封面素材和绑定关系',
     path: '/artwork',
-    image: '/themes/midsummer-starlight/empty-states/empty-cover.png',
+    image: currentThemeAssets.value.emptyStates.cover,
   },
   {
     title: '设置',
     description: '配置连接和访问令牌',
     path: '/settings',
-    image: '/themes/midsummer-starlight/empty-states/metadata-pending.png',
+    image: currentThemeAssets.value.emptyStates.metadataPending,
   },
-]
+])
 
 const stats = ref<MusicStats | null>(null)
 const statsLoading = ref(false)
 const statsError = ref(false)
 const currentTheme = ref<CurrentThemeConfig | null>(null)
+const themeStyleVars = computed(() => ({
+  '--xy-hero-background-image': `url("${currentThemeAssets.value.banner}")`,
+}))
 
 const heroSubtitle = computed(() => {
   const parts = ['Xingyu Music Vault']
@@ -108,7 +116,17 @@ function formatStatValue(value: number | undefined): string {
 
 onMounted(() => {
   loadStats()
-  fetchCurrentTheme()
+  fetchCurrentTheme(activeThemeId.value)
+    .then((theme) => {
+      currentTheme.value = theme
+    })
+    .catch(() => {
+      currentTheme.value = null
+    })
+})
+
+watch(activeThemeId, (themeId) => {
+  fetchCurrentTheme(themeId)
     .then((theme) => {
       currentTheme.value = theme
     })
@@ -119,11 +137,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="dashboard-page">
+  <div class="dashboard-page" :style="themeStyleVars">
     <section class="hero-panel">
       <div class="hero-copy">
         <img
-          src="/themes/midsummer-starlight/logo/logo-horizontal.png"
+          :src="currentThemeAssets.logoHorizontal"
           alt="星语音库"
           class="hero-logo"
         />
@@ -131,7 +149,7 @@ onMounted(() => {
         <div class="hero-subtitle">{{ heroSubtitle }}</div>
       </div>
       <img
-        src="/themes/midsummer-starlight/empty-states/empty-home.png"
+        :src="currentThemeAssets.emptyStates.home"
         alt=""
         class="hero-illustration"
         aria-hidden="true"
@@ -204,6 +222,9 @@ onMounted(() => {
   background:
     linear-gradient(90deg, rgba(246, 251, 255, 0.95), rgba(246, 251, 255, 0.7)),
     url('/themes/midsummer-starlight/banner/readme-banner.webp') center / cover;
+  background:
+    linear-gradient(90deg, rgba(246, 251, 255, 0.95), rgba(246, 251, 255, 0.7)),
+    var(--xy-hero-background-image) center / cover;
   border: 1px solid rgba(221, 234, 245, 0.88);
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(38, 56, 77, 0.1);

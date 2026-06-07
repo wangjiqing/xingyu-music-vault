@@ -19,6 +19,7 @@ import {
   lyricParseStatusTagType,
   sourceTypeLabel,
 } from '../constants/musicStatus'
+import { currentThemeAssets } from '../theme/currentTheme'
 
 const list = ref<LyricListItem[]>([])
 const loading = ref(false)
@@ -170,7 +171,7 @@ function handleTableScroll(event: { scrollTop?: number; scrollHeight?: number; c
 }
 
 function emptyImage(): string {
-  return '/themes/midsummer-starlight/empty-states/empty-lyrics.png'
+  return currentThemeAssets.value.emptyStates.lyrics
 }
 
 onMounted(() => {

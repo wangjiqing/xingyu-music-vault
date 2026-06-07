@@ -1,5 +1,22 @@
 # 开发路线图
 
+## v1.0.2 — 秋日唱片主题素材接入
+
+> 阶段目标：接入第二套四季主题素材，验证 v1.0.1 建立的主题结构可复用。
+
+- [x] 新增 `frontend/public/themes/autumn-vinyl/` 主题资源目录
+- [x] 接入 README Banner、Logo、favicon、小图标、背景图、空状态插画和主题色板
+- [x] 新增 Autumn Vinyl 主题候选配置
+- [x] 管理后台 header 提供轻量主题切换入口，选择结果保存在浏览器本地
+- [x] 主题切换时同步更新 favicon 与主题变量 CSS
+- [x] 保持当前默认主题为 Midsummer Starlight，不扩大为服务端主题管理系统
+- [x] 泛化主题 `archive/` 生产构建排除逻辑
+- [x] README、changelog、主题文档同步说明两套主题资源
+- [x] 去重秋季背景别名文件，使用 manifest alias 记录旧命名映射
+- [x] OpenAPI `server/info` 服务版本更新到 `1.0.2`
+
+**本版本不包含**：后端业务逻辑修改、OpenAPI 契约变更、数据库结构变更、音乐扫描/元数据/歌词/封面能力扩展、Winter Moonlight / Spring Dawn 接入、服务端主题管理系统。
+
 ## v1.0.1 — 仲夏星河主题资源试接与管理后台体验微调
 
 > 阶段目标：低风险接入主题资源，补强管理后台视觉占位与列表滚动体验。
