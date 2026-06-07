@@ -2,9 +2,12 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.2}
+    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.3}
     container_name: xingyu-music-vault
     ports:
+      # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
+      # 后续 v1.1.x 将补充管理员初始化、登录认证、OpenAPI Token、
+      # 反向代理建议与 HTTPS / 公网暴露风险说明。
       - "${APP_PORT:-8080}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
