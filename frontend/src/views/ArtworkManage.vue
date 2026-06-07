@@ -8,6 +8,7 @@ import {
   type ArtworkItem,
   type ArtworkScanResponse,
 } from '../api/artwork'
+import { currentThemeAssets } from '../theme/currentTheme'
 
 const items = ref<ArtworkItem[]>([])
 const loading = ref(false)
@@ -156,7 +157,7 @@ function handleTableScroll(event: { scrollTop?: number; scrollHeight?: number; c
 }
 
 function emptyImage(): string {
-  return '/themes/midsummer-starlight/empty-states/empty-cover.png'
+  return currentThemeAssets.value.emptyStates.cover
 }
 
 onMounted(() => {

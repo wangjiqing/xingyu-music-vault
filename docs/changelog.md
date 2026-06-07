@@ -2,6 +2,31 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v1.0.2 — 秋日唱片主题素材接入
+
+**发布日期：** 2026.06.07
+
+v1.0.2 聚焦「秋日唱片 / Autumn Vinyl」主题素材接入，验证第二套四季主题能否复用 v1.0.1 建立的主题资源目录、主题元数据配置、前端静态引用候选和文档展示方式。本版本不修改后端业务逻辑、OpenAPI 契约、数据库结构或音乐扫描、元数据、歌词、封面等业务能力。
+
+### 新增 / 补强
+
+- **接入秋日唱片主题资源包**：新增 `frontend/public/themes/autumn-vinyl/`，放置 README banner、Logo、favicon、小图标、背景图、页面空状态插画、主题色板、`theme.json`、`theme.css` 与 `manifest.json`
+- **补充主题候选配置与入口**：前端主题配置新增 `autumn-vinyl` 候选项，管理后台 header 右侧提供轻量主题切换入口，选择结果写入浏览器 `localStorage`，页面皮肤、空状态图、favicon 和 `theme.css` 跟随当前主题更新
+- **集中当前主题资源引用**：管理后台当前主题素材路径改由轻量 helper 输出，为后续 Winter Moonlight / Spring Dawn 继续接入做准备
+- **泛化主题 archive 构建排除**：Vite 构建会排除所有主题目录下的 `archive/` 备份目录，避免源预览素材进入生产产物
+- **补充主题文档与 README 展示**：README 展示两套主题资源，新增 `docs/themes/autumn-vinyl.md`，并说明 Autumn Vinyl 是四季主题体系中的秋季主题
+- **处理重复背景别名**：未重复拷贝秋季素材包中的 4K/2K/1080p 背景别名文件，改由 `manifest.json` 的 `assets.background.aliases` 记录映射
+- **OpenAPI 服务版本同步**：`/api/open/v1/server/info` 的 `serviceVersion` 更新为 `1.0.2`
+
+### 已知限制
+
+- 当前仍未引入服务端主题管理系统；主题切换仅作为浏览器本地轻量入口
+- Autumn Vinyl 背景不是原生 4K 终稿，不应作为 4K 品牌背景交付物标注
+- Logo 与空状态图仍带有生成素材工程化版本限制，后续进入正式主题系统前建议重新规范化输出
+- Winter Moonlight / Spring Dawn 尚未接入，后续应沿用本次主题目录和文档结构
+
+---
+
 ## v1.0.1 — 仲夏星河主题资源试接与管理后台体验微调
 
 **发布日期：** 2026.06.06

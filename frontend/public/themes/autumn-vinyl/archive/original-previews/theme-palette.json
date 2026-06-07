@@ -1,0 +1,17 @@
+{
+  "themeId": "autumn-vinyl",
+  "name": "秋日唱片",
+  "englishName": "Autumn Vinyl",
+  "primary": "#D46B1F",
+  "secondary": "#E8A24C",
+  "background": "#FFF7EE",
+  "card": "#FFF1E1",
+  "accent": "#F4C56A",
+  "textPrimary": "#2B1D14",
+  "textSecondary": "#6B5746",
+  "border": "#E6D6C3",
+  "success": "#6DBA7C",
+  "warning": "#E5B44C",
+  "error": "#E06A5F",
+  "info": "#5A8DBF"
+}

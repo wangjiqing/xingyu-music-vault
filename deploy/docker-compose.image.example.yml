@@ -2,8 +2,7 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    # image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
-    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.2}
     container_name: xingyu-music-vault
     ports:
       - "${APP_PORT:-8080}:8080"

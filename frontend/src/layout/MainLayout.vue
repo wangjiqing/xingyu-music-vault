@@ -14,7 +14,14 @@ import {
   Connection,
 } from '@element-plus/icons-vue'
 import { fetchServerInfo } from '../api/openapi'
-import { fetchCurrentTheme, type CurrentThemeConfig } from '../theme/currentTheme'
+import {
+  activeThemeId,
+  availableThemes,
+  currentThemeAssets,
+  fetchCurrentTheme,
+  setCurrentThemeId,
+  type CurrentThemeConfig,
+} from '../theme/currentTheme'
 
 const router = useRouter()
 const route = useRoute()
@@ -24,6 +31,11 @@ const isCollapsed = ref(false)
 const activeMenu = computed(() => route.path)
 const serviceVersion = ref('')
 const currentTheme = ref<CurrentThemeConfig | null>(null)
+const themeStyleVars = computed(() => ({
+  '--xy-aside-background-image': `url("${currentThemeAssets.value.backgroundMobile}")`,
+  '--xy-banner-background-image': `url("${currentThemeAssets.value.banner}")`,
+  '--xy-content-background-image': `url("${currentThemeAssets.value.backgroundDesktop}")`,
+}))
 
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -81,10 +93,15 @@ async function loadServiceVersion() {
 
 async function loadCurrentTheme() {
   try {
-    currentTheme.value = await fetchCurrentTheme()
+    currentTheme.value = await fetchCurrentTheme(activeThemeId.value)
   } catch {
     currentTheme.value = null
   }
+}
+
+function handleThemeChange(themeId: string) {
+  setCurrentThemeId(themeId)
+  loadCurrentTheme()
 }
 
 onMounted(() => {
@@ -94,12 +111,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <el-container class="main-container">
+  <el-container class="main-container" :style="themeStyleVars">
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="main-aside">
       <div class="logo">
         <img
           class="logo-mark"
-          src="/themes/midsummer-starlight/logo/logo-mark.png"
+          :src="currentThemeAssets.logoMark"
           alt=""
           aria-hidden="true"
         />
@@ -127,6 +144,20 @@ onMounted(() => {
           <span class="header-title">Xingyu Music Vault / 星语音库</span>
         </div>
         <div class="header-right">
+          <el-select
+            :model-value="activeThemeId"
+            size="small"
+            class="theme-select"
+            aria-label="当前主题"
+            @change="handleThemeChange"
+          >
+            <el-option
+              v-for="theme in availableThemes"
+              :key="theme.id"
+              :label="`${theme.name} / ${theme.englishName}`"
+              :value="theme.id"
+            />
+          </el-select>
           <el-tag type="info" size="small">
             {{ route.meta.title || '概览' }}
           </el-tag>
@@ -151,6 +182,9 @@ onMounted(() => {
   background:
     linear-gradient(180deg, rgba(19, 21, 38, 0.78), rgba(19, 21, 38, 0.93)),
     url('/themes/midsummer-starlight/background/background-mobile.webp') center bottom / cover;
+  background:
+    linear-gradient(180deg, rgba(19, 21, 38, 0.78), rgba(19, 21, 38, 0.93)),
+    var(--xy-aside-background-image) center bottom / cover;
   overflow: hidden;
   transition: width 0.2s;
 }
@@ -188,6 +222,9 @@ onMounted(() => {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.82)),
     url('/themes/midsummer-starlight/banner/readme-banner.webp') center 44% / cover;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.82)),
+    var(--xy-banner-background-image) center 44% / cover;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -199,6 +236,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.theme-select {
+  width: 214px;
 }
 .header-title {
   font-size: 16px;
@@ -218,6 +263,7 @@ onMounted(() => {
   inset: 0;
   z-index: -2;
   background: url('/themes/midsummer-starlight/background/background-desktop.webp') center bottom / cover;
+  background: var(--xy-content-background-image) center bottom / cover;
   opacity: 0.44;
 }
 .main-content::after {
@@ -239,6 +285,9 @@ onMounted(() => {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76)),
     url('/themes/midsummer-starlight/banner/readme-banner.webp') center 72% / cover;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.76)),
+    var(--xy-banner-background-image) center 72% / cover;
   border-top: 1px solid rgba(221, 234, 245, 0.9);
 }
 .footer-divider {

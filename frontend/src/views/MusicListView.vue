@@ -37,6 +37,7 @@ import {
 import MusicCard from '../components/music/MusicCard.vue'
 import MetadataCompareDialog from '../components/music/MetadataCompareDialog.vue'
 import MetadataBatchCompareDialog from '../components/music/MetadataBatchCompareDialog.vue'
+import { currentThemeAssets } from '../theme/currentTheme'
 
 const list = ref<MusicItem[]>([])
 const loading = ref(false)
@@ -605,7 +606,7 @@ function emptyText(): string {
 }
 
 function emptyImage(): string {
-  return '/themes/midsummer-starlight/empty-states/empty-songs.png'
+  return currentThemeAssets.value.emptyStates.songs
 }
 
 function handleSizeChange(size: number) {

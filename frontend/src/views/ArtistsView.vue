@@ -8,6 +8,7 @@ import {
   type ArtistItem,
 } from '../api/music'
 import ArtistCard from '../components/artist/ArtistCard.vue'
+import { currentThemeAssets } from '../theme/currentTheme'
 
 const router = useRouter()
 
@@ -119,7 +120,7 @@ function emptyText(): string {
 }
 
 function emptyImage(): string {
-  return '/themes/midsummer-starlight/empty-states/empty-artists.png'
+  return currentThemeAssets.value.emptyStates.artists
 }
 
 onMounted(() => {

@@ -59,6 +59,7 @@ deploy/*local*.yml
 *.tmp
 *.bak
 *.orig
+*.zip
 
 # AI agent local settings
 
