@@ -2,12 +2,12 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.3}
+    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.1.2}
     container_name: xingyu-music-vault
     ports:
       # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
-      # 后续 v1.1.x 将补充管理员初始化、登录认证、OpenAPI Token、
-      # 反向代理建议与 HTTPS / 公网暴露风险说明。
+      # v1.1.2 已提供管理端登录；OpenAPI Token、反向代理建议与
+      # HTTPS / 公网暴露风险说明仍在后续 v1.1.x 补充。
       - "${APP_PORT:-8080}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
@@ -28,6 +28,9 @@ services:
       - MUSIC_SCAN_DEFAULT_PATH=/music
       - APP_ARTWORK_SCAN_DIR=/artwork
       - MUSIC_VAULT_API_TOKEN=${MUSIC_VAULT_API_TOKEN:-change-me}
+      - XINGYU_ADMIN_COOKIE_SECURE=${XINGYU_ADMIN_COOKIE_SECURE:-false}
+      - XINGYU_ADMIN_COOKIE_SAME_SITE=${XINGYU_ADMIN_COOKIE_SAME_SITE:-Lax}
+      - XINGYU_ADMIN_SESSION_TTL_MINUTES=${XINGYU_ADMIN_SESSION_TTL_MINUTES:-1440}
       - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
       - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
       - XINGYU_OPENAPI_AUTH_ENABLED=${XINGYU_OPENAPI_AUTH_ENABLED:-false}

@@ -46,6 +46,15 @@ app:
     scan-dir: ${APP_ARTWORK_SCAN_DIR:/artwork}
 
 xingyu:
+  admin:
+    auth:
+      cookie:
+        secure: ${XINGYU_ADMIN_COOKIE_SECURE:false}
+        same-site: ${XINGYU_ADMIN_COOKIE_SAME_SITE:Lax}
+      session:
+        ttl-minutes: ${XINGYU_ADMIN_SESSION_TTL_MINUTES:1440}
+      test-legacy-token:
+        enabled: false
   openapi:
     auth:
       enabled: ${XINGYU_OPENAPI_AUTH_ENABLED:false}
@@ -91,3 +100,8 @@ xingyu:
   app:
     artwork:
       scan-dir: target/test-music/artworks
+  xingyu:
+    admin:
+      auth:
+        test-legacy-token:
+          enabled: true

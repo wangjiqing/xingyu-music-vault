@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 const http = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '',
   timeout: 30000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -20,13 +21,36 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+let isRedirecting = false
+
 http.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('music_vault_api_token')
-      ElMessage.error('认证失败，请前往系统设置页面配置 API Token')
+    const status = error.response?.status
+    const url: string = error.config?.url || ''
+
+    if (status === 401) {
+      const isAuthEndpoint = url.includes('/api/admin/auth/')
+
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('music_vault_api_token')
+
+        if (!isRedirecting) {
+          isRedirecting = true
+          ElMessage.error('登录已过期，请重新登录')
+          const currentPath = window.location.pathname
+          if (currentPath !== '/login' && currentPath !== '/setup') {
+            window.location.href = '/login'
+          }
+          setTimeout(() => {
+            isRedirecting = false
+          }, 1000)
+        }
+      } else {
+        localStorage.removeItem('music_vault_api_token')
+      }
     }
+
     return Promise.reject(error)
   },
 )

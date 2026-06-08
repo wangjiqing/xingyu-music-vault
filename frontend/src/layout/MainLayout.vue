@@ -12,7 +12,9 @@ import {
   User,
   Collection,
   Connection,
+  ArrowRight,
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { fetchServerInfo } from '../api/openapi'
 import {
   activeThemeId,
@@ -22,9 +24,11 @@ import {
   setCurrentThemeId,
   type CurrentThemeConfig,
 } from '../theme/currentTheme'
+import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
 const route = useRoute()
+const { user, doLogout } = useAuth()
 
 const isCollapsed = ref(false)
 
@@ -104,6 +108,16 @@ function handleThemeChange(themeId: string) {
   loadCurrentTheme()
 }
 
+async function handleLogout() {
+  try {
+    await doLogout()
+    ElMessage.success('已登出')
+  } catch {
+    ElMessage.warning('登出请求失败，但本地状态已清除')
+  }
+  router.push('/login')
+}
+
 onMounted(() => {
   loadServiceVersion()
   loadCurrentTheme()
@@ -113,29 +127,50 @@ onMounted(() => {
 <template>
   <el-container class="main-container" :style="themeStyleVars">
     <el-aside :width="isCollapsed ? '64px' : '220px'" class="main-aside">
-      <div class="logo">
-        <img
-          class="logo-mark"
-          :src="currentThemeAssets.logoMark"
-          alt=""
-          aria-hidden="true"
-        />
-        <span v-if="!isCollapsed" class="logo-text">星语音库</span>
+      <div class="aside-top">
+        <div class="logo">
+          <img
+            class="logo-mark"
+            :src="currentThemeAssets.logoMark"
+            alt=""
+            aria-hidden="true"
+          />
+          <span v-if="!isCollapsed" class="logo-text">星语音库</span>
+        </div>
+        <el-menu
+          :default-active="activeMenu"
+          :collapse="isCollapsed"
+          :collapse-transition="false"
+          background-color="transparent"
+          text-color="#a0a4b8"
+          active-text-color="#409eff"
+          @select="navigate"
+        >
+          <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <template #title>{{ item.title }}</template>
+          </el-menu-item>
+        </el-menu>
       </div>
-      <el-menu
-        :default-active="activeMenu"
-        :collapse="isCollapsed"
-        :collapse-transition="false"
-        background-color="transparent"
-        text-color="#a0a4b8"
-        active-text-color="#409eff"
-        @select="navigate"
-      >
-        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <template #title>{{ item.title }}</template>
-        </el-menu-item>
-      </el-menu>
+      <div v-if="user" class="aside-bottom">
+        <el-dropdown trigger="click" placement="top-start">
+          <div class="aside-user">
+            <el-icon><User /></el-icon>
+            <span v-if="!isCollapsed" class="aside-user-name">{{ user.username }}</span>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>
+                {{ user.username }}
+                <el-tag size="small" style="margin-left: 8px">{{ user.role }}</el-tag>
+              </el-dropdown-item>
+              <el-dropdown-item divided :icon="ArrowRight" @click="handleLogout">
+                登出
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </el-aside>
     <el-container>
       <el-header class="main-header">
@@ -179,6 +214,8 @@ onMounted(() => {
 }
 .main-aside {
   position: relative;
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, rgba(19, 21, 38, 0.78), rgba(19, 21, 38, 0.93)),
     url('/themes/midsummer-starlight/background/background-mobile.webp') center bottom / cover;
@@ -187,6 +224,39 @@ onMounted(() => {
     var(--xy-aside-background-image) center bottom / cover;
   overflow: hidden;
   transition: width 0.2s;
+}
+.aside-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.aside-bottom {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  border-top: 1px solid #2d2e3b;
+  padding: 8px;
+}
+.aside-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #a0a4b8;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+.aside-user:hover {
+  background: rgba(142, 205, 248, 0.12);
+  color: #c0c4d0;
+}
+.aside-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .main-aside::after {
   content: '';

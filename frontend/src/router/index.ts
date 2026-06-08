@@ -1,9 +1,20 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MainLayout from '../layout/MainLayout.vue'
+import { useAuth } from '../composables/useAuth'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
+    {
+      path: '/setup',
+      name: 'Setup',
+      component: () => import('../views/SetupView.vue'),
+    },
+    {
+      path: '/login',
+      name: 'Login',
+      component: () => import('../views/LoginView.vue'),
+    },
     {
       path: '/',
       component: MainLayout,
@@ -96,6 +107,42 @@ const router = createRouter({
       ],
     },
   ],
+})
+
+router.beforeEach(async (to) => {
+  const { initialized, isLoggedIn, init } = useAuth()
+
+  await init()
+
+  if (to.path === '/setup') {
+    if (initialized.value && isLoggedIn.value) {
+      return '/'
+    }
+    if (initialized.value) {
+      return '/login'
+    }
+    return true
+  }
+
+  if (to.path === '/login') {
+    if (isLoggedIn.value) {
+      return '/'
+    }
+    if (initialized.value === false) {
+      return '/setup'
+    }
+    return true
+  }
+
+  if (initialized.value === false) {
+    return '/setup'
+  }
+
+  if (!isLoggedIn.value) {
+    return '/login'
+  }
+
+  return true
 })
 
 export default router

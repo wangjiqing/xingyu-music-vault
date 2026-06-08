@@ -2,6 +2,36 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v1.1.2 — 管理员账号初始化与登录 / 登出后端能力
+
+**发布日期：** 2026.06.08
+
+v1.1.2 实现管理端基础访问控制后端能力：首次启动可初始化单管理员账号，初始化后关闭入口，后续通过 Session + HttpOnly Cookie 登录保持管理端登录态，并支持登出和查询当前用户。本版本不实现 OpenAPI Token，不改变音乐盒 OpenAPI 契约。
+
+### 新增 / 补强
+
+- **新增管理员用户表**：新增 `users` 表，保存单管理员账号、PBKDF2 密码哈希、角色、启用状态和登录时间
+- **新增管理端认证接口**：提供 setup-status、setup、login、logout、me 接口
+- **新增 Session Cookie 登录态**：登录成功后下发 `XINGYU_MUSIC_VAULT_SESSION` HttpOnly Cookie，登出后服务端 Session 失效并清理 Cookie
+- **保护管理端 API**：除健康检查、认证入口、静态资源、OpenAPI 与既有只读封面文件外，管理端 `/api/*` 接口需要登录 Session
+- **补充测试**：覆盖初始化、重复初始化拒绝、密码哈希、登录失败、me、logout、受保护接口、OpenAPI 分离和无注册入口
+- **OpenAPI 服务版本同步**：`/api/open/v1/server/info` 的 `serviceVersion` 更新为 `1.1.2`
+- **更新文档**：README、部署文档、API 文档和 release notes 补充 v1.1.2 说明
+
+### 暂不支持
+
+- 多用户
+- 开放注册
+- 找回密码
+- 邮箱验证
+- OAuth2 / OIDC
+- NAS 第三方登录
+- 细粒度 RBAC
+- OpenAPI Token 新能力
+- JWT localStorage 登录态
+
+---
+
 ## v1.1.1 — 安全边界文档与部署风险提示
 
 **发布日期：** 2026.06.08
