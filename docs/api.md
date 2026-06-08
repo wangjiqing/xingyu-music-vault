@@ -3,11 +3,11 @@
 ## 基础信息
 
 - **前缀**: `/api`
-- **鉴权**: `Authorization: Bearer <token>`
+- **鉴权**: 管理端 Session Cookie；OpenAPI 认证仍按 OpenAPI 独立配置
 - **响应格式**: JSON
 - **错误格式**: `{ "error": "...", "message": "..." }`
 
-`/api/health` 为公开接口。其他已实现的 `/api/*` 接口需要 Bearer Token。
+`/api/health`、管理端认证接口、静态资源与 `/api/open/v1/*` OpenAPI 接口按各自规则开放。其他管理端 `/api/*` 接口需要管理员登录 Session。v1.1.2 不实现 OpenAPI Token 新能力，也不把 OpenAPI 与管理端 Session 混用。
 
 ## 已实现接口
 
@@ -16,6 +16,86 @@
 | Method | Path | 说明 |
 |--------|------|------|
 | GET | `/api/health` | 服务健康状态 |
+
+### 管理端认证（v1.1.2）
+
+当前版本只支持单管理员账号，不支持开放注册、找回密码、OAuth2 / OIDC、NAS 第三方登录或细粒度 RBAC。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/admin/auth/setup-status` | 查询是否已初始化管理员账号 |
+| POST | `/api/admin/auth/setup` | 初始化第一个管理员账号，仅未初始化时可用 |
+| POST | `/api/admin/auth/login` | 管理员登录，成功后下发 HttpOnly Session Cookie |
+| POST | `/api/admin/auth/logout` | 登出并失效当前 Session |
+| GET | `/api/admin/auth/me` | 查询当前登录用户，未登录返回 401 |
+
+#### 查询初始化状态
+
+```http
+GET /api/admin/auth/setup-status
+```
+
+```json
+{
+  "initialized": false
+}
+```
+
+#### 初始化管理员账号
+
+```http
+POST /api/admin/auth/setup
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "admin",
+  "password": "admin-password"
+}
+```
+
+仅当数据库中不存在管理员账号时允许调用。密码至少 8 位，服务端仅保存 PBKDF2 哈希值。创建成功后不会自动登录，前端应跳转登录流程。
+
+#### 登录 / 登出 / 当前用户
+
+```http
+POST /api/admin/auth/login
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "admin",
+  "password": "admin-password"
+}
+```
+
+登录成功返回当前用户基础信息，并通过 `XINGYU_MUSIC_VAULT_SESSION` 下发 HttpOnly Cookie：
+
+```json
+{
+  "id": 1,
+  "username": "admin",
+  "role": "ADMIN"
+}
+```
+
+响应不会包含 `passwordHash`。登录失败返回通用 401，避免泄露账号或密码细节。
+
+```http
+GET /api/admin/auth/me
+POST /api/admin/auth/logout
+```
+
+未登录或 Session 失效时，受保护管理接口返回：
+
+```json
+{
+  "error": "unauthorized",
+  "message": "未登录或登录已过期"
+}
+```
 
 ### 曲目
 

@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(11, first.migrationsExecuted);
+        assertEquals(12, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -57,6 +57,9 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "openapi_library_state", "id", "library_version", "last_changed_at");
             assertColumns(connection, "openapi_sync_change_log",
                     "id", "version", "entity_type", "entity_id", "change_type", "changed_fields_json", "changed_at");
+            assertColumns(connection, "users",
+                    "id", "username", "password_hash", "role", "enabled", "created_at", "updated_at", "last_login_at");
+            assertIndexes(connection, "idx_users_username");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -90,7 +93,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(10, result.migrationsExecuted);
+        assertEquals(11, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -99,6 +102,7 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "music_metadata_sync_audit",
                     "operation_type", "rollback_status", "rollback_of_audit_id");
             assertEquals(1, queryLong(connection, "select library_version from openapi_library_state where id = 1"));
+            assertColumns(connection, "users", "username", "password_hash", "role", "enabled", "last_login_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }

@@ -17,20 +17,39 @@ v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker
 
 当前版本优先面向本机、家庭内网、局域网可信环境部署。Docker Compose 示例中的端口映射适合本地调试、NAS 或同一局域网内的星语音乐盒联调，不建议直接将容器端口映射到公网。
 
-不建议在无 HTTPS、无认证、无反向代理访问控制的情况下开放公网访问。如果确实需要远程访问，请先等待后续 v1.1.x 安全部署能力，或自行配置反向代理、HTTPS 证书、访问控制与网络层限制。
+v1.1.2 已提供管理端单管理员初始化、登录 / 登出与 Session Cookie 保护。仍不建议在无 HTTPS、无反向代理访问控制和网络层限制的情况下开放公网访问。如果确实需要远程访问，请先等待后续 v1.1.x 安全部署能力，或自行配置反向代理、HTTPS 证书、访问控制与网络层限制。
 
-当前文档为安全边界提示，不代表以下能力已经在 v1.1.1 完成：
+当前文档为安全边界提示，不代表以下能力已经在 v1.1.2 完成：
 
-- 管理员账号初始化
-- 登录 / 登出
-- 管理端页面访问控制
-- 后端管理接口登录保护
 - 完整 OpenAPI Token 认证基础
 - 只读 Token 与写操作权限区分
 - 反向代理部署建议
 - Docker Compose 安全部署示例
 
 后续 v1.1.x 将逐步补齐认证与安全部署能力。在这些能力补齐前，不应把星语音库视为已经具备公网安全部署方案。
+
+## 首次管理员初始化
+
+首次启动且数据库中不存在管理员账号时，管理端应先调用初始化状态接口：
+
+```text
+GET /api/admin/auth/setup-status
+```
+
+当返回 `initialized=false` 时，可初始化第一个管理员账号。初始化完成后入口关闭，后续只能登录，不开放注册，也不允许创建第二个管理员。
+
+```text
+POST /api/admin/auth/setup
+POST /api/admin/auth/login
+POST /api/admin/auth/logout
+GET /api/admin/auth/me
+```
+
+管理端登录态使用服务端内存 Session 和 `HttpOnly` Cookie 保存。刷新页面会保持登录态；服务进程重启后内存 Session 会丢失，已登录用户需要重新登录。当前版本只支持单管理员，不支持找回密码、OAuth2 / OIDC、NAS 第三方登录或细粒度权限模型。OpenAPI Token 是后续独立能力，不与管理端 Session 混用。
+
+当前版本尚未实现登录失败次数限制、临时账户锁定或 IP 级登录限流。请继续优先部署在本地 / 局域网可信环境；后续版本可补充失败计数、临时锁定或登录限流。
+
+默认 `SameSite=Lax` 适合管理端 SPA 与服务端同 origin 的本地 / 局域网部署。如果通过反向代理将管理端暴露在不同域名或复杂跨站访问场景下，应重新评估 CSRF 风险，并结合 HTTPS、访问控制和 Cookie 配置一起处理。
 
 ## 后端打包运行
 
@@ -62,7 +81,6 @@ MUSIC_VAULT_DB_PATH=/path/to/data/music-vault.db \
 MUSIC_VAULT_DATA_DIR=/path/to/data \
 MUSIC_VAULT_MUSIC_DIRS=/your/music/path \
 MUSIC_VAULT_LYRIC_DIRS=/your/music/path \
-MUSIC_VAULT_API_TOKEN=change-me \
 java -jar target/quarkus-app/quarkus-run.jar
 ```
 
@@ -235,7 +253,10 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `MUSIC_VAULT_MUSIC_DIRS` | 音乐目录 | `/music` |
 | `MUSIC_VAULT_LYRIC_DIRS` | 歌词目录 | `/lyrics` |
 | `MUSIC_VAULT_DB_PATH` | 数据库路径 | `/app/data/music-vault.db` |
-| `MUSIC_VAULT_API_TOKEN` | API 鉴权 Token | `change-me` |
+| `MUSIC_VAULT_API_TOKEN` | 历史管理 API Token 配置，v1.1.2 管理端登录不再依赖它 | `change-me` |
+| `XINGYU_ADMIN_COOKIE_SECURE` | 管理端 Session Cookie 是否启用 Secure，HTTPS 反向代理后可设为 `true` | `false` |
+| `XINGYU_ADMIN_COOKIE_SAME_SITE` | 管理端 Session Cookie SameSite 策略 | `Lax` |
+| `XINGYU_ADMIN_SESSION_TTL_MINUTES` | 管理端 Session 有效期，单位分钟 | `1440` |
 | `MUSIC_VAULT_FFPROBE_PATH` | ffprobe 路径 | `/usr/bin/ffprobe` |
 | `MUSIC_VAULT_FFMPEG_PATH` | ffmpeg 路径 | `/usr/bin/ffmpeg` |
 | `XINGYU_OPENAPI_AUTH_ENABLED` | 是否启用 OpenAPI 独立 Token 认证 | `false` |
@@ -244,7 +265,7 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` | 每个客户端 IP 每分钟请求数 | `120` |
 | `XINGYU_OPENAPI_ACCESS_LOG_ENABLED` | 是否记录 OpenAPI 访问日志 | `true` |
 
-> 生产环境请务必修改 `MUSIC_VAULT_API_TOKEN` 和 `XINGYU_OPENAPI_AUTH_TOKEN`。
+> 管理端登录密码在首次初始化时设置，不通过 `.env` 配置。若启用 OpenAPI 独立认证，请务必修改 `XINGYU_OPENAPI_AUTH_TOKEN`。
 
 `MUSIC_VAULT_MUSIC_DIRS` 是扫描路径安全校验的允许根目录。扫描任务中的 `musicDirs` 必须位于该配置范围内；Docker Compose 场景通常保持 `/music`，并将宿主机真实音乐目录挂载为 `/music:ro`。
 
