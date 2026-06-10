@@ -11,10 +11,6 @@ const http = axios.create({
 })
 
 http.interceptors.request.use((config) => {
-  const token = localStorage.getItem('music_vault_api_token')
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
-  }
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']
   }
@@ -33,8 +29,6 @@ http.interceptors.response.use(
       const isAuthEndpoint = url.includes('/api/admin/auth/')
 
       if (!isAuthEndpoint) {
-        localStorage.removeItem('music_vault_api_token')
-
         if (!isRedirecting) {
           isRedirecting = true
           ElMessage.error('登录已过期，请重新登录')
@@ -46,8 +40,6 @@ http.interceptors.response.use(
             isRedirecting = false
           }, 1000)
         }
-      } else {
-        localStorage.removeItem('music_vault_api_token')
       }
     }
 

@@ -4,12 +4,12 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 
@@ -19,9 +19,18 @@ class OpenApiRateLimitFilterTest {
     @Inject
     OpenApiRateLimiter rateLimiter;
 
+    @Inject
+    OpenApiCredentialCryptoService cryptoService;
+
+    OpenApiTestClient openApi;
+
     @BeforeEach
+    @Transactional
     void resetLimiter() {
         rateLimiter.reset();
+        OpenApiRequestNonce.deleteAll();
+        OpenApiCredential.deleteAll();
+        openApi = OpenApiTestClient.create(cryptoService, java.util.List.of(OpenApiScope.OPENAPI_READ));
     }
 
     @Test
@@ -29,7 +38,7 @@ class OpenApiRateLimitFilterTest {
         hitFromForwardedFor("10.0.0.1", 200);
         hitFromForwardedFor("10.0.0.1", 200);
 
-        given()
+        openApi.get("/api/open/v1/server/info")
                 .header("X-Forwarded-For", "10.0.0.1")
                 .when()
                 .get("/api/open/v1/server/info")
@@ -58,7 +67,7 @@ class OpenApiRateLimitFilterTest {
     }
 
     private void hitFromForwardedFor(String value, int status) {
-        given()
+        openApi.get("/api/open/v1/server/info")
                 .header("X-Forwarded-For", value)
                 .when()
                 .get("/api/open/v1/server/info")
@@ -67,7 +76,7 @@ class OpenApiRateLimitFilterTest {
     }
 
     private void hitFromRealIp(String value, int status) {
-        given()
+        openApi.get("/api/open/v1/server/info")
                 .header("X-Real-IP", value)
                 .when()
                 .get("/api/open/v1/server/info")
@@ -79,7 +88,6 @@ class OpenApiRateLimitFilterTest {
         @Override
         public Map<String, String> getConfigOverrides() {
             return Map.of(
-                    "xingyu.openapi.auth.enabled", "false",
                     "xingyu.openapi.rate-limit.enabled", "true",
                     "xingyu.openapi.rate-limit.requests-per-minute", "2"
             );

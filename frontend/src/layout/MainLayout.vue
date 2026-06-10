@@ -12,10 +12,11 @@ import {
   User,
   Collection,
   Connection,
+  Key,
   ArrowRight,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { fetchServerInfo } from '../api/openapi'
+import { fetchAdminServerInfo } from '../api/serverInfo'
 import {
   activeThemeId,
   availableThemes,
@@ -75,6 +76,7 @@ const menuItems = [
   { path: '/lyrics', title: '歌词', icon: Mic },
   { path: '/artwork', title: '封面', icon: Picture },
   { path: '/openapi', title: 'OpenAPI', icon: Connection },
+  { path: '/openapi/credentials', title: 'OpenAPI 凭证', icon: Key },
   { path: '/settings', title: '设置', icon: Setting },
 ]
 
@@ -88,7 +90,7 @@ function toggleCollapse() {
 
 async function loadServiceVersion() {
   try {
-    const info = await fetchServerInfo()
+    const info = await fetchAdminServerInfo()
     serviceVersion.value = normalizeText(info.serviceVersion)
   } catch {
     serviceVersion.value = ''

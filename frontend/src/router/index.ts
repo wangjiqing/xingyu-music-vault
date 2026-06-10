@@ -104,6 +104,12 @@ const router = createRouter({
           component: () => import('../views/OpenApiView.vue'),
           meta: { title: 'OpenAPI' },
         },
+        {
+          path: 'openapi/credentials',
+          name: 'OpenApiCredentials',
+          component: () => import('../views/OpenApiCredentialsView.vue'),
+          meta: { title: 'OpenAPI 凭证', hidden: false },
+        },
       ],
     },
   ],

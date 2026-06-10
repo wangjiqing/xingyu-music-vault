@@ -13,6 +13,14 @@ public interface OpenApiSecurityConfig {
 
     AccessLog accessLog();
 
+    Credential credential();
+
+    Hmac hmac();
+
+    /**
+     * @deprecated v1.1.3 起 OpenAPI 不再使用静态 Token，保留该配置仅用于兼容旧部署配置。
+     */
+    @Deprecated(since = "1.1.3", forRemoval = false)
     interface Auth {
         @WithDefault("false")
         boolean enabled();
@@ -31,5 +39,20 @@ public interface OpenApiSecurityConfig {
     interface AccessLog {
         @WithDefault("true")
         boolean enabled();
+    }
+
+    interface Credential {
+        Optional<String> masterKey();
+    }
+
+    interface Hmac {
+        @WithDefault("300")
+        long timestampWindowSeconds();
+
+        @WithDefault("600")
+        long nonceTtlSeconds();
+
+        @WithDefault("1048576")
+        long maxBodyBytes();
     }
 }

@@ -226,6 +226,22 @@ class AdminAuthResourceTest {
                 .then()
                 .statusCode(200)
                 .body("total", notNullValue());
+
+        given()
+                .when()
+                .get("/api/admin/server/info")
+                .then()
+                .statusCode(401)
+                .body("message", equalTo("未登录或登录已过期"));
+
+        given()
+                .cookie(sessionCookie)
+                .when()
+                .get("/api/admin/server/info")
+                .then()
+                .statusCode(200)
+                .body("serviceName", equalTo("xingyu-music-vault"))
+                .body("serviceVersion", equalTo("1.1.3"));
     }
 
     @Test
@@ -236,8 +252,8 @@ class AdminAuthResourceTest {
                 .when()
                 .get("/api/open/v1/server/info")
                 .then()
-                .statusCode(200)
-                .body("apiVersion", equalTo("v1"));
+                .statusCode(401)
+                .body("code", equalTo("OPENAPI_UNAUTHORIZED"));
 
         given()
                 .header("X-Xingyu-Api-Token", "not-admin-session")
