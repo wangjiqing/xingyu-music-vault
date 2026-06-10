@@ -17,16 +17,16 @@ v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker
 
 当前版本优先面向本机、家庭内网、局域网可信环境部署。Docker Compose 示例中的端口映射适合本地调试、NAS 或同一局域网内的星语音乐盒联调，不建议直接将容器端口映射到公网。
 
-v1.1.2 已提供管理端单管理员初始化、登录 / 登出与 Session Cookie 保护。仍不建议在无 HTTPS、无反向代理访问控制和网络层限制的情况下开放公网访问。如果确实需要远程访问，请先等待后续 v1.1.x 安全部署能力，或自行配置反向代理、HTTPS 证书、访问控制与网络层限制。
+v1.1.3 已提供管理端单管理员初始化、登录 / 登出与 Session Cookie 保护，并为 OpenAPI 提供 AK/SK + HMAC-SHA256 签名认证。仍不建议在无 HTTPS、无反向代理访问控制和网络层限制的情况下开放公网访问；HMAC 只用于请求认证与防重放，不能替代传输加密。
 
-当前文档为安全边界提示，不代表以下能力已经在 v1.1.2 完成：
+当前文档为安全边界提示，不代表以下能力已经在 v1.1.3 完成：
 
-- 完整 OpenAPI Token 认证基础
-- 只读 Token 与写操作权限区分
+- OpenAPI Secret Key 轮换 / 重置流程
+- 多用户、细粒度 RBAC 或多租户凭证隔离
 - 反向代理部署建议
 - Docker Compose 安全部署示例
 
-后续 v1.1.x 将逐步补齐认证与安全部署能力。在这些能力补齐前，不应把星语音库视为已经具备公网安全部署方案。
+后续版本将继续补齐安全部署能力。在这些能力补齐前，不应把星语音库视为已经具备公网安全部署方案。
 
 ## 首次管理员初始化
 
@@ -45,7 +45,7 @@ POST /api/admin/auth/logout
 GET /api/admin/auth/me
 ```
 
-管理端登录态使用服务端内存 Session 和 `HttpOnly` Cookie 保存。刷新页面会保持登录态；服务进程重启后内存 Session 会丢失，已登录用户需要重新登录。当前版本只支持单管理员，不支持找回密码、OAuth2 / OIDC、NAS 第三方登录或细粒度权限模型。OpenAPI Token 是后续独立能力，不与管理端 Session 混用。
+管理端登录态使用服务端内存 Session 和 `HttpOnly` Cookie 保存。刷新页面会保持登录态；服务进程重启后内存 Session 会丢失，已登录用户需要重新登录。当前版本只支持单管理员，不支持找回密码、OAuth2 / OIDC、NAS 第三方登录或细粒度权限模型。OpenAPI 使用独立 AK/SK + HMAC-SHA256，不与管理端 Session 混用。
 
 当前版本尚未实现登录失败次数限制、临时账户锁定或 IP 级登录限流。请继续优先部署在本地 / 局域网可信环境；后续版本可补充失败计数、临时锁定或登录限流。
 
@@ -100,16 +100,16 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 | 配置项 | 值 |
 |--------|---|
 | 服务名 | `xingyu-music-vault` |
-| 镜像名 | `xingyu-music-vault:v1.0.0` |
+| 镜像名 | `xingyu-music-vault:${IMAGE_TAG}` |
 | 容器端口 | `8080` |
 | 宿主机端口 | `8080` |
 
 ## Docker 镜像
 
-v1.0.0 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
+根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:v1.0.0 .
+docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.1.3} .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -257,33 +257,40 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `XINGYU_ADMIN_COOKIE_SECURE` | 管理端 Session Cookie 是否启用 Secure，HTTPS 反向代理后可设为 `true` | `false` |
 | `XINGYU_ADMIN_COOKIE_SAME_SITE` | 管理端 Session Cookie SameSite 策略 | `Lax` |
 | `XINGYU_ADMIN_SESSION_TTL_MINUTES` | 管理端 Session 有效期，单位分钟 | `1440` |
+| `XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED` | 测试兼容旧 Bearer Token 分支，生产环境必须保持关闭 | `false` |
 | `MUSIC_VAULT_FFPROBE_PATH` | ffprobe 路径 | `/usr/bin/ffprobe` |
 | `MUSIC_VAULT_FFMPEG_PATH` | ffmpeg 路径 | `/usr/bin/ffmpeg` |
-| `XINGYU_OPENAPI_AUTH_ENABLED` | 是否启用 OpenAPI 独立 Token 认证 | `false` |
-| `XINGYU_OPENAPI_AUTH_TOKEN` | OpenAPI 独立 Token，认证开启时必填 | `change-me-openapi` |
+| `XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY` | OpenAPI Secret Key AES-GCM 加密 master key，生产环境必须改成高强度随机值 | 无 |
+| `XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS` | OpenAPI HMAC timestamp 允许偏差，单位秒 | `300` |
+| `XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS` | OpenAPI nonce 防重放保存时间，单位秒 | `600` |
+| `XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES` | OpenAPI HMAC 签名前最多读取的请求 body 字节数 | `1048576` |
+| `XINGYU_OPENAPI_AUTH_ENABLED` | 旧静态 OpenAPI Token 开关，v1.1.3 起废弃且不再参与认证 | `false` |
+| `XINGYU_OPENAPI_AUTH_TOKEN` | 旧静态 OpenAPI Token，v1.1.3 起废弃 | 空 |
 | `XINGYU_OPENAPI_RATE_LIMIT_ENABLED` | 是否启用 OpenAPI 简单 IP 限流 | `false` |
 | `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` | 每个客户端 IP 每分钟请求数 | `120` |
 | `XINGYU_OPENAPI_ACCESS_LOG_ENABLED` | 是否记录 OpenAPI 访问日志 | `true` |
 
-> 管理端登录密码在首次初始化时设置，不通过 `.env` 配置。若启用 OpenAPI 独立认证，请务必修改 `XINGYU_OPENAPI_AUTH_TOKEN`。
+> 管理端登录密码在首次初始化时设置，不通过 `.env` 配置。生产环境必须保持 `XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED=false`。OpenAPI Secret Key 会加密保存，请务必设置并妥善备份 `XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY`。
 
 `MUSIC_VAULT_MUSIC_DIRS` 是扫描路径安全校验的允许根目录。扫描任务中的 `musicDirs` 必须位于该配置范围内；Docker Compose 场景通常保持 `/music`，并将宿主机真实音乐目录挂载为 `/music:ro`。
 
 Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认为 `/lyrics`（独立挂载于 `/lyrics:ro`）。如果歌词文件存放在音乐目录下，可改为 `/music` 并调整挂载路径。
 
-OpenAPI 认证只作用于 `/api/open/v1/*`。当 `XINGYU_OPENAPI_AUTH_ENABLED=true` 时，请求需携带：
+OpenAPI 认证只作用于 `/api/open/v1/*`。v1.1.3 起必须使用管理后台创建的 AK/SK + HMAC 签名，不再接受 `Authorization: Bearer <legacy-token>` 或 `X-Xingyu-Api-Token`。
+
+> 升级提醒：`XINGYU_OPENAPI_AUTH_ENABLED` 与 `XINGYU_OPENAPI_AUTH_TOKEN` 已废弃且不再参与认证。升级到 v1.1.3 后必须配置 `XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY`，并重新创建客户端 AK/SK；未适配 HMAC 的客户端请继续使用 v1.1.2 联调。
 
 ```http
-Authorization: Bearer <XINGYU_OPENAPI_AUTH_TOKEN>
+X-Xingyu-Access-Key: xmv_ak_xxx
+X-Xingyu-Timestamp: 1717890000000
+X-Xingyu-Nonce: 550e8400-e29b-41d4-a716-446655440000
+X-Xingyu-Signature-Version: v1
+X-Xingyu-Signature: <lowercase-hex-hmac-sha256>
 ```
 
-或：
+签名原文固定为 5 行：`METHOD`、`PATH_WITH_CANONICAL_QUERY`、`SHA256_HEX_BODY`、`TIMESTAMP`、`NONCE`。query 按参数名升序、同名按值升序并统一 URL 编码；无 body 时使用空字符串 SHA-256。timestamp 默认允许 ±5 分钟偏差，nonce 在有效期内同一 Access Key 只能使用一次。
 
-```http
-X-Xingyu-Api-Token: <XINGYU_OPENAPI_AUTH_TOKEN>
-```
-
-限流和访问日志同样只作用于 `/api/open/v1/*`。
+限流和访问日志同样只作用于 `/api/open/v1/*`。HMAC 不能替代 HTTPS，公网部署仍需 HTTPS / 反向代理 / 网络层限制。
 
 ## OpenAPI 访问地址
 
@@ -340,8 +347,10 @@ X-Xingyu-Api-Token: <XINGYU_OPENAPI_AUTH_TOKEN>
 
 ## 部署检查清单
 
-- [ ] 修改 `MUSIC_VAULT_API_TOKEN` 为强密码
-- [ ] 如开启 OpenAPI 认证，设置 `XINGYU_OPENAPI_AUTH_ENABLED=true` 并修改 `XINGYU_OPENAPI_AUTH_TOKEN`
+- [ ] 修改 `MUSIC_VAULT_API_TOKEN` 为强密码（历史兼容配置）
+- [ ] 确认 `XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED=false`
+- [ ] 设置 `XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY` 为高强度随机值并妥善备份
+- [ ] 在管理后台创建 OpenAPI AK/SK 凭证，并按客户端用途配置 scope
 - [ ] 如开启 OpenAPI 限流，确认 `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` 合理
 - [ ] 确认音乐目录路径正确，并以只读方式挂载为 `/music:ro`
 - [ ] 确认 `/app/data` 已持久化，SQLite 文件不会随容器删除而丢失

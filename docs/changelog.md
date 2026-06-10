@@ -2,6 +2,56 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## v1.1.3 — OpenAPI AK/SK 凭证管理与 HMAC 签名认证
+
+**发布日期：** 2026.06.10
+
+v1.1.3 将 OpenAPI 客户端认证从旧静态 Token 重构为 AK/SK + HMAC-SHA256。管理端继续使用账号密码登录 + Session Cookie，OpenAPI 使用独立凭证、timestamp 与 nonce 防重放，并支持 `OPENAPI_READ` / `OPENAPI_WRITE` scope。
+
+### Breaking Change
+
+- **OpenAPI 旧静态 Token 认证已移除**：`xingyu.openapi.auth.enabled` 与 `xingyu.openapi.auth.token` 仅保留为废弃兼容配置，不再参与 `/api/open/v1/**` 认证。无论旧部署中 `auth.enabled` 是 `true` 还是 `false`，升级到 v1.1.3 后都必须配置 `xingyu.openapi.credential.master-key`，并在管理后台创建 AK/SK 凭证；未配置 master key 时 OpenAPI 会返回 `500 OPENAPI_CONFIG_ERROR`。
+- **客户端必须适配 HMAC 签名**：旧 `Authorization: Bearer <token>` 与 `X-Xingyu-Api-Token` 请求头不再可访问 OpenAPI。星语音乐盒或其他客户端适配前，请继续使用 v1.1.2 联调。
+
+### 新增 / 补强
+
+- **新增 OpenAPI 凭证表与 nonce 表**：新增 `openapi_credentials`、`openapi_request_nonces`
+- **新增管理端凭证接口**：支持创建、列表、启用 / 禁用和删除 OpenAPI 凭证；Secret Key 只在创建响应返回一次
+- **Secret 加密存储**：使用 master key + AES-GCM 保存 Secret，列表不返回明文或密文
+- **HMAC Filter**：集中保护 `/api/open/v1/**`，验证 AK、timestamp、nonce、签名版本、签名和 scope
+- **旧静态 Token 废弃**：不再接受 `Authorization: Bearer <legacy-token>` 或 `X-Xingyu-Api-Token`
+- **文档与配置更新**：补充 master key、签名规范、body hash、query canonicalization、scope 和 HTTPS 提醒
+
+### Review 结论（2026.06.10）
+
+**结果：通过。**
+
+v1.1.3 完整 review 覆盖以下维度，均符合预期：
+
+- **数据库**：`openapi_credentials` 与 `openapi_request_nonces` 表结构合理；`access_key` 唯一；`secret_encrypted` + `secret_fingerprint` 设计正确；nonce 表含唯一约束与过期时间索引。
+- **Secret 存储**：使用 master key + AES-GCM（随机 IV、GCM tag 128 bits）加密；Secret 只在创建响应返回一次；列表与详情不返回 `secretKey` 或 `secretEncrypted`；master key 来自配置、不在日志输出。
+- **凭证管理接口**：需要管理端 Session 登录才能访问；name / scopes 校验完整，非法 scope 返回 400；禁用/删除后 OpenAPI 访问均返回 401。
+- **HMAC 签名校验**：集中式 Filter 作用于 `/api/open/v1/**`；不影响管理端、静态资源与健康检查；要求完整 5 个头（`X-Xingyu-Access-Key`、`X-Xingyu-Timestamp`、`X-Xingyu-Nonce`、`X-Xingyu-Signature-Version: v1`、`X-Xingyu-Signature`）；使用 HMAC-SHA256 + `MessageDigest.isEqual` 常量时间比较；canonical string 为固定 5 行（METHOD / PATH_WITH_CANONICAL_QUERY / SHA256_HEX_BODY / TIMESTAMP / NONCE）；query 按参数名+值升序 + 统一 URL 编码；timestamp 默认 ±5 分钟窗口；nonce 防重放含双重防护（count 检查 + DB 唯一约束 + `PersistenceException` 兜底）；签名失败 401、scope 不足 403；错误码区分 `OPENAPI_UNAUTHORIZED` / `OPENAPI_CREDENTIAL_DISABLED` / `OPENAPI_CREDENTIAL_EXPIRED` / `OPENAPI_FORBIDDEN`。
+- **旧静态 Token 移除**：`Authorization: Bearer <legacy-token>` 与 `X-Xingyu-Api-Token` 不再可访问 OpenAPI；配置标记 `@Deprecated`；旧测试已替换为 HMAC 测试。
+- **last used**：成功请求更新 `lastUsedAt` / `lastUsedIp` / `lastUsedUserAgent`；更新失败不泄露 Secret。
+- **测试覆盖**：无签名 401、旧 Token 401、错误签名/版本/AK/timestamp 401、重复 nonce 401、正确签名 200、scope 不足 403、POST body hash 签名、创建凭证/列表不含 Secret/禁用后不可用/删除后不可用、管理端接口需 Session、OpenAPI 不依赖 Cookie、非法 scope 被拒绝。
+- **前端**：新增凭证管理页面需要管理端登录；创建成功展示 AK/SK 并明确提示"只显示一次"；关闭弹窗后需勾选确认，无法再次查看 Secret；列表不显示 Secret；支持启用/禁用/删除并各有二次确认；未将 AK/SK 存入 localStorage。
+- **文档**：各文档统一更新为 v1.1.3 HMAC 签名规范；curl 示例改为 `openapi_get` bash 函数含完整签名计算；补充 query 规范化、body hash、timestamp/nonce 防重放、scope、HTTPS 提醒与星语音乐盒适配提醒。
+- **部署安全**：`.env.example` / Compose 示例新增 `XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY`、HMAC 配置项，且显式关闭 `XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED=false`；旧静态 Token 配置废弃。
+
+### 音乐盒适配提醒
+
+星语音乐盒当前客户端需要后续版本适配 AK/SK + HMAC 签名认证。适配前不应直接升级生产联调用音库到 v1.1.3，或可继续使用 v1.1.2（旧静态 Token）联调。
+
+### 暂不支持
+
+- OAuth2 / OIDC
+- Token 自动轮换
+- Secret 重置流程
+- 星语音乐盒客户端适配
+
+---
+
 ## v1.1.2 — 管理员账号初始化与登录 / 登出后端能力
 
 **发布日期：** 2026.06.08

@@ -4,7 +4,7 @@
 
 ## 概述
 
-星语音库 OpenAPI v0.9.5 提供面向播放器客户端的只读音乐库查询接口，
+星语音库 OpenAPI v1.1.3 提供面向播放器客户端的只读音乐库查询接口，
 在 v0.9.0 / v0.9.1 基础上补强缓存、增量同步、安全与访问控制能力。
 客户端可通过本 API 查询曲目、歌词、封面、歌手、专辑等元数据，
 并建立本地音乐与服务端元数据的关联。
@@ -13,16 +13,13 @@
 
 **当前版本为只读增强版本，不支持音频流、不支持客户端修改元数据、不支持上传音乐。**
 
-**认证方式：** OpenAPI `/api/open/v1/*` 默认不要求独立 token。
-部署方开启 `xingyu.openapi.auth.enabled=true` 后，
-请求需携带 `Authorization: Bearer <token>` 或 `X-Xingyu-Api-Token: <token>`。
-后台管理 API 仍使用原有全局 Bearer Token。
+**认证方式：** OpenAPI `/api/open/v1/*` 必须使用 AK/SK + HMAC-SHA256。部署方在管理后台创建 OpenAPI 凭证，创建响应中的 Secret Key 只显示一次。后台管理 API 仍使用账号密码登录 + Session Cookie，两者不混用。
 
 ## 访问风险提示
 
 当前 OpenAPI 主要服务于本地 / 局域网内的星语音乐盒联调和访问，不建议将 `/api/open/v1/*` 裸露到公网。
 
-当前版本的 OpenAPI 仍以只读访问为主；已有认证配置不等同于完整公网安全部署能力，也不提供只读 Token 与写操作权限区分。后续 v1.1.x 将继续补齐 OpenAPI Token 认证基础，并预留只读访问与写操作权限区分。
+当前版本的 OpenAPI 仍以只读访问为主；HMAC 不能替代 HTTPS，不建议将 `/api/open/v1/*` 裸露到公网。星语音乐盒需要后续版本适配新认证方式；适配前可继续使用上一版本星语音库进行联调。
 
 在未来加入候选确认、移动端确认、AI 辅助整理等写操作前，必须先建立清晰的安全边界。当前说明为风险提示，不代表登录、公网 HTTPS、反向代理模板或完整权限模型已经实现。
 
@@ -30,13 +27,40 @@
 
 | 配置 | 默认值 | 说明 |
 |------|--------|------|
-| `xingyu.openapi.auth.enabled` | `false` | 是否启用 OpenAPI API Token 认证 |
-| `xingyu.openapi.auth.token` | 未配置 | OpenAPI API Token；认证开启时必须配置 |
+| `xingyu.openapi.credential.master-key` | 未配置 | Secret Key AES-GCM 加密 master key，生产环境必须配置 |
+| `xingyu.openapi.hmac.timestamp-window-seconds` | `300` | timestamp 允许偏差窗口 |
+| `xingyu.openapi.hmac.nonce-ttl-seconds` | `600` | nonce 防重放记录有效期 |
+| `xingyu.openapi.auth.enabled` | `false` | 旧静态 Token 开关，v1.1.3 起废弃 |
+| `xingyu.openapi.auth.token` | 未配置 | 旧静态 Token，v1.1.3 起废弃 |
 | `xingyu.openapi.rate-limit.enabled` | `false` | 是否启用 OpenAPI 简单 IP 限流 |
 | `xingyu.openapi.rate-limit.requests-per-minute` | `120` | 每个客户端 IP 每分钟请求数 |
 | `xingyu.openapi.access-log.enabled` | `true` | 是否记录 OpenAPI 访问日志 |
 
-认证失败返回 `401 OPENAPI_UNAUTHORIZED`。开启认证但未配置 token 时返回 `500 OPENAPI_CONFIG_ERROR`。限流超过阈值时返回 `429 OPENAPI_RATE_LIMITED`。
+认证失败返回 `401 OPENAPI_UNAUTHORIZED`。scope 不足返回 `403 OPENAPI_FORBIDDEN`。限流超过阈值时返回 `429 OPENAPI_RATE_LIMITED`。
+
+## HMAC 签名
+
+请求头：
+
+```http
+X-Xingyu-Access-Key: xmv_ak_xxx
+X-Xingyu-Timestamp: 1717890000000
+X-Xingyu-Nonce: 550e8400-e29b-41d4-a716-446655440000
+X-Xingyu-Signature-Version: v1
+X-Xingyu-Signature: <lowercase-hex-hmac-sha256>
+```
+
+签名原文固定 5 行：
+
+```text
+METHOD
+PATH_WITH_CANONICAL_QUERY
+SHA256_HEX_BODY
+TIMESTAMP
+NONCE
+```
+
+query 按参数名升序、同名参数按值升序，key/value 使用统一 URL 编码；无 query 时只使用 path。GET / DELETE 无 body 时使用空字符串的 SHA-256，POST / PUT / PATCH 使用原始 body 字节。当前读接口要求 `OPENAPI_READ`，未来写接口预留 `OPENAPI_WRITE`。
 
 ## 路径前缀
 
@@ -379,30 +403,44 @@ GET /api/open/v1/albums/tracks?album=叶惠美&artist=周杰伦&page=0&pageSize=
 ## 完整请求示例
 
 ```bash
+BASE_URL="http://localhost:8080"
+ACCESS_KEY="xmv_ak_xxx"
+SECRET_KEY="xmv_sk_xxx"
+
+openapi_get() {
+  local path_with_query="$1"
+  local output="${2:-}"
+  local timestamp nonce body_hash canonical signature
+  timestamp="$(date +%s000)"
+  nonce="$(uuidgen)"
+  body_hash="$(printf '' | shasum -a 256 | awk '{print $1}')"
+  canonical="$(printf 'GET\n%s\n%s\n%s\n%s' "$path_with_query" "$body_hash" "$timestamp" "$nonce")"
+  signature="$(printf '%s' "$canonical" | openssl dgst -sha256 -hmac "$SECRET_KEY" -binary | xxd -p -c 256)"
+  headers=(-H "X-Xingyu-Access-Key: $ACCESS_KEY" -H "X-Xingyu-Timestamp: $timestamp" -H "X-Xingyu-Nonce: $nonce" -H "X-Xingyu-Signature-Version: v1" -H "X-Xingyu-Signature: $signature")
+  if [ -n "$output" ]; then
+    curl "$BASE_URL$path_with_query" "${headers[@]}" -o "$output"
+  else
+    curl "$BASE_URL$path_with_query" "${headers[@]}"
+  fi
+}
+
 # 1. 验证服务可用性
-curl http://localhost:8080/api/open/v1/server/info \
-  -H "Authorization: Bearer <token>"
+openapi_get "/api/open/v1/server/info"
 
 # 2. 检查音乐库版本
-curl http://localhost:8080/api/open/v1/sync/state \
-  -H "Authorization: Bearer <token>"
+openapi_get "/api/open/v1/sync/state"
 
 # 3. 拉取曲目列表（第 1 页，每页 50 条）
-curl "http://localhost:8080/api/open/v1/tracks?page=0&pageSize=50" \
-  -H "Authorization: Bearer <token>"
+openapi_get "/api/open/v1/tracks?page=0&pageSize=50"
 
 # 4. 按需拉取歌词（曲目 id=1）
-curl http://localhost:8080/api/open/v1/tracks/1/lyrics \
-  -H "Authorization: Bearer <token>"
+openapi_get "/api/open/v1/tracks/1/lyrics"
 
 # 5. 按需拉取封面（曲目 id=1）
-curl http://localhost:8080/api/open/v1/tracks/1/artwork \
-  -H "Authorization: Bearer <token>" \
-  -o artwork.jpg
+openapi_get "/api/open/v1/tracks/1/artwork" "artwork.jpg"
 
 # 6. 本地音乐匹配
-curl "http://localhost:8080/api/open/v1/match/track?title=晴天&artist=周杰伦" \
-  -H "Authorization: Bearer <token>"
+openapi_get "/api/open/v1/match/track?artist=%E5%91%A8%E6%9D%B0%E4%BC%A6&title=%E6%99%B4%E5%A4%A9"
 ```
 
 ## 客户端不应尝试的功能
@@ -437,7 +475,7 @@ GET /api/open/v1/tracks/{id}/artwork
 
 星语音库控制面修改元数据、歌词或封面后，音乐盒刷新即可通过 OpenAPI 获取最新元数据 / 歌词 / 封面。
 
-**注意：** 只有在 `xingyu.openapi.auth.enabled=true` 时，OpenAPI 请求才必须携带 OpenAPI API Token。
+**注意：** v1.1.3 起 OpenAPI 请求必须携带 AK/SK + HMAC 签名；旧 `Authorization: Bearer <token>` 与 `X-Xingyu-Api-Token` 不再可用。
 
 ## 接口清单
 
@@ -477,7 +515,7 @@ GET /api/open/v1/tracks/{id}/artwork
 |--------|------|
 | 200 | 成功 |
 | 400 | 请求参数错误（如分页参数超范围） |
-| 401 | 未提供或无效的 OpenAPI Token |
+| 401 | 未提供或无效的 AK/SK + HMAC 签名，或凭证被禁用 / 过期 |
 | 404 | 资源不存在（如曲目无歌词/封面） |
 | 429 | 请求超出限流阈值 |
 | 500 | 服务器内部错误 |

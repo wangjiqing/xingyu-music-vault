@@ -54,10 +54,17 @@ xingyu:
       session:
         ttl-minutes: ${XINGYU_ADMIN_SESSION_TTL_MINUTES:1440}
       test-legacy-token:
-        enabled: false
+        enabled: ${XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED:false}
   openapi:
     auth:
       enabled: ${XINGYU_OPENAPI_AUTH_ENABLED:false}
+      token: ${XINGYU_OPENAPI_AUTH_TOKEN:}
+    credential:
+      master-key: ${XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY:}
+    hmac:
+      timestamp-window-seconds: ${XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS:300}
+      nonce-ttl-seconds: ${XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS:600}
+      max-body-bytes: ${XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES:1048576}
     rate-limit:
       enabled: ${XINGYU_OPENAPI_RATE_LIMIT_ENABLED:false}
       requests-per-minute: ${XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE:120}
@@ -76,12 +83,19 @@ xingyu:
   music-vault:
     data-dir: data
     config-dir: config
-    music-dirs: music
-    lyric-dirs: lyrics
+    music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:music}
+    lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:lyrics}
     db-path: data/music-vault.db
+  music:
+    scan:
+      default-path: ${MUSIC_SCAN_DEFAULT_PATH:music}
   app:
     artwork:
-      scan-dir: artwork
+      scan-dir: ${APP_ARTWORK_SCAN_DIR:artwork}
+  xingyu:
+    openapi:
+      credential:
+        master-key: local-openapi-credential-master-key
 
 "%test":
   quarkus:
@@ -105,3 +119,6 @@ xingyu:
       auth:
         test-legacy-token:
           enabled: true
+    openapi:
+      credential:
+        master-key: test-openapi-credential-master-key

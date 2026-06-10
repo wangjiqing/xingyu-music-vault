@@ -1,4 +1,13 @@
-import http from './http'
+import axios from 'axios'
+
+const openApiHttp = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  timeout: 30000,
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
 
 export interface ServerInfo {
   serviceName: string
@@ -18,11 +27,11 @@ export interface SyncState {
 }
 
 export async function fetchServerInfo(): Promise<ServerInfo> {
-  const { data } = await http.get('/api/open/v1/server/info')
+  const { data } = await openApiHttp.get('/api/open/v1/server/info')
   return data
 }
 
 export async function fetchSyncState(): Promise<SyncState> {
-  const { data } = await http.get('/api/open/v1/sync/state')
+  const { data } = await openApiHttp.get('/api/open/v1/sync/state')
   return data
 }

@@ -15,14 +15,14 @@ import static org.hamcrest.Matchers.notNullValue;
 @TestProfile(OpenApiAuthConfigErrorTest.AuthMissingTokenProfile.class)
 class OpenApiAuthConfigErrorTest {
     @Test
-    void authEnabledWithoutConfiguredTokenReturnsConfigError() {
+    void missingMasterKeyReturnsConfigError() {
         given()
                 .when()
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(500)
                 .body("code", equalTo("OPENAPI_CONFIG_ERROR"))
-                .body("message", equalTo("OpenAPI token is not configured"))
+                .body("message", equalTo("OpenAPI credential master key is not configured"))
                 .body("traceId", notNullValue())
                 .body("details", notNullValue());
     }
@@ -32,6 +32,7 @@ class OpenApiAuthConfigErrorTest {
         public Map<String, String> getConfigOverrides() {
             return Map.of(
                     "xingyu.openapi.auth.enabled", "true",
+                    "xingyu.openapi.credential.master-key", "",
                     "xingyu.openapi.rate-limit.enabled", "false"
             );
         }

@@ -27,10 +27,14 @@ services:
       - APP_ARTWORK_SCAN_DIR=/path/to/local/artworks
       - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
       - MUSIC_VAULT_API_TOKEN=<api-token-placeholder>
+      - XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED=false
       - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
       - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
+      - XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY=<openapi-master-key-placeholder>
+      - XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS=300
+      - XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS=600
       - XINGYU_OPENAPI_AUTH_ENABLED=false
-      - XINGYU_OPENAPI_AUTH_TOKEN=<openapi-token-placeholder>
+      - XINGYU_OPENAPI_AUTH_TOKEN=
       - XINGYU_OPENAPI_RATE_LIMIT_ENABLED=false
       - XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE=120
       - XINGYU_OPENAPI_ACCESS_LOG_ENABLED=true
