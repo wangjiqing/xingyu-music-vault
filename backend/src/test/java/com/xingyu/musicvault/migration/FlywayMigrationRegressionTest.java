@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(12, first.migrationsExecuted);
+        assertEquals(13, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -60,6 +60,13 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "users",
                     "id", "username", "password_hash", "role", "enabled", "created_at", "updated_at", "last_login_at");
             assertIndexes(connection, "idx_users_username");
+            assertColumns(connection, "openapi_credentials",
+                    "id", "name", "access_key", "secret_encrypted", "secret_fingerprint", "scopes_json",
+                    "enabled", "description", "expires_at", "created_at", "updated_at",
+                    "last_used_at", "last_used_ip", "last_used_user_agent");
+            assertColumns(connection, "openapi_request_nonces",
+                    "id", "access_key", "nonce", "request_timestamp", "created_at", "expires_at");
+            assertIndexes(connection, "idx_openapi_request_nonces_expires_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -93,7 +100,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(11, result.migrationsExecuted);
+        assertEquals(12, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -103,6 +110,8 @@ class FlywayMigrationRegressionTest {
                     "operation_type", "rollback_status", "rollback_of_audit_id");
             assertEquals(1, queryLong(connection, "select library_version from openapi_library_state where id = 1"));
             assertColumns(connection, "users", "username", "password_hash", "role", "enabled", "last_login_at");
+            assertColumns(connection, "openapi_credentials", "access_key", "secret_encrypted", "scopes_json", "enabled");
+            assertColumns(connection, "openapi_request_nonces", "access_key", "nonce", "expires_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }

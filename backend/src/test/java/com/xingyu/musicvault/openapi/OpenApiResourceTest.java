@@ -35,19 +35,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class OpenApiResourceTest {
-    private static final String AUTHORIZATION = "Bearer change-me";
+    private static final String ADMIN_AUTHORIZATION = "Bearer change-me";
     private static final Path ROOT = Path.of("target/test-music/open-api");
 
     Path workDir;
+    OpenApiTestClient openApi;
 
     @Inject
     OpenApiChangeLogService changeLogService;
+
+    @Inject
+    OpenApiCredentialCryptoService cryptoService;
 
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
         Files.createDirectories(ROOT);
         workDir = Files.createTempDirectory(ROOT, "case-");
+        OpenApiRequestNonce.deleteAll();
+        OpenApiCredential.deleteAll();
         OpenApiSyncChangeLog.deleteAll();
         OpenApiLibraryState state = OpenApiLibraryState.findById(1);
         if (state != null) {
@@ -60,6 +66,7 @@ class OpenApiResourceTest {
         Lyric.deleteAll();
         TrackFile.deleteAll();
         Track.deleteAll();
+        openApi = OpenApiTestClient.create(cryptoService, List.of(OpenApiScope.OPENAPI_READ));
     }
 
     @Test
@@ -68,27 +75,18 @@ class OpenApiResourceTest {
         createTrack("七里香.flac", "七里香", "周杰伦", "七里香", 2004, "Pop", 280_000L);
         changeLogService.recordTrackChange(trackId, "updated", List.of("metadata"));
 
-        given()
+        openApi.get("/api/open/v1/server/info")
                 .when()
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.1.2"));
-
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .when()
-                .get("/api/open/v1/server/info")
-                .then()
-                .statusCode(200)
-                .body("serviceVersion", equalTo("1.1.2"))
+                .body("serviceVersion", equalTo("1.1.3"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
                 .body("features.scanTrigger", equalTo(false));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/sync/state")
                 .when()
                 .get("/api/open/v1/sync/state")
                 .then()
@@ -104,7 +102,7 @@ class OpenApiResourceTest {
     @Test
     void rateLimitDisabledDoesNotLimitOpenApiRequests() {
         for (int i = 0; i < 5; i++) {
-            given()
+            openApi.get("/api/open/v1/server/info")
                     .when()
                     .get("/api/open/v1/server/info")
                     .then()
@@ -122,8 +120,7 @@ class OpenApiResourceTest {
         bindArtwork(deletedTrackId, "deleted.png");
         markTrackDeleted(deletedTrackId);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/sync/state")
                 .when()
                 .get("/api/open/v1/sync/state")
                 .then()
@@ -140,8 +137,7 @@ class OpenApiResourceTest {
         bindLyric(trackId, "Orphan Lyric", "星语", "Contract", "LRC", "[00:01.00]orphan");
         deleteLyricByTitle("Orphan Lyric");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/sync/state")
                 .when()
                 .get("/api/open/v1/sync/state")
                 .then()
@@ -149,9 +145,7 @@ class OpenApiResourceTest {
                 .body("trackCount", equalTo(1))
                 .body("lyricsCount", equalTo(0));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "Orphan Lyric")
+        openApi.get("/api/open/v1/tracks", "keyword", "Orphan Lyric")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -160,8 +154,7 @@ class OpenApiResourceTest {
                 .body("items[0].lyricsStatus", equalTo("NO_LYRIC"))
                 .body("items[0].lyricId", nullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
                 .then()
@@ -176,8 +169,7 @@ class OpenApiResourceTest {
         createTrack("孙燕姿 - 遇见.flac", "遇见", "孙燕姿", "The Moment", 2003, "Mandopop", 210_000L);
         createTrack("周杰伦 - 七里香.flac", "七里香", "周杰伦", "七里香", 2004, "Pop", 280_000L);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks?page=0&pageSize=2")
                 .when()
                 .get("/api/open/v1/tracks?page=0&pageSize=2")
                 .then()
@@ -187,9 +179,7 @@ class OpenApiResourceTest {
                 .body("pageSize", equalTo(2))
                 .body("total", equalTo(3));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "晴")
+        openApi.get("/api/open/v1/tracks", "keyword", "晴")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -197,12 +187,11 @@ class OpenApiResourceTest {
                 .body("total", equalTo(1))
                 .body("items[0].title", equalTo("晴天"));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("artist", "周杰伦")
-                .queryParam("album", "叶惠美")
-                .queryParam("year", 2003)
-                .queryParam("genre", "Pop")
+        openApi.get("/api/open/v1/tracks",
+                        "artist", "周杰伦",
+                        "album", "叶惠美",
+                        "year", 2003,
+                        "genre", "Pop")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -210,8 +199,7 @@ class OpenApiResourceTest {
                 .body("total", equalTo(1))
                 .body("items[0].id", equalTo(firstId.intValue()));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks?pageSize=101")
                 .when()
                 .get("/api/open/v1/tracks?pageSize=101")
                 .then()
@@ -220,7 +208,7 @@ class OpenApiResourceTest {
                 .body("traceId", notNullValue())
                 .body("details", notNullValue());
 
-        given()
+        openApi.get("/api/open/v1/tracks?sort=sideways")
                 .when()
                 .get("/api/open/v1/tracks?sort=sideways")
                 .then()
@@ -228,8 +216,7 @@ class OpenApiResourceTest {
                 .body("code", equalTo("OPENAPI_UNSUPPORTED_SORT"))
                 .body("traceId", notNullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + firstId)
                 .when()
                 .get("/api/open/v1/tracks/{id}", firstId)
                 .then()
@@ -247,8 +234,7 @@ class OpenApiResourceTest {
         bindLyric(qingtianId, "晴天", "周杰伦", "叶惠美", "LRC", "[ti:晴天]\n[00:01.00]故事的小黄花\n");
         bindArtwork(qingtianId, "qingtian.png");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + qingtianId + "/lyrics")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics", qingtianId)
                 .then()
@@ -257,8 +243,7 @@ class OpenApiResourceTest {
                 .body("format", equalTo("LRC"))
                 .body("content", equalTo("[ti:晴天]\n[00:01.00]故事的小黄花\n"));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + qingtianId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", qingtianId)
                 .then()
@@ -268,8 +253,7 @@ class OpenApiResourceTest {
                 .body("etag", startsWith("\"lyrics-" + qingtianId + "-"))
                 .body("updatedAt", notNullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + qingtianId + "/artwork")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork", qingtianId)
                 .then()
@@ -278,8 +262,7 @@ class OpenApiResourceTest {
                 .header("Cache-Control", notNullValue())
                 .header("ETag", notNullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + qingtianId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", qingtianId)
                 .then()
@@ -291,8 +274,7 @@ class OpenApiResourceTest {
                 .body("width", equalTo(3))
                 .body("height", equalTo(2));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/artists")
                 .when()
                 .get("/api/open/v1/artists")
                 .then()
@@ -300,16 +282,14 @@ class OpenApiResourceTest {
                 .body("[0].artistName", equalTo("周杰伦"))
                 .body("[0].trackCount", equalTo(2));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/artists/周杰伦/tracks")
                 .when()
                 .get("/api/open/v1/artists/{artistName}/tracks", "周杰伦")
                 .then()
                 .statusCode(200)
                 .body("total", equalTo(2));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/albums")
                 .when()
                 .get("/api/open/v1/albums")
                 .then()
@@ -317,9 +297,7 @@ class OpenApiResourceTest {
                 .body("album", hasItem("叶惠美"))
                 .body("album", hasItem("七里香"));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("album", "七里香")
+        openApi.get("/api/open/v1/albums/tracks", "album", "七里香")
                 .when()
                 .get("/api/open/v1/albums/tracks")
                 .then()
@@ -327,12 +305,11 @@ class OpenApiResourceTest {
                 .body("total", equalTo(1))
                 .body("items[0].id", equalTo(qlxId.intValue()));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("title", "晴天")
-                .queryParam("artist", "周杰伦")
-                .queryParam("album", "叶惠美")
-                .queryParam("durationMs", 244_000)
+        openApi.get("/api/open/v1/match/track",
+                        "title", "晴天",
+                        "artist", "周杰伦",
+                        "album", "叶惠美",
+                        "durationMs", 244_000)
                 .when()
                 .get("/api/open/v1/match/track")
                 .then()
@@ -341,9 +318,7 @@ class OpenApiResourceTest {
                 .body("score", equalTo(100))
                 .body("track.id", equalTo(qingtianId.intValue()));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("title", "不存在的歌")
+        openApi.get("/api/open/v1/match/track", "title", "不存在的歌")
                 .when()
                 .get("/api/open/v1/match/track")
                 .then()
@@ -359,9 +334,7 @@ class OpenApiResourceTest {
         bindLyric(readyId, "Ready", "星语", "Contract", "LRC", "[00:01.00]ready");
         bindArtwork(readyId, "ready.png");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "Ready")
+        openApi.get("/api/open/v1/tracks", "keyword", "Ready")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -374,25 +347,21 @@ class OpenApiResourceTest {
                 .body("items[0].artworkId", notNullValue())
                 .body("items[0].artworkUrl", equalTo("/api/open/v1/tracks/" + readyId + "/artwork"));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + readyId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", readyId)
                 .then()
                 .statusCode(200)
                 .body("available", equalTo(true));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + readyId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", readyId)
                 .then()
                 .statusCode(200)
                 .body("available", equalTo(true));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "Empty")
+        openApi.get("/api/open/v1/tracks", "keyword", "Empty")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -406,8 +375,7 @@ class OpenApiResourceTest {
                 .body("items[0].artworkId", nullValue())
                 .body("items[0].artworkUrl", nullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + emptyId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", emptyId)
                 .then()
@@ -416,8 +384,7 @@ class OpenApiResourceTest {
                 .body("lyricId", nullValue())
                 .body("hash", nullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + emptyId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", emptyId)
                 .then()
@@ -433,9 +400,7 @@ class OpenApiResourceTest {
         Path imagePath = bindArtwork(trackId, "missing-cover.png");
         Files.delete(imagePath);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "Missing Cover")
+        openApi.get("/api/open/v1/tracks", "keyword", "Missing Cover")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -446,8 +411,7 @@ class OpenApiResourceTest {
                 .body("items[0].artworkId", nullValue())
                 .body("items[0].artworkUrl", nullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
                 .then()
@@ -456,8 +420,7 @@ class OpenApiResourceTest {
                 .body("artworkId", nullValue())
                 .body("etag", nullValue());
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/artwork")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork", trackId)
                 .then()
@@ -470,8 +433,7 @@ class OpenApiResourceTest {
         Long trackId = createTrack("metadata.flac", "Before", "Old Artist", "Old Album", 2025, "Pop", 180_000L);
         updateTrackMetadata(trackId, "After", "New Artist", "New Album", 2026, "Folk");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId)
                 .when()
                 .get("/api/open/v1/tracks/{id}", trackId)
                 .then()
@@ -482,9 +444,7 @@ class OpenApiResourceTest {
                 .body("year", equalTo(2026))
                 .body("genre", equalTo("Folk"));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("keyword", "After")
+        openApi.get("/api/open/v1/tracks", "keyword", "After")
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -507,10 +467,9 @@ class OpenApiResourceTest {
         assertTrue(v2 < v3);
         assertTrue(v3 < v4);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("sinceVersion", 0)
-                .queryParam("limit", 2)
+        openApi.get("/api/open/v1/sync/changes",
+                        "sinceVersion", 0,
+                        "limit", 2)
                 .when()
                 .get("/api/open/v1/sync/changes")
                 .then()
@@ -522,9 +481,7 @@ class OpenApiResourceTest {
                 .body("items[0].version", equalTo((int) v2))
                 .body("items[1].version", equalTo((int) v3));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("sinceVersion", v2)
+        openApi.get("/api/open/v1/sync/changes", "sinceVersion", v2)
                 .when()
                 .get("/api/open/v1/sync/changes")
                 .then()
@@ -539,8 +496,7 @@ class OpenApiResourceTest {
     @Test
     void tracksUpdatedAfterUsesStrictGreaterThanSemantics() {
         Long trackId = createTrack("strict.flac", "Strict", "星语", "Demo", 2026, "Pop", 180_000L);
-        String updatedAt = given()
-                .header("Authorization", AUTHORIZATION)
+        String updatedAt = openApi.get("/api/open/v1/tracks/" + trackId)
                 .when()
                 .get("/api/open/v1/tracks/{id}", trackId)
                 .then()
@@ -548,9 +504,7 @@ class OpenApiResourceTest {
                 .extract()
                 .path("updatedAt");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
-                .queryParam("updatedAfter", updatedAt)
+        openApi.get("/api/open/v1/tracks", "updatedAfter", updatedAt)
                 .when()
                 .get("/api/open/v1/tracks")
                 .then()
@@ -563,8 +517,7 @@ class OpenApiResourceTest {
         Long trackId = createTrack("歌词.flac", "歌词", "星语", "Demo", 2026, "Pop", 180_000L);
         bindLyric(trackId, "歌词", "星语", "Demo", "LRC", "[ti:歌词]\n[00:01.00]first\n");
 
-        String hash = given()
-                .header("Authorization", AUTHORIZATION)
+        String hash = openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
                 .then()
@@ -573,8 +526,7 @@ class OpenApiResourceTest {
                 .body("etag", startsWith("\"lyrics-" + trackId + "-"))
                 .extract()
                 .path("hash");
-        String etag = given()
-                .header("Authorization", AUTHORIZATION)
+        String etag = openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
                 .then()
@@ -582,8 +534,7 @@ class OpenApiResourceTest {
                 .extract()
                 .path("etag");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics")
                 .header("If-None-Match", etag)
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics", trackId)
@@ -591,8 +542,7 @@ class OpenApiResourceTest {
                 .statusCode(304)
                 .header("ETag", equalTo(etag));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics")
                 .header("If-None-Match", "\"lyrics-stale\"")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics", trackId)
@@ -602,8 +552,7 @@ class OpenApiResourceTest {
                 .body("hash", equalTo(hash));
 
         updateLyricContent("歌词", "[ti:歌词]\n[00:01.00]second\n");
-        String changedHash = given()
-                .header("Authorization", AUTHORIZATION)
+        String changedHash = openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
                 .then()
@@ -618,8 +567,7 @@ class OpenApiResourceTest {
         Long trackId = createTrack("封面.flac", "封面", "星语", "Demo", 2026, "Pop", 180_000L);
         Path imagePath = bindArtwork(trackId, "cover.png");
 
-        String hash = given()
-                .header("Authorization", AUTHORIZATION)
+        String hash = openApi.get("/api/open/v1/tracks/" + trackId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
                 .then()
@@ -628,8 +576,7 @@ class OpenApiResourceTest {
                 .body("etag", startsWith("\"artwork-" + trackId + "-"))
                 .extract()
                 .path("hash");
-        String etag = given()
-                .header("Authorization", AUTHORIZATION)
+        String etag = openApi.get("/api/open/v1/tracks/" + trackId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
                 .then()
@@ -637,8 +584,7 @@ class OpenApiResourceTest {
                 .extract()
                 .path("etag");
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/artwork")
                 .header("If-None-Match", etag)
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork", trackId)
@@ -646,8 +592,7 @@ class OpenApiResourceTest {
                 .statusCode(304)
                 .header("ETag", equalTo(etag));
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/artwork")
                 .header("If-None-Match", "\"artwork-stale\"")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork", trackId)
@@ -657,8 +602,7 @@ class OpenApiResourceTest {
                 .contentType("image/png");
 
         writePng(imagePath, 5, 4);
-        String changedHash = given()
-                .header("Authorization", AUTHORIZATION)
+        String changedHash = openApi.get("/api/open/v1/tracks/" + trackId + "/artwork/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork/meta", trackId)
                 .then()
@@ -672,8 +616,7 @@ class OpenApiResourceTest {
     void lyricsBodyAndArtworkFileReturnSpecificNotFoundErrors() throws IOException {
         Long trackId = createTrack("无资源.flac", "无资源", "星语", "Demo", 2026, "Pop", 180_000L);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics", trackId)
                 .then()
@@ -687,8 +630,7 @@ class OpenApiResourceTest {
         writePng(outsideArtwork, 3, 2);
         bindArtworkPath(trackId, outsideArtwork);
 
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/" + trackId + "/artwork")
                 .when()
                 .get("/api/open/v1/tracks/{id}/artwork", trackId)
                 .then()
@@ -699,8 +641,7 @@ class OpenApiResourceTest {
 
     @Test
     void missingTrackReturnsUnifiedOpenApiErrorAndAdminApiStillUsesExistingShape() {
-        given()
-                .header("Authorization", AUTHORIZATION)
+        openApi.get("/api/open/v1/tracks/999999")
                 .when()
                 .get("/api/open/v1/tracks/999999")
                 .then()
@@ -711,7 +652,7 @@ class OpenApiResourceTest {
                 .body("details", notNullValue());
 
         given()
-                .header("Authorization", AUTHORIZATION)
+                .header("Authorization", ADMIN_AUTHORIZATION)
                 .when()
                 .get("/api/music/999999")
                 .then()
