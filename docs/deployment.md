@@ -11,22 +11,31 @@ v1.0.0 提供两种主部署模式：
 
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
-本版本不做公网 HTTPS、域名反向代理或托管平台封装。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
+v1.1.4 已补充家庭网络反向代理、HTTPS 与非标准公网端口部署说明。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
 
 ## 部署安全边界
 
 当前版本优先面向本机、家庭内网、局域网可信环境部署。Docker Compose 示例中的端口映射适合本地调试、NAS 或同一局域网内的星语音乐盒联调，不建议直接将容器端口映射到公网。
 
-v1.1.3 已提供管理端单管理员初始化、登录 / 登出与 Session Cookie 保护，并为 OpenAPI 提供 AK/SK + HMAC-SHA256 签名认证。仍不建议在无 HTTPS、无反向代理访问控制和网络层限制的情况下开放公网访问；HMAC 只用于请求认证与防重放，不能替代传输加密。
+v1.1.4 已在家庭网络反向代理场景验证公网 HTTPS 访问：星语音乐盒在不连接 VPN 的情况下可访问星语音库、播放歌曲并加载歌词。推荐公网链路为：
 
-当前文档为安全边界提示，不代表以下能力已经在 v1.1.3 完成：
+```text
+https://example.com:18443
+→ reverse proxy
+→ http://192.168.1.100:18081
+→ container:8080
+```
+
+仍不建议将后端端口直接暴露到公网，例如直接开放 `18081` 或容器 `8080`。公网访问时建议同时启用管理员登录、OpenAPI AK/SK + HMAC、HTTPS 与必要的网络层访问控制；HMAC 只用于请求认证与防重放，不能替代传输加密。
+
+当前文档为自托管部署建议，不代表以下能力已经在 v1.1.4 完成：
 
 - OpenAPI Secret Key 轮换 / 重置流程
 - 多用户、细粒度 RBAC 或多租户凭证隔离
-- 反向代理部署建议
-- Docker Compose 安全部署示例
+- 自动证书申请、DNS 托管或 DDNS 平台封装
+- 托管平台一键公网部署
 
-后续版本将继续补齐安全部署能力。在这些能力补齐前，不应把星语音库视为已经具备公网安全部署方案。
+后续版本将继续补齐安全部署能力。公网部署前请按本文清单逐项确认，不应把裸露后端端口视为安全方案。
 
 ## 首次管理员初始化
 
@@ -102,14 +111,14 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 | 服务名 | `xingyu-music-vault` |
 | 镜像名 | `xingyu-music-vault:${IMAGE_TAG}` |
 | 容器端口 | `8080` |
-| 宿主机端口 | `8080` |
+| 宿主机端口 | `18081` |
 
 ## Docker 镜像
 
 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.1.3} .
+docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.1.4} .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -137,7 +146,7 @@ docker compose up -d --build
 根目录 Compose 模板默认映射：
 
 ```text
-http://localhost:8080
+http://localhost:18081
 ```
 
 并通过 `.env` 配置 `APP_PORT`、`DATA_DIR`、`MUSIC_DIR`、`LYRICS_DIR`、`ARTWORK_DIR`、`MUSIC_VAULT_API_TOKEN` 和 OpenAPI 安全配置。
@@ -152,7 +161,7 @@ docker compose up --build
 该示例同样使用根目录 Dockerfile 构建镜像，并映射：
 
 ```text
-http://localhost:8080
+http://localhost:18081
 ```
 
 请在运行前通过 `.env` 或 shell 环境变量设置 `MUSIC_DIR`、`LYRICS_DIR`、`ARTWORK_DIR` 等路径。
@@ -162,7 +171,7 @@ http://localhost:8080
 本地联调模式用于 Mac mini / 本机 Docker 场景，方便星语音乐盒真机在同一局域网内访问星语音库 OpenAPI。当前 Mac mini 局域网地址示例为：
 
 ```text
-http://192.168.31.101:8080
+http://192.168.1.100:18081
 ```
 
 可提交的模板文件为：
@@ -292,15 +301,66 @@ X-Xingyu-Signature: <lowercase-hex-hmac-sha256>
 
 限流和访问日志同样只作用于 `/api/open/v1/*`。HMAC 不能替代 HTTPS，公网部署仍需 HTTPS / 反向代理 / 网络层限制。
 
+## 反向代理与非标准 HTTPS 端口
+
+家庭宽带环境常见限制是公网 `80` / `443` 端口不可用，或路由器只允许映射非标准端口。v1.1.4 推荐使用非标准 HTTPS 端口暴露反向代理入口，后端服务只监听内网或宿主机端口。
+
+推荐链路：
+
+```text
+https://example.com:18443
+→ reverse proxy
+→ http://192.168.1.100:18081
+→ container:8080
+```
+
+端口含义：
+
+| 位置 | 示例 | 说明 |
+|------|------|------|
+| 公网访问地址 | `https://example.com:18443` | 客户端、浏览器和星语音乐盒配置的服务根地址 |
+| 反向代理监听 | `18443` | 路由器将公网 `18443` 转发到反向代理 HTTPS 入口 |
+| 后端宿主机端口 | `192.168.1.100:18081` | Docker Compose `APP_PORT=18081`，仅供反向代理访问 |
+| 容器内部端口 | `8080` | Quarkus 服务端口，保持不变 |
+
+Nginx 示例：
+
+```nginx
+server {
+    listen 18443 ssl;
+    server_name example.com;
+
+    ssl_certificate /path/to/example.com/fullchain.pem;
+    ssl_certificate_key /path/to/example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://192.168.1.100:18081;
+        proxy_set_header Host $host:$server_port;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+```
+
+部署注意事项：
+
+- 不要把真实域名、公网 IP、内网 IP、证书路径或密钥内容提交到仓库；示例统一使用 `example.com`、`192.168.1.100`、`18443`、`18081`。
+- 证书域名必须匹配用户实际访问的域名。`CNAME` 只影响 DNS 解析，不会让目标域名自动继承另一个域名的 TLS 证书。
+- 如果访问地址带非标准端口，星语音乐盒和浏览器都应使用完整根地址 `https://example.com:18443`。
+- 当前星语音库和星语音乐盒公网访问验证不依赖 WebSocket；反向代理无需额外配置 WebSocket 转发。
+- HSTS 建议等 HTTPS 证书、端口映射、客户端访问都稳定后再启用，避免错误配置被浏览器长期缓存。
+- 通过 HTTPS 反向代理访问管理端时，可将 `XINGYU_ADMIN_COOKIE_SECURE=true`；若仍通过本地 HTTP 直连调试，则保持 `false`。
+
 ## OpenAPI 访问地址
 
 后续客户端接入应配置服务根地址 `musicVaultBaseUrl`，再拼接 OpenAPI 相对路径，不要写死具体主机、端口和完整接口地址。
 
 | 场景 | `musicVaultBaseUrl` 示例 |
 |------|--------------------------|
-| 本机 | `http://localhost:8080` |
-| Mac mini 局域网 | `http://<Mac-mini-LAN-IP>:8080` |
-| NAS | `http://<NAS-LAN-IP>:8080` |
+| 本机 | `http://localhost:18081` |
+| 家庭内网 | `http://192.168.1.100:18081` |
+| 公网 HTTPS | `https://example.com:18443` |
 
 客户端拼接示例：
 
@@ -354,5 +414,5 @@ X-Xingyu-Signature: <lowercase-hex-hmac-sha256>
 - [ ] 如开启 OpenAPI 限流，确认 `XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE` 合理
 - [ ] 确认音乐目录路径正确，并以只读方式挂载为 `/music:ro`
 - [ ] 确认 `/app/data` 已持久化，SQLite 文件不会随容器删除而丢失
-- [ ] 确认端口 `8080` 未被占用，或按需调整宿主机端口映射
+- [ ] 确认宿主机端口 `18081` 未被占用，容器内部端口 `8080` 保持不变
 - [ ] 确认客户端只配置 `musicVaultBaseUrl`，接口路径由客户端拼接

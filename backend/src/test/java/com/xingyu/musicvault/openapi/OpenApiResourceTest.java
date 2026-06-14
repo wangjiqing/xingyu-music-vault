@@ -80,7 +80,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.1.3"))
+                .body("serviceVersion", equalTo("1.1.4"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
