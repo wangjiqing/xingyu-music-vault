@@ -33,6 +33,12 @@ const router = createRouter({
           meta: { title: '全部歌曲' },
         },
         {
+          path: 'music/workbench',
+          name: 'SongWorkbench',
+          component: () => import('../views/SongWorkbenchView.vue'),
+          meta: { title: '歌曲工作台' },
+        },
+        {
           path: 'artists',
           name: 'Artists',
           component: () => import('../views/ArtistsView.vue'),

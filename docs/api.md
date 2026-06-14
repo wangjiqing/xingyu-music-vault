@@ -97,6 +97,97 @@ POST /api/admin/auth/logout
 }
 ```
 
+### 歌曲工作台（v1.2.1）
+
+歌曲工作台接口仅供管理端登录后使用，面向本地 / 局域网可信整理场景。接口只读，不修改元数据、歌词、封面或音频文件，不影响 `/api/open/v1/**` 的 AK/SK + HMAC 认证策略。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/admin/music/{id}/workbench` | 获取工作台聚合数据：数据库歌曲信息、歌词、封面、OpenAPI 输出预览 |
+| GET | `/api/admin/music/{id}/openapi-preview` | 获取当前歌曲面向客户端的 OpenAPI 输出预览 JSON |
+| GET | `/api/admin/music/{id}/audio` | 管理端受保护音频播放接口，按 music id 读取已入库本地文件 |
+
+#### 工作台聚合数据
+
+```http
+GET /api/admin/music/1/workbench
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+响应结构：
+
+```json
+{
+  "music": { "...": "数据库歌曲字段，与 /api/music 列表项保持一致" },
+  "lyrics": {
+    "available": true,
+    "lyricId": 10,
+    "format": "lrc",
+    "content": "[00:00.00]...",
+    "updatedAt": "2026-06-14T20:00:00"
+  },
+  "artwork": {
+    "available": true,
+    "artworkId": 20,
+    "mimeType": "image/jpeg",
+    "fileName": "cover.jpg",
+    "previewUrl": "/api/artworks/20/file",
+    "updatedAt": "2026-06-14T20:00:00"
+  },
+  "openApiPreview": {
+    "track": { "...": "OpenAPI OpenTrackResponse" },
+    "lyrics": { "...": "OpenAPI lyrics meta" },
+    "artwork": { "...": "OpenAPI artwork meta" },
+    "resourceUrls": {
+      "track": "/api/open/v1/tracks/1",
+      "lyricsMeta": "/api/open/v1/tracks/1/lyrics/meta",
+      "artworkMeta": "/api/open/v1/tracks/1/artwork/meta"
+    }
+  }
+}
+```
+
+无歌词或无封面时，`available` 为 `false`，正文或预览 URL 为空。
+
+#### OpenAPI 输出预览
+
+```http
+GET /api/admin/music/1/openapi-preview
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+该接口返回的内容等同于工作台聚合响应中的 `openApiPreview` 字段，便于管理端单独调试当前歌曲面向客户端的输出结构。接口使用管理端登录态，不需要 AK/SK 签名；公开 OpenAPI 认证策略不受影响。
+
+```json
+{
+  "track": {
+    "...": "OpenAPI OpenTrackResponse"
+  },
+  "lyrics": {
+    "...": "OpenAPI lyrics meta"
+  },
+  "artwork": {
+    "...": "OpenAPI artwork meta"
+  },
+  "resourceUrls": {
+    "track": "/api/open/v1/tracks/1",
+    "lyricsMeta": "/api/open/v1/tracks/1/lyrics/meta",
+    "lyrics": "/api/open/v1/tracks/1/lyrics",
+    "artworkMeta": "/api/open/v1/tracks/1/artwork/meta",
+    "artwork": "/api/open/v1/tracks/1/artwork"
+  }
+}
+```
+
+#### 管理端音频播放
+
+```http
+GET /api/admin/music/1/audio
+Range: bytes=0-
+```
+
+音频接口必须携带管理端登录态。服务端只根据数据库中的 music id 定位文件，不接受任意路径参数；文件真实路径必须位于 `music-vault.music-dirs` 配置目录内。文件不存在、不可读、越界或歌曲不存在时返回 404。支持 `Range` / `Content-Range` / `Accept-Ranges: bytes`，便于浏览器 audio 拖动进度。
+
 ### 曲目
 
 | Method | Path | 说明 |
@@ -1619,7 +1710,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.1.4",
+  "serviceVersion": "1.2.1",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {

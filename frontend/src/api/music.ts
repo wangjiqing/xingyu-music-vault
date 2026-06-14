@@ -189,6 +189,54 @@ export async function fetchMusicStats(): Promise<MusicStats> {
   return data
 }
 
+export interface WorkbenchLyric {
+  available: boolean
+  lyricId: number | null
+  format: string | null
+  content: string | null
+  updatedAt: string | null
+}
+
+export interface WorkbenchArtwork {
+  available: boolean
+  artworkId: number | null
+  mimeType: string | null
+  fileName: string | null
+  fileSize: number | null
+  width: number | null
+  height: number | null
+  previewUrl: string | null
+  updatedAt: string | null
+}
+
+export interface OpenApiPreview {
+  track: Record<string, unknown>
+  lyrics: Record<string, unknown>
+  artwork: Record<string, unknown>
+  resourceUrls: Record<string, string>
+}
+
+export interface MusicWorkbench {
+  music: MusicItem
+  lyrics: WorkbenchLyric
+  artwork: WorkbenchArtwork
+  openApiPreview: OpenApiPreview
+}
+
+export async function fetchMusicWorkbench(id: number): Promise<MusicWorkbench> {
+  const { data } = await http.get(`/api/admin/music/${id}/workbench`)
+  return data
+}
+
+export async function fetchMusicOpenApiPreview(id: number): Promise<OpenApiPreview> {
+  const { data } = await http.get(`/api/admin/music/${id}/openapi-preview`)
+  return data
+}
+
+export function musicAudioUrl(id: number): string {
+  return `/api/admin/music/${id}/audio`
+}
+
 export interface MusicMetadataBatchUpdate {
   ids: number[]
   artist?: string

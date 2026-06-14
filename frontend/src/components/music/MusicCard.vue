@@ -10,6 +10,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  open: [item: MusicItem]
   edit: [item: MusicItem]
   lyric: [item: MusicItem]
   bind: [item: MusicItem]
@@ -25,22 +26,24 @@ function displayTitle(item: MusicItem) {
 
 <template>
   <div class="music-card">
-    <ArtworkImage
-      :src="item.artworkPreviewUrl"
-      :file-exists="item.artworkFileExists"
-      :alt="displayTitle(item)"
-      :size="148"
-      :radius="6"
-      class="music-card-cover"
-    />
-    <div class="music-card-body">
-      <div class="music-title" :title="displayTitle(item)">{{ displayTitle(item) }}</div>
-      <div class="music-meta" :title="item.artist || '--'">{{ item.artist || '--' }}</div>
-      <div class="music-meta" :title="item.album || '--'">{{ item.album || '--' }}</div>
-      <div class="music-year">{{ item.year ?? '--' }}</div>
-      <StatusBadges :item="item" compact />
+    <div class="music-card-open" role="button" tabindex="0" @click="emit('open', item)" @keyup.enter="emit('open', item)">
+      <ArtworkImage
+        :src="item.artworkPreviewUrl"
+        :file-exists="item.artworkFileExists"
+        :alt="displayTitle(item)"
+        :size="148"
+        :radius="6"
+        class="music-card-cover"
+      />
+      <div class="music-card-body">
+        <div class="music-title" :title="displayTitle(item)">{{ displayTitle(item) }}</div>
+        <div class="music-meta" :title="item.artist || '--'">{{ item.artist || '--' }}</div>
+        <div class="music-meta" :title="item.album || '--'">{{ item.album || '--' }}</div>
+        <div class="music-year">{{ item.year ?? '--' }}</div>
+        <StatusBadges :item="item" compact />
+      </div>
     </div>
-    <div class="music-card-actions">
+    <div class="music-card-actions" @click.stop>
       <el-button type="primary" size="small" text :icon="Edit" @click="emit('edit', item)">
         编辑
       </el-button>
@@ -94,6 +97,14 @@ function displayTitle(item: MusicItem) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+.music-card-open {
+  min-width: 0;
+  cursor: pointer;
+  outline: none;
+}
+.music-card-open:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--el-color-primary);
 }
 .music-card-cover {
   width: 100% !important;

@@ -43,6 +43,7 @@
 | Review Workflow | 人工审核工作流与状态机 | 规划中 |
 | API Layer | 统一 REST 入口，Bearer Token 鉴权，异常映射；OpenAPI v0.9.2 缓存、增量同步、安全与访问控制增强（`/api/open/v1/*`）；v0.9.3 完成后端打包与 Docker 基础启动验证 | 已实现基础能力；OpenAPI 已实现（v0.9.3） |
 | OpenAPI Security Filter | 可选 API Token 认证、简单 IP 限流、访问日志 | 已实现（v0.9.2，仅作用于 `/api/open/v1/*`，不影响后台管理 API） |
+| Music Workbench | 管理端歌曲工作台、受保护音频播放、只读校验聚合、OpenAPI 输出预览 | 已实现 MVP（v1.2.1） |
 
 ## 前端页面规划
 
@@ -50,6 +51,7 @@
 |------|------|------|
 | 概览仪表盘 | `/dashboard` | 已实现（统计卡片） |
 | 全部歌曲（表格/卡片视图） | `/music` | 已实现（v0.8.0） |
+| 歌曲工作台 | `/music/workbench` | 已实现 MVP（v1.2.1，只读校验） |
 | 歌手浏览 | `/artists` | 已实现（v0.8.1） |
 | 歌手详情 | `/artists/:artistKey` | 已实现（v0.8.2） |
 | 专辑浏览 | `/albums` | 已实现（v0.8.3） |
@@ -73,6 +75,18 @@ v0.8.0 起，全部歌曲页面支持两种视图：
 两种视图共享同一套筛选条件（搜索关键词、待整理/已整理状态等），随时可切换。
 
 后续版本将在歌手浏览和专辑浏览中继续扩展音乐化浏览体验。
+
+## 歌曲工作台设计（v1.2.1）
+
+v1.2.1 新增管理端「歌曲工作台」MVP，用于边听边看、只读校验。前端通过 `/music/workbench?id={musicId}` 选择当前歌曲，复用 `/api/music` 基础分页列表加载工作台范围，并通过独立组件展示播放器、元数据、歌词、封面和 OpenAPI 输出。
+
+后端新增 `/api/admin/music/{id}/workbench` 聚合接口和 `/api/admin/music/{id}/openapi-preview` 预览接口。OpenAPI 预览由 `OpenApiPreviewService` 生成，尽量复用公开 OpenAPI 的 DTO 结构，但通过管理端登录态访问，不要求 AK/SK 签名。
+
+音频播放使用 `/api/admin/music/{id}/audio`。该接口受管理端 Session 保护，只按数据库中已登记的 `TrackFile.filePath` 读取文件，并校验真实路径位于 `music-vault.music-dirs` 下；不接收任意路径参数，不新增匿名资源浏览入口。接口支持基础 Range 请求，便于浏览器 audio 播放和进度跳转。
+
+已知限制：v1.2.1 管理端音频接口暂未提供 `Cache-Control`、ETag 或 `Last-Modified` 等缓存协商头。浏览器可通过 Range 请求完成播放和拖动，但大文件重复播放的缓存效率仍有优化空间，后续版本可补充条件请求或更明确的缓存策略。
+
+本工作台不改变数据库结构，不增加确认状态，不写回音频 Tag，不做网络刮削或 AI 能力；后续 v1.2.2 可在此页面基础上设计元数据 / 歌词 / 封面确认状态。
 
 ## 存储目录规划
 
