@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection } from '@element-plus/icons-vue'
+import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection, Headset } from '@element-plus/icons-vue'
 import {
   fetchMusicList,
   triggerMusicScan,
@@ -40,6 +41,7 @@ import MetadataBatchCompareDialog from '../components/music/MetadataBatchCompare
 import { currentThemeAssets } from '../theme/currentTheme'
 
 const list = ref<MusicItem[]>([])
+const router = useRouter()
 const loading = ref(false)
 const scanning = ref(false)
 const scanningLyrics = ref(false)
@@ -216,6 +218,10 @@ function handleSearch() {
 function handleFilterChange() {
   query.page = 1
   loadList()
+}
+
+function openInWorkbench(row: MusicItem) {
+  router.push({ path: '/music/workbench', query: { id: row.id } })
 }
 
 async function appendPrefetchedPage() {
@@ -838,6 +844,15 @@ onMounted(() => {
         <template #default="{ row }">
           <div class="table-actions">
             <el-button
+              type="primary"
+              size="small"
+              text
+              :icon="Headset"
+              @click="openInWorkbench(row)"
+            >
+              工作台
+            </el-button>
+            <el-button
               v-if="canPreviewArtwork(row)"
               type="primary"
               size="small"
@@ -896,6 +911,7 @@ onMounted(() => {
           v-for="item in list"
           :key="item.id"
           :item="item"
+          @open="openInWorkbench"
           @edit="openEditDialog"
           @lyric="handleViewLyric"
           @bind="handleBindOpen"

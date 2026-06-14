@@ -16,14 +16,14 @@
 
 ## 项目定位
 
-Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。
+Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.2.1 新增的「歌曲工作台」仅用于管理端本地校验，可边播放边查看数据，不提供匿名或公开音频流服务。
 
 核心边界：
 
 - 管理音乐库元数据、歌词、封面和文件状态
 - 提供 Web 管理后台与 REST / OpenAPI 只读接口
 - 支持 Docker Compose 自托管部署
-- 不提供在线播放、音频流、客户端写入或公网托管能力
+- 不提供公开在线播放、客户端写入或公网托管能力
 
 ## 安全提醒
 
@@ -42,6 +42,7 @@ v1.1.3 已补充 OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证。管理
 - 本地 LRC 歌词导入、绑定与查询
 - 本地封面扫描、导入、绑定与文件访问
 - 音乐元数据编辑、批量整理、音频 Tag 差异比较与受控写回
+- 管理端歌曲工作台：边播放边查看元数据、歌词、封面与 OpenAPI 输出预览（只读）
 - 文件信息、安全删除、回收站与恢复
 - 单管理员初始化、登录 / 登出与管理端 Session 保护
 - 只读 OpenAPI：服务信息、同步状态、增量变更、曲目、歌词、封面、歌手、专辑与本地匹配
@@ -90,7 +91,7 @@ docker compose up -d --build
 - [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
 - [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)
 - [冬夜雪境主题资源接入](docs/themes/winter-moonlight.md)
-- [Release Notes](docs/release/v1.1.4.md)
+- [Release Notes](docs/release/v1.2.1-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -108,6 +109,7 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
+v1.2.1 [x] 歌曲工作台 MVP：边听边看，只读校验闭环
 v1.1.4 [x] 反向代理、HTTPS 与家用宽带非标准端口部署说明
 v1.1.3 [x] OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证
 v1.1.2 [x] 管理员账号初始化与登录 / 登出后端能力

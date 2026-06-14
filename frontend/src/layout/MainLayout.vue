@@ -14,6 +14,7 @@ import {
   Connection,
   Key,
   ArrowRight,
+  VideoPlay,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchAdminServerInfo } from '../api/serverInfo'
@@ -71,6 +72,7 @@ const footerText = computed(() => {
 const menuItems = [
   { path: '/dashboard', title: '首页', icon: DataBoard },
   { path: '/music', title: '全部歌曲', icon: Headset },
+  { path: '/music/workbench', title: '歌曲工作台', icon: VideoPlay },
   { path: '/artists', title: '歌手', icon: User },
   { path: '/albums', title: '专辑', icon: Collection },
   { path: '/lyrics', title: '歌词', icon: Mic },
