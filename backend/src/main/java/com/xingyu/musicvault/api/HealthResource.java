@@ -10,7 +10,7 @@ import jakarta.ws.rs.core.MediaType;
 public class HealthResource {
     @GET
     public HealthResponse health() {
-        return new HealthResponse("ok", "xingyu-music-vault", "0.1.0");
+        return new HealthResponse("ok", "xingyu-music-vault", "1.1.4");
     }
 
     public record HealthResponse(String status, String service, String version) {

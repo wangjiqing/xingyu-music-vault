@@ -2,12 +2,12 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.1.2}
+    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.1.4}
     container_name: xingyu-music-vault
     ports:
       # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
-      # v1.1.3 起管理端登录与 OpenAPI AK/SK 是两条独立认证线。
-      - "${APP_PORT:-8080}:8080"
+      # v1.1.4 推荐通过 HTTPS 反向代理访问，容器内部端口仍为 8080。
+      - "${APP_PORT:-18081}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
       - ${CONFIG_DIR:-./config}:/app/config
@@ -36,6 +36,7 @@ services:
       - XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY=${XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY:-change-me-openapi-master-key}
       - XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS=${XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS:-300}
       - XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS=${XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS:-600}
+      - XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES=${XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES:-1048576}
       - XINGYU_OPENAPI_AUTH_ENABLED=${XINGYU_OPENAPI_AUTH_ENABLED:-false}
       - XINGYU_OPENAPI_AUTH_TOKEN=${XINGYU_OPENAPI_AUTH_TOKEN:-}
       - XINGYU_OPENAPI_RATE_LIMIT_ENABLED=${XINGYU_OPENAPI_RATE_LIMIT_ENABLED:-false}
