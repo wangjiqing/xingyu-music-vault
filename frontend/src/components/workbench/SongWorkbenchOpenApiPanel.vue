@@ -18,15 +18,15 @@ const formatted = computed(() => props.preview ? JSON.stringify(props.preview, n
 
 <style scoped>
 .json-preview {
-  min-height: 360px;
+  min-height: calc(320px * var(--workbench-scale, 1));
   margin: 0;
-  padding: 16px;
+  padding: calc(16px * var(--workbench-scale, 1));
   overflow: auto;
   border-radius: 8px;
   border: 1px solid var(--el-border-color-light);
   background: var(--el-fill-color-lighter);
   color: var(--el-text-color-primary);
-  font-size: 13px;
+  font-size: calc(13px * var(--workbench-scale, 1));
   line-height: 1.6;
 }
 </style>

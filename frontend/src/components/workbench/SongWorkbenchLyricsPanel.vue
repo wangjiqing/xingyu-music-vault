@@ -151,8 +151,8 @@ function setLineRef(element: unknown, index: number) {
 <style scoped>
 .lyrics-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 26px;
+  grid-template-columns: minmax(0, 1fr) calc(280px * var(--workbench-scale, 1));
+  gap: calc(26px * var(--workbench-scale, 1));
   height: 100%;
   min-height: 0;
 }
@@ -166,14 +166,17 @@ function setLineRef(element: unknown, index: number) {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 28px 24px 42px;
+  padding:
+    calc(28px * var(--workbench-scale, 1))
+    calc(24px * var(--workbench-scale, 1))
+    calc(42px * var(--workbench-scale, 1));
   scrollbar-width: thin;
 }
 .lyric-line {
-  max-width: 720px;
-  margin: 0 auto 18px;
+  max-width: calc(720px * var(--workbench-scale, 1));
+  margin: 0 auto calc(18px * var(--workbench-scale, 1));
   color: color-mix(in srgb, var(--el-text-color-primary) 58%, transparent);
-  font-size: 18px;
+  font-size: calc(18px * var(--workbench-scale, 1));
   line-height: 1.8;
   text-align: center;
   text-wrap: balance;
@@ -184,7 +187,7 @@ function setLineRef(element: unknown, index: number) {
 }
 .lyric-line.active {
   color: var(--xy-lyric-active, var(--xy-primary, var(--el-color-primary)));
-  font-size: 22px;
+  font-size: calc(22px * var(--workbench-scale, 1));
   font-weight: 800;
   opacity: 1;
 }
@@ -197,16 +200,16 @@ function setLineRef(element: unknown, index: number) {
   flex-direction: column;
   align-items: center;
   min-height: 0;
-  padding-top: 4px;
+  padding-top: calc(4px * var(--workbench-scale, 1));
 }
 .lyrics-actions-placeholder {
   align-self: stretch;
-  height: 42px;
-  margin-bottom: 18px;
+  height: calc(42px * var(--workbench-scale, 1));
+  margin-bottom: calc(18px * var(--workbench-scale, 1));
 }
 .lyrics-cover-wrap {
-  width: 176px;
-  height: 176px;
+  width: calc(176px * var(--workbench-scale, 1));
+  height: calc(176px * var(--workbench-scale, 1));
   filter: drop-shadow(10px 12px 18px rgba(31, 45, 61, 0.18));
 }
 .lyrics-cover {
@@ -222,20 +225,20 @@ function setLineRef(element: unknown, index: number) {
   justify-content: center;
   background: color-mix(in srgb, var(--el-fill-color-light) 84%, transparent);
   color: var(--el-text-color-secondary);
-  font-size: 48px;
+  font-size: calc(48px * var(--workbench-scale, 1));
   font-weight: 700;
 }
 .lyrics-song-info {
   width: 100%;
-  margin: 18px 0 0;
+  margin: calc(18px * var(--workbench-scale, 1)) 0 0;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--workbench-scale, 1));
 }
 .lyrics-song-info div {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
+  grid-template-columns: calc(56px * var(--workbench-scale, 1)) minmax(0, 1fr);
+  gap: calc(8px * var(--workbench-scale, 1));
+  margin-bottom: calc(10px * var(--workbench-scale, 1));
 }
 .lyrics-song-info dt {
   color: color-mix(in srgb, var(--el-text-color-secondary) 82%, transparent);

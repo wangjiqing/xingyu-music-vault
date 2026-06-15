@@ -251,31 +251,44 @@ function cycleMode() {
 
 <style scoped>
 .workbench-player {
+  --player-scale: var(--workbench-scale, 1);
+  container-type: inline-size;
+  overflow: hidden;
   border: 1px solid var(--el-border-color-light);
   border-radius: 0 0 8px 8px;
-  padding: 12px 16px;
+  padding: calc(12px * var(--player-scale)) calc(16px * var(--player-scale));
   background: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(18px) saturate(1.15);
   box-shadow: 0 -10px 30px rgba(31, 45, 61, 0.08);
 }
 .player-main {
   display: grid;
-  grid-template-columns: 170px 190px minmax(180px, 1fr) 112px 210px;
+  grid-template-columns:
+    minmax(calc(140px * var(--player-scale)), 0.9fr)
+    auto
+    minmax(calc(160px * var(--player-scale)), 1.4fr)
+    auto
+    fit-content(calc(190px * var(--player-scale)));
+  grid-template-areas: 'info controls track time extra';
   align-items: center;
-  gap: 18px;
+  gap:
+    calc(12px * var(--player-scale))
+    clamp(calc(8px * var(--player-scale)), 1.2vw, calc(18px * var(--player-scale)));
 }
 .player-info {
+  grid-area: info;
   min-width: 0;
 }
 .player-controls {
+  grid-area: controls;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 20px;
+  gap: clamp(calc(8px * var(--player-scale)), 1.2vw, calc(20px * var(--player-scale)));
 }
 .transport-button {
-  width: 46px;
-  height: 46px;
+  width: calc(46px * var(--player-scale));
+  height: calc(46px * var(--player-scale));
   padding: 0;
   color: var(--xy-player-progress, var(--xy-primary, var(--el-color-primary)));
   background: color-mix(
@@ -309,8 +322,8 @@ function cycleMode() {
 }
 .transport-icon {
   position: relative;
-  width: 26px;
-  height: 26px;
+  width: calc(26px * var(--player-scale));
+  height: calc(26px * var(--player-scale));
   color: currentColor;
 }
 .transport-icon::before,
@@ -322,32 +335,32 @@ function cycleMode() {
 }
 .previous-icon::before,
 .next-icon::before {
-  width: 5px;
-  height: 24px;
+  width: calc(5px * var(--player-scale));
+  height: calc(24px * var(--player-scale));
   border-radius: 999px;
   background: currentColor;
 }
 .previous-icon::before {
-  left: 3px;
+  left: calc(3px * var(--player-scale));
 }
 .next-icon::before {
-  right: 3px;
+  right: calc(3px * var(--player-scale));
 }
 .previous-icon::after {
-  left: 8px;
-  border-top: 11px solid transparent;
-  border-right: 16px solid currentColor;
-  border-bottom: 11px solid transparent;
+  left: calc(8px * var(--player-scale));
+  border-top: calc(11px * var(--player-scale)) solid transparent;
+  border-right: calc(16px * var(--player-scale)) solid currentColor;
+  border-bottom: calc(11px * var(--player-scale)) solid transparent;
 }
 .next-icon::after {
-  right: 8px;
-  border-top: 11px solid transparent;
-  border-bottom: 11px solid transparent;
-  border-left: 16px solid currentColor;
+  right: calc(8px * var(--player-scale));
+  border-top: calc(11px * var(--player-scale)) solid transparent;
+  border-bottom: calc(11px * var(--player-scale)) solid transparent;
+  border-left: calc(16px * var(--player-scale)) solid currentColor;
 }
 .play-button {
-  width: 54px;
-  height: 54px;
+  width: calc(54px * var(--player-scale));
+  height: calc(54px * var(--player-scale));
   color: #fff;
   background: var(--xy-player-progress, var(--xy-primary, var(--el-color-primary)));
   border-color: var(--xy-player-progress, var(--xy-primary, var(--el-color-primary)));
@@ -370,23 +383,24 @@ function cycleMode() {
 .play-icon {
   width: 0;
   height: 0;
-  margin-left: 4px;
-  border-top: 13px solid transparent;
-  border-bottom: 13px solid transparent;
-  border-left: 19px solid #fff;
+  margin-left: calc(4px * var(--player-scale));
+  border-top: calc(13px * var(--player-scale)) solid transparent;
+  border-bottom: calc(13px * var(--player-scale)) solid transparent;
+  border-left: calc(19px * var(--player-scale)) solid #fff;
 }
 .pause-icon {
-  gap: 7px;
+  gap: calc(7px * var(--player-scale));
 }
 .pause-icon span {
-  width: 6px;
-  height: 26px;
+  width: calc(6px * var(--player-scale));
+  height: calc(26px * var(--player-scale));
   border-radius: 999px;
   background: #fff;
 }
 .player-track {
+  grid-area: track;
   min-width: 0;
-  padding-left: 8px;
+  padding-left: calc(8px * var(--player-scale));
 }
 .player-track :deep(.el-slider__bar),
 .volume-slider :deep(.el-slider__bar) {
@@ -401,75 +415,264 @@ function cycleMode() {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--el-text-color-primary);
-  font-size: 15px;
+  font-size: calc(15px * var(--player-scale));
   font-weight: 700;
 }
 .player-subtitle {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-top: 6px;
+  margin-top: calc(6px * var(--player-scale));
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--player-scale));
 }
 .player-time {
+  grid-area: time;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--player-scale));
   text-align: right;
+  white-space: nowrap;
 }
 .player-extra {
+  grid-area: extra;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: calc(12px * var(--player-scale));
+  min-width: 0;
+  max-width: 100%;
 }
 .mode-button {
   position: relative;
   color: var(--xy-player-progress, var(--xy-primary, var(--el-text-color-regular)));
 }
 .mode-button :deep(.el-icon) {
-  font-size: 18px;
+  font-size: calc(18px * var(--player-scale));
 }
 .mode-one {
   position: absolute;
   right: 0;
   bottom: 0;
   display: grid;
-  width: 12px;
-  height: 12px;
+  width: calc(12px * var(--player-scale));
+  height: calc(12px * var(--player-scale));
   place-items: center;
   border-radius: 999px;
   background: color-mix(in srgb, var(--xy-player-progress, var(--xy-primary, var(--el-color-primary))) 12%, white);
-  font-size: 10px;
+  font-size: calc(10px * var(--player-scale));
   font-weight: 800;
   line-height: 1;
 }
 .volume-control {
   display: grid;
-  grid-template-columns: 18px minmax(96px, 1fr);
+  grid-template-columns: calc(18px * var(--player-scale)) minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  width: 150px;
+  gap: calc(8px * var(--player-scale));
+  width: clamp(calc(96px * var(--player-scale)), 10vw, calc(150px * var(--player-scale)));
+  min-width: 0;
+  max-width: 100%;
   color: var(--el-text-color-secondary);
 }
 .volume-slider {
   min-width: 0;
+  width: 100%;
+  padding-inline: calc(10px * var(--player-scale));
 }
-@media (max-width: 720px) {
+@container (max-width: 1280px) {
   .player-main {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'info controls extra'
+      'track track time';
+  }
+  .player-track {
+    padding-left: 0;
+  }
+  .volume-control {
+    width: calc(128px * var(--player-scale));
+  }
+}
+@container (max-width: 980px) {
+  .transport-button {
+    width: calc(42px * var(--player-scale));
+    height: calc(42px * var(--player-scale));
+  }
+  .play-button {
+    width: calc(50px * var(--player-scale));
+    height: calc(50px * var(--player-scale));
+  }
+  .transport-icon {
+    width: calc(23px * var(--player-scale));
+    height: calc(23px * var(--player-scale));
+  }
+  .previous-icon::before,
+  .next-icon::before {
+    height: calc(21px * var(--player-scale));
+  }
+  .previous-icon::after {
+    border-top-width: calc(10px * var(--player-scale));
+    border-right-width: calc(14px * var(--player-scale));
+    border-bottom-width: calc(10px * var(--player-scale));
+  }
+  .next-icon::after {
+    border-top-width: calc(10px * var(--player-scale));
+    border-bottom-width: calc(10px * var(--player-scale));
+    border-left-width: calc(14px * var(--player-scale));
+  }
+  .play-icon {
+    border-top-width: calc(12px * var(--player-scale));
+    border-bottom-width: calc(12px * var(--player-scale));
+    border-left-width: calc(17px * var(--player-scale));
+  }
+  .pause-icon span {
+    height: calc(24px * var(--player-scale));
+  }
+}
+@container (max-width: 720px) {
+  .workbench-player {
+    padding: calc(10px * var(--player-scale)) calc(12px * var(--player-scale));
+  }
+  .player-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'info extra'
+      'controls controls'
+      'track time';
   }
   .player-controls,
   .player-track,
-  .player-time,
-  .player-extra {
+  .player-time {
     width: 100%;
   }
-  .player-time {
-    text-align: left;
+  .player-controls {
+    justify-content: center;
   }
   .player-extra {
-    justify-content: space-between;
+    gap: calc(8px * var(--player-scale));
+  }
+  .volume-control {
+    width: calc(98px * var(--player-scale));
+  }
+}
+@container (max-width: 520px) {
+  .player-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'info'
+      'controls'
+      'track'
+      'time'
+      'extra';
+    gap: calc(10px * var(--player-scale));
+  }
+  .player-time {
+    text-align: center;
+  }
+  .player-extra {
+    justify-content: center;
+  }
+  .volume-control {
+    width: min(calc(180px * var(--player-scale)), 100%);
+  }
+}
+@media (max-width: 1280px) {
+  .player-main {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'info controls extra'
+      'track track time';
+  }
+  .player-track {
+    padding-left: 0;
+  }
+  .volume-control {
+    width: calc(128px * var(--player-scale));
+  }
+}
+@media (max-width: 980px) {
+  .transport-button {
+    width: calc(42px * var(--player-scale));
+    height: calc(42px * var(--player-scale));
+  }
+  .play-button {
+    width: calc(50px * var(--player-scale));
+    height: calc(50px * var(--player-scale));
+  }
+  .transport-icon {
+    width: calc(23px * var(--player-scale));
+    height: calc(23px * var(--player-scale));
+  }
+  .previous-icon::before,
+  .next-icon::before {
+    height: calc(21px * var(--player-scale));
+  }
+  .previous-icon::after {
+    border-top-width: calc(10px * var(--player-scale));
+    border-right-width: calc(14px * var(--player-scale));
+    border-bottom-width: calc(10px * var(--player-scale));
+  }
+  .next-icon::after {
+    border-top-width: calc(10px * var(--player-scale));
+    border-bottom-width: calc(10px * var(--player-scale));
+    border-left-width: calc(14px * var(--player-scale));
+  }
+  .play-icon {
+    border-top-width: calc(12px * var(--player-scale));
+    border-bottom-width: calc(12px * var(--player-scale));
+    border-left-width: calc(17px * var(--player-scale));
+  }
+  .pause-icon span {
+    height: calc(24px * var(--player-scale));
+  }
+}
+@media (max-width: 720px) {
+  .workbench-player {
+    padding: calc(10px * var(--player-scale)) calc(12px * var(--player-scale));
+  }
+  .player-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'info extra'
+      'controls controls'
+      'track time';
+  }
+  .player-controls,
+  .player-track,
+  .player-time {
+    width: 100%;
+  }
+  .player-controls {
+    justify-content: center;
+  }
+  .player-extra {
+    min-width: 0;
+    gap: calc(8px * var(--player-scale));
+  }
+  .volume-control {
+    grid-template-columns: calc(18px * var(--player-scale)) calc(72px * var(--player-scale));
+    width: calc(98px * var(--player-scale));
+  }
+}
+@media (max-width: 520px) {
+  .player-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'info'
+      'controls'
+      'track'
+      'time'
+      'extra';
+    gap: calc(10px * var(--player-scale));
+  }
+  .player-time {
+    text-align: center;
+  }
+  .player-extra {
+    justify-content: center;
+  }
+  .volume-control {
+    width: min(calc(180px * var(--player-scale)), 100%);
+    grid-template-columns: calc(18px * var(--player-scale)) minmax(0, 1fr);
   }
 }
 </style>
