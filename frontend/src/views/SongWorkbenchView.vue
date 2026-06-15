@@ -298,10 +298,10 @@ onMounted(() => loadList(false))
           <el-tab-pane label="封面" name="artwork">
             <SongWorkbenchArtworkPanel :artwork="workbench.artwork" />
           </el-tab-pane>
-          <el-tab-pane label="元数据" name="metadata">
+          <el-tab-pane label="元数据" name="metadata" class="workbench-scroll-pane">
             <SongWorkbenchMetadataPanel :music="workbench.music" />
           </el-tab-pane>
-          <el-tab-pane label="OpenAPI 输出" name="openapi">
+          <el-tab-pane label="OpenAPI 输出" name="openapi" class="workbench-scroll-pane">
             <div class="openapi-toolbar">
               <span>OpenAPI 输出预览</span>
               <el-button size="small" :icon="RefreshRight" @click="refreshOpenApiPreview">刷新</el-button>
@@ -341,9 +341,17 @@ onMounted(() => loadList(false))
 
 <style scoped>
 .workbench-view {
+  --workbench-scale: 1;
+  --workbench-gap: calc(16px * var(--workbench-scale));
+  --workbench-panel-padding: calc(18px * var(--workbench-scale));
+  --workbench-list-min: calc(260px * var(--workbench-scale));
+  --workbench-list-max: calc(340px * var(--workbench-scale));
+  --workbench-header-title-size: calc(24px * var(--workbench-scale));
+  --workbench-header-meta-size: calc(14px * var(--workbench-scale));
+  --workbench-tab-gap: calc(18px * var(--workbench-scale));
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(var(--workbench-list-min), var(--workbench-list-max)) minmax(0, 1fr);
+  gap: var(--workbench-gap);
   height: calc(100vh - 144px);
   min-height: 0;
   overflow: hidden;
@@ -364,21 +372,21 @@ onMounted(() => loadList(false))
 .list-toolbar {
   display: flex;
   gap: 8px;
-  padding: 12px;
+  padding: calc(12px * var(--workbench-scale));
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .song-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: calc(8px * var(--workbench-scale));
 }
 .song-row {
   display: block;
   width: 100%;
-  min-height: 58px;
+  min-height: calc(58px * var(--workbench-scale));
   margin: 0 0 6px;
-  padding: 9px 10px;
+  padding: calc(9px * var(--workbench-scale)) calc(10px * var(--workbench-scale));
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -399,29 +407,29 @@ onMounted(() => loadList(false))
   white-space: nowrap;
 }
 .song-title {
-  font-size: 14px;
+  font-size: calc(14px * var(--workbench-scale));
   font-weight: 600;
 }
 .song-meta {
-  margin-top: 5px;
+  margin-top: calc(5px * var(--workbench-scale));
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--workbench-scale));
 }
 .list-footer {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
+  padding: calc(10px * var(--workbench-scale)) calc(12px * var(--workbench-scale));
   border-top: 1px solid var(--el-border-color-lighter);
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--workbench-scale));
 }
 .workbench-main {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 18px;
+  padding: var(--workbench-panel-padding);
   overflow: hidden;
 }
 .workbench-main > :not(.workbench-bg) {
@@ -430,7 +438,7 @@ onMounted(() => loadList(false))
 }
 .workbench-bg {
   position: absolute;
-  inset: -18px;
+  inset: calc(-1 * var(--workbench-panel-padding));
   z-index: 0;
   pointer-events: none;
   opacity: 0;
@@ -447,47 +455,72 @@ onMounted(() => loadList(false))
 .workbench-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: calc(12px * var(--workbench-scale));
+  margin-bottom: calc(14px * var(--workbench-scale));
   flex-shrink: 0;
 }
 .workbench-header h1 {
   margin: 0;
   color: var(--el-text-color-primary);
-  font-size: 24px;
+  font-size: var(--workbench-header-title-size);
   line-height: 1.25;
 }
 .workbench-header p {
-  margin: 8px 0 0;
+  margin: calc(8px * var(--workbench-scale)) 0 0;
   color: var(--el-text-color-secondary);
+  font-size: var(--workbench-header-meta-size);
 }
 .workbench-alert {
   margin-top: 12px;
 }
 .workbench-tabs {
   min-height: 0;
-  margin-top: 18px;
+  margin-top: var(--workbench-tab-gap);
   flex: 1;
   overflow: hidden;
 }
 .workbench-tabs :deep(.el-tabs__content) {
-  height: calc(100% - 55px);
+  height: calc(100% - (55px * var(--workbench-scale)));
   overflow: hidden;
+}
+.workbench-tabs :deep(.el-tabs__item) {
+  height: calc(40px * var(--workbench-scale));
+  padding-inline: calc(20px * var(--workbench-scale));
+  font-size: calc(14px * var(--workbench-scale));
+  line-height: calc(40px * var(--workbench-scale));
 }
 .workbench-tabs :deep(.el-tab-pane) {
   height: 100%;
   overflow: hidden;
 }
+.workbench-tabs :deep(.workbench-scroll-pane) {
+  overflow: auto;
+  padding-right: calc(8px * var(--workbench-scale));
+  scrollbar-width: thin;
+}
 .openapi-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: calc(10px * var(--workbench-scale));
   color: var(--el-text-color-regular);
+  font-size: calc(14px * var(--workbench-scale));
   font-weight: 600;
+}
+@media (max-width: 1500px), (max-height: 880px) {
+  .workbench-view {
+    --workbench-scale: 0.92;
+  }
+}
+@media (max-width: 1280px), (max-height: 760px) {
+  .workbench-view {
+    --workbench-scale: 0.84;
+    height: calc(100vh - 124px);
+  }
 }
 @media (max-width: 980px) {
   .workbench-view {
+    --workbench-scale: 0.9;
     grid-template-columns: 1fr;
     height: auto;
     min-height: calc(100vh - 144px);

@@ -1,6 +1,6 @@
 # 镜像拉取部署（不从源码构建）
 
-本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。v1.0.0 继续使用 GHCR 与 Docker Hub 双仓库多架构镜像。
+本文档面向“直接拉取已发布镜像”部署模式。该模式不依赖本地源码构建，适合 NAS / 服务器稳定部署与回滚。项目继续使用 GHCR 与 Docker Hub 双仓库多架构镜像。
 
 ## 前置要求
 
@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.0.0}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v1.0.0
+IMAGE_TAG=v1.2.2
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -64,7 +64,7 @@ docker compose logs -f
 http://localhost:8080
 ```
 
-默认部署中 `MUSIC_DIR` 以只读方式挂载（`/music:ro`）。如需使用音频 Tag 写回相关能力，请改为读写挂载，具体注意事项见 [Docker 一键部署 - 只读与读写挂载](docker.md#只读与读写挂载)。
+默认 image compose 会将宿主机 `ARTWORK_DIR` 挂载到容器内 `APP_ARTWORK_SCAN_DIR`，默认值为 `/artwork`，与 `application.yml` 的 `app.artwork.scan-dir` 保持一致。远端部署后如果页面提示封面缺失，请优先确认 `ARTWORK_DIR` 指向宿主机真实封面目录，且 `APP_ARTWORK_SCAN_DIR` 与容器内挂载目标一致。
 
 ## 验证 OpenAPI 与健康检查
 
@@ -76,7 +76,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v1.0.0`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.2.2`），然后执行：
 
 ```bash
 cd deploy

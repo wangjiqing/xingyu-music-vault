@@ -31,8 +31,10 @@ const failed = ref(false)
 <style scoped>
 .artwork-panel {
   display: grid;
-  grid-template-columns: minmax(180px, 280px) minmax(260px, 1fr);
-  gap: 20px;
+  grid-template-columns:
+    minmax(calc(180px * var(--workbench-scale, 1)), calc(280px * var(--workbench-scale, 1)))
+    minmax(calc(260px * var(--workbench-scale, 1)), 1fr);
+  gap: calc(20px * var(--workbench-scale, 1));
   align-items: start;
 }
 .artwork-panel img {
