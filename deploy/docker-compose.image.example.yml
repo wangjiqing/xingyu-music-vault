@@ -2,19 +2,19 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.1.4}
+    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
     container_name: xingyu-music-vault
     ports:
       # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
-      # v1.1.4 推荐通过 HTTPS 反向代理访问，容器内部端口仍为 8080。
+      # 远端访问推荐通过 HTTPS 反向代理，容器内部端口仍为 8080。
       - "${APP_PORT:-18081}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
       - ${CONFIG_DIR:-./config}:/app/config
       - ${LOGS_DIR:-./logs}:/app/logs
-      - ${MUSIC_DIR:-./music}:/music:ro
-      - ${LYRICS_DIR:-./lyrics}:/lyrics:ro
-      - ${ARTWORK_DIR:-./artwork}:/artwork
+      - ${MUSIC_DIR:-./music}:/music:rw
+      - ${LYRICS_DIR:-./lyrics}:/lyrics:rw
+      - ${ARTWORK_DIR:-./artwork}:${APP_ARTWORK_SCAN_DIR:-/artwork}
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - QUARKUS_HTTP_HOST=0.0.0.0
@@ -25,7 +25,7 @@ services:
       - MUSIC_VAULT_LYRIC_DIRS=/lyrics
       - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
       - MUSIC_SCAN_DEFAULT_PATH=/music
-      - APP_ARTWORK_SCAN_DIR=/artwork
+      - APP_ARTWORK_SCAN_DIR=${APP_ARTWORK_SCAN_DIR:-/artwork}
       - MUSIC_VAULT_API_TOKEN=${MUSIC_VAULT_API_TOKEN:-change-me}
       - XINGYU_ADMIN_COOKIE_SECURE=${XINGYU_ADMIN_COOKIE_SECURE:-false}
       - XINGYU_ADMIN_COOKIE_SAME_SITE=${XINGYU_ADMIN_COOKIE_SAME_SITE:-Lax}
