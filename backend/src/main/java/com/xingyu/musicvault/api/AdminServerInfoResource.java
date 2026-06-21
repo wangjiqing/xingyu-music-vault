@@ -10,7 +10,7 @@ import jakarta.ws.rs.core.MediaType;
 public class AdminServerInfoResource {
     @GET
     public ServerInfoResponse info() {
-        return new ServerInfoResponse("xingyu-music-vault", "1.2.2");
+        return new ServerInfoResponse("xingyu-music-vault", "1.2.3");
     }
 
     public record ServerInfoResponse(String serviceName, String serviceVersion) {

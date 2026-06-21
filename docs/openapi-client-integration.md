@@ -4,7 +4,7 @@
 
 ## 概述
 
-星语音库 OpenAPI v1.2.2 提供面向播放器客户端的只读音乐库查询接口，
+星语音库 OpenAPI v1.2.3 提供面向播放器客户端的只读音乐库查询接口，
 在 v0.9.0 / v0.9.1 基础上补强缓存、增量同步、安全与访问控制能力。
 客户端可通过本 API 查询曲目、歌词、封面、歌手、专辑等元数据，
 并建立本地音乐与服务端元数据的关联。
@@ -97,7 +97,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.2.2",
+  "serviceVersion": "1.2.3",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {

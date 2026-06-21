@@ -73,7 +73,7 @@ curl -i -X POST http://localhost:8080/api/lyrics/scan \
   -d '{"path": "/path/to/lyrics"}'
 ```
 
-歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。
+歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。当本次扫描完整成功且 `failed=0` 时，当前扫描歌词目录也是可用性同步来源：目录中已删除的本地 LRC 会触发旧绑定解绑，OpenAPI 随后返回无歌词；扫描失败或目录不可访问时不会做删除清理。
 
 ```bash
 curl 'http://localhost:8080/api/songs/1/lyrics' \

@@ -9,6 +9,7 @@ import com.xingyu.musicvault.lyrics.Lyric;
 import com.xingyu.musicvault.lyrics.SongLyric;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.BeforeEach;
@@ -80,7 +81,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.2.2"))
+                .body("serviceVersion", equalTo("1.2.3"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -640,6 +641,156 @@ class OpenApiResourceTest {
     }
 
     @Test
+    void lyricScanSynchronizesDeletedLocalSourcesAndAllowsRestoredFilesToRebind() throws IOException {
+        Long removedTrackId = createTrack("星语 - 会回来的.flac", "会回来的", "星语", "Demo", 2026, "Pop", 180_000L);
+        Long keptTrackId = createTrack("星语 - 还在这里.flac", "还在这里", "星语", "Demo", 2026, "Pop", 180_000L);
+        Path removedLyric = workDir.resolve("星语 - 会回来的.lrc");
+        Path keptLyric = workDir.resolve("星语 - 还在这里.lrc");
+        String restoredContent = "[ti:会回来的]\n[ar:星语]\n[00:01.00]restored lyric\n";
+        Files.writeString(removedLyric, "[ti:会回来的]\n[ar:星语]\n[00:01.00]old lyric\n");
+        Files.writeString(keptLyric, "[ti:还在这里]\n[ar:星语]\n[00:01.00]kept lyric\n");
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(2))
+                .body("imported", equalTo(2))
+                .body("matched", equalTo(2))
+                .body("failed", equalTo(0));
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("lyricId", notNullValue());
+
+        Files.delete(removedLyric);
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("duplicateFiles", equalTo(1))
+                .body("failed", equalTo(0));
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId)
+                .when()
+                .get("/api/open/v1/tracks/{id}", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("lyricsAvailable", equalTo(false))
+                .body("lyricsStatus", equalTo("NO_LYRIC"))
+                .body("lyricId", nullValue());
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(false))
+                .body("lyricId", nullValue());
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", removedTrackId)
+                .then()
+                .statusCode(404)
+                .body("code", equalTo("OPENAPI_LYRICS_NOT_FOUND"));
+
+        openApi.get("/api/open/v1/tracks/" + keptTrackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", keptTrackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("lyricId", notNullValue());
+
+        Files.writeString(removedLyric, restoredContent);
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(2))
+                .body("imported", equalTo(1))
+                .body("matched", equalTo(1))
+                .body("failed", equalTo(0));
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("lyricId", notNullValue());
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("content", equalTo(restoredContent));
+
+        Files.delete(removedLyric);
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("failed", equalTo(0));
+
+        Files.writeString(removedLyric, restoredContent);
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(2))
+                .body("duplicateFiles", equalTo(2))
+                .body("matched", equalTo(1))
+                .body("failed", equalTo(0));
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("content", equalTo(restoredContent));
+    }
+
+    @Test
+    void lyricScanSkipsDeletedSourceSynchronizationWhenAnyFileFails() throws IOException {
+        Long removedTrackId = createTrack("星语 - 失败保护.flac", "失败保护", "星语", "Demo", 2026, "Pop", 180_000L);
+        Path removedLyric = workDir.resolve("星语 - 失败保护.lrc");
+        Files.writeString(removedLyric, "[ti:失败保护]\n[ar:星语]\n[00:01.00]still cached in db\n");
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(1))
+                .body("matched", equalTo(1))
+                .body("failed", equalTo(0));
+
+        Files.delete(removedLyric);
+        Files.write(workDir.resolve("星语 - 乱码失败.lrc"), new byte[]{(byte) 0xC3, (byte) 0x28});
+
+        scanLyrics(workDir)
+                .statusCode(200)
+                .body("totalFiles", equalTo(1))
+                .body("failed", equalTo(1));
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("lyricId", notNullValue());
+
+        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", removedTrackId)
+                .then()
+                .statusCode(200)
+                .body("content", equalTo("[ti:失败保护]\n[ar:星语]\n[00:01.00]still cached in db\n"));
+    }
+
+    @Test
     void missingTrackReturnsUnifiedOpenApiErrorAndAdminApiStillUsesExistingShape() {
         openApi.get("/api/open/v1/tracks/999999")
                 .when()
@@ -658,6 +809,20 @@ class OpenApiResourceTest {
                 .then()
                 .statusCode(404)
                 .body("error", equalTo("not_found"));
+    }
+
+    private io.restassured.response.ValidatableResponse scanLyrics(Path path) {
+        return given()
+                .header("Authorization", ADMIN_AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(path))
+                .when()
+                .post("/api/lyrics/scan")
+                .then();
     }
 
     private Long createTrack(String fileName, String title, String artist, String album, Integer year, String genre, Long duration) {

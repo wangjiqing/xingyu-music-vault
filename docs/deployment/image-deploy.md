@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.3}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.3}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.2.2}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v1.2.2
+IMAGE_TAG=v1.2.3
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -76,7 +76,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v1.2.2`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.2.3`），然后执行：
 
 ```bash
 cd deploy

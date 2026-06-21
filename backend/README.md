@@ -126,7 +126,7 @@ Expected response:
 {
   "status": "ok",
   "service": "xingyu-music-vault",
-  "version": "0.1.0"
+  "version": "1.2.3"
 }
 ```
 
@@ -241,7 +241,7 @@ curl 'http://localhost:8080/api/music/1' \
 
 ## Lyrics API (v0.5 / v0.5.2)
 
-`POST /api/lyrics/scan` 扫描本地 LRC 歌词目录，按内容 SHA-256 去重，并基于 LRC 标签或文件名中的 `歌手 - 歌名` 自动绑定音乐列表中的歌曲：
+`POST /api/lyrics/scan` 扫描本地 LRC 歌词目录，按内容 SHA-256 去重，并基于 LRC 标签或文件名中的 `歌手 - 歌名` 自动绑定音乐列表中的歌曲。扫描完整成功且 `failed=0` 时，当前扫描目录也是本地歌词可用性的同步来源；若 `source_path` 位于该目录范围内的 LRC 已不存在，系统会解除对应 `song_lyrics` 绑定，使 OpenAPI 后续返回无歌词：
 
 ```bash
 curl -i -X POST http://localhost:8080/api/lyrics/scan \
