@@ -86,6 +86,11 @@ export interface LyricScanResponse {
   failed: number
 }
 
+export interface LyricDeleteResponse {
+  success: boolean
+  message: string
+}
+
 export interface LyricListQuery {
   page: number
   size: number
@@ -115,5 +120,10 @@ export async function triggerLyricScan(payload?: {
   overwritePrimary?: boolean
 }): Promise<LyricScanResponse> {
   const { data } = await http.post('/api/lyrics/scan', payload || {})
+  return data
+}
+
+export async function deleteLyricRecord(id: number): Promise<LyricDeleteResponse> {
+  const { data } = await http.delete(`/api/lyrics/${id}`)
   return data
 }

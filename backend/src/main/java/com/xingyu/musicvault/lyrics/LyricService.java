@@ -1,6 +1,7 @@
 package com.xingyu.musicvault.lyrics;
 
 import com.xingyu.musicvault.common.PageResponse;
+import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
@@ -174,6 +175,30 @@ public class LyricService {
                 lyric.createdAt,
                 lyric.updatedAt
         );
+    }
+
+    public void deleteUnboundLyric(Long id) {
+        try {
+            QuarkusTransaction.requiringNew().run(() -> {
+                Lyric lyric = lyricRepository.findById(id);
+                if (lyric == null) {
+                    throw new NotFoundException("Lyric not found");
+                }
+                if (songLyricRepository.hasBindings(id)) {
+                    throw new ConflictException("Lyric record is bound to a song and cannot be deleted");
+                }
+                lyric.delete();
+            });
+        } catch (QuarkusTransactionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof ConflictException conflictException) {
+                throw conflictException;
+            }
+            if (cause instanceof NotFoundException notFoundException) {
+                throw notFoundException;
+            }
+            throw exception;
+        }
     }
 
     public SongLyricResponse getSongLyric(Long songId) {
@@ -451,11 +476,17 @@ public class LyricService {
             boolean overwritePrimary,
             ScanCounters counters
     ) {
-        Lyric lyric = lyricRepository.findByContentHash(contentHash);
-        boolean duplicate = lyric != null;
+        String normalizedSourcePath = normalizedSourcePath(path);
+        List<Lyric> sameSourceLyrics = lyricRepository.findLocalBySourcePath(normalizedSourcePath);
+        Lyric lyric = reusableLyricForSourcePath(sameSourceLyrics);
+        boolean reusedSourcePath = lyric != null;
 
-        if (duplicate) {
-            refreshDuplicateLyricSource(lyric, path, metadata);
+        if (reusedSourcePath) {
+            deleteUnboundContentHashDuplicate(lyric, contentHash);
+            refreshLyricSource(lyric, normalizedSourcePath, content, contentHash, metadata);
+            removeUnboundDuplicatesForSourcePath(lyric, normalizedSourcePath);
+        } else if ((lyric = lyricRepository.findByContentHash(contentHash)) != null) {
+            refreshLyricSource(lyric, normalizedSourcePath, content, contentHash, metadata);
             counters.duplicateFiles++;
         } else {
             lyric = new Lyric();
@@ -463,7 +494,7 @@ public class LyricService {
             lyric.artist = metadata.artist();
             lyric.album = metadata.album();
             lyric.sourceType = "LOCAL_FILE";
-            lyric.sourcePath = path.toAbsolutePath().normalize().toString();
+            lyric.sourcePath = normalizedSourcePath;
             lyric.content = content;
             lyric.contentHash = contentHash;
             lyric.format = "LRC";
@@ -486,15 +517,58 @@ public class LyricService {
         }
     }
 
-    private void refreshDuplicateLyricSource(Lyric lyric, Path path, ParsedLyricMetadata metadata) {
+    private Lyric reusableLyricForSourcePath(List<Lyric> lyrics) {
+        if (lyrics == null || lyrics.isEmpty()) {
+            return null;
+        }
+        return lyrics.stream()
+                .filter(lyric -> songLyricRepository.hasBindings(lyric.id))
+                .findFirst()
+                .orElseGet(lyrics::getFirst);
+    }
+
+    private void deleteUnboundContentHashDuplicate(Lyric retainedLyric, String contentHash) {
+        Lyric duplicate = lyricRepository.findByContentHash(contentHash);
+        if (duplicate == null || Objects.equals(duplicate.id, retainedLyric.id)) {
+            return;
+        }
+        if (!songLyricRepository.hasBindings(duplicate.id)) {
+            duplicate.delete();
+        }
+    }
+
+    private void refreshLyricSource(
+            Lyric lyric,
+            String normalizedSourcePath,
+            String content,
+            String contentHash,
+            ParsedLyricMetadata metadata
+    ) {
         lyric.title = metadata.title();
         lyric.artist = metadata.artist();
         lyric.album = metadata.album();
         lyric.sourceType = "LOCAL_FILE";
-        lyric.sourcePath = path.toAbsolutePath().normalize().toString();
+        lyric.sourcePath = normalizedSourcePath;
+        lyric.content = content;
+        lyric.contentHash = contentHash;
         lyric.format = "LRC";
         lyric.parseStatus = "PARSED";
         lyric.parseMessage = null;
+    }
+
+    private void removeUnboundDuplicatesForSourcePath(Lyric retainedLyric, String normalizedSourcePath) {
+        List<Lyric> duplicates = Lyric.<Lyric>list(
+                "sourceType = ?1 and sourcePath = ?2 and id <> ?3",
+                "LOCAL_FILE",
+                normalizedSourcePath,
+                retainedLyric.id
+        );
+        for (Lyric duplicate : duplicates) {
+            if (songLyricRepository.hasBindings(duplicate.id)) {
+                continue;
+            }
+            duplicate.delete();
+        }
     }
 
     private void synchronizeDeletedSourceFiles(Path root, Set<Path> existingLyricFiles) {
@@ -563,6 +637,10 @@ public class LyricService {
         } catch (IOException exception) {
             return path.toAbsolutePath().normalize();
         }
+    }
+
+    private String normalizedSourcePath(Path path) {
+        return realOrNormalizedPath(path).toString();
     }
 
     private boolean bind(Long songId, Long lyricId, String matchType, int matchScore, boolean overwritePrimary) {

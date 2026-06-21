@@ -75,6 +75,8 @@ curl -i -X POST http://localhost:8080/api/lyrics/scan \
 
 歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。当本次扫描完整成功且 `failed=0` 时，当前扫描歌词目录也是可用性同步来源：目录中已删除的本地 LRC 会触发旧绑定解绑，OpenAPI 随后返回无歌词；扫描失败或目录不可访问时不会做删除清理。
 
+v1.2.4 起，歌词扫描按规范化后的 `source_path` 幂等更新。删除同一路径 `.lrc` 后扫描会解绑旧记录；将 `.lrc` 恢复到同一路径后再次扫描，应复用原 `lyrics.id`，更新正文和 hash，并恢复 `song_lyrics` 绑定，不应新增同路径重复记录。
+
 ```bash
 curl 'http://localhost:8080/api/songs/1/lyrics' \
   -H 'Authorization: Bearer change-me'
@@ -197,17 +199,39 @@ npm run dev
 
 停止后端服务后，在前端点击「刷新」或「扫描歌词」，应显示错误提示"加载歌词列表失败，请检查后端服务是否运行"。
 
+### 9. 验证 source_path 恢复幂等性（v1.2.4）
+
+1. 准备一首已入库歌曲和同名 `.lrc`，点击「扫描歌词」，确认歌曲显示已绑定歌词。
+2. 记录该歌词详情中的 `id` 和 `sourcePath`。
+3. 删除磁盘上的该 `.lrc`，再次点击「扫描歌词」。
+4. 确认歌曲变为无歌词，原歌词记录在歌词管理页显示为未绑定。
+5. 将 `.lrc` 恢复到相同路径，可修改歌词正文。
+6. 再次点击「扫描歌词」。
+7. 确认歌词记录 `id` 未变化，正文 / hash 已更新，歌曲重新绑定，列表中不存在同一 `sourcePath` 的重复歌词记录。
+
+### 10. 验证未绑定歌词记录删除（v1.2.4）
+
+1. 在歌词管理页筛选「未绑定」。
+2. 对未绑定记录点击「删除记录」。
+3. 二次确认弹窗应明确提示只删除数据库记录，不删除磁盘 `.lrc` 源文件。
+4. 确认删除后，列表中不再显示该记录。
+5. 检查原 `.lrc` 文件仍保留在磁盘上。
+6. 已绑定歌词行不应显示「删除记录」入口；直接调用 `DELETE /api/lyrics/{id}` 应返回 `409 conflict`。
+
 ## 验证检查清单
 
 歌词管理页补充：
 
 - [ ] `GET /api/lyrics` 返回歌词列表（含 bindStatus / parseStatus / sourceType）
 - [ ] `GET /api/lyrics/{id}` 返回歌词详情（含 content / boundSongs）
+- [ ] `DELETE /api/lyrics/{id}` 可删除未绑定歌词记录，且不删除磁盘 `.lrc` 源文件
+- [ ] 已绑定歌词调用 `DELETE /api/lyrics/{id}` 返回冲突
 - [ ] 列表分页正常（page 从 0 开始）
 - [ ] keyword 搜索生效
 - [ ] bindStatus / parseStatus / sourceType 筛选生效
 - [ ] 点击「查看歌词」弹窗展示 LRC 原文
 - [ ] 点击「扫描歌词」触发扫描并刷新列表
+- [ ] 删除 `.lrc` 后扫描会解绑，恢复同一路径 `.lrc` 后扫描复用原歌词记录并重新绑定
 - [ ] 未配置 Token 时 API 请求携带 Authorization 头
 
 ## v0.7.1 音乐元数据编辑前后端联调验证

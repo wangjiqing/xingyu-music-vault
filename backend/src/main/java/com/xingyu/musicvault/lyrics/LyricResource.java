@@ -2,12 +2,14 @@ package com.xingyu.musicvault.lyrics;
 
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricDetailResponse;
+import com.xingyu.musicvault.lyrics.LyricDtos.LyricDeleteResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricListItemResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricScanRequest;
 import com.xingyu.musicvault.lyrics.LyricDtos.LyricScanResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.SongLyricResponse;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -39,6 +41,13 @@ public class LyricResource {
     @Path("/lyrics/{id}")
     public LyricDetailResponse get(@PathParam("id") Long id) {
         return lyricService.getLyric(id);
+    }
+
+    @DELETE
+    @Path("/lyrics/{id}")
+    public LyricDeleteResponse delete(@PathParam("id") Long id) {
+        lyricService.deleteUnboundLyric(id);
+        return new LyricDeleteResponse(true, "Lyric record deleted; source file was not removed");
     }
 
     @POST

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { View } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, View } from '@element-plus/icons-vue'
 import {
+  deleteLyricRecord,
   fetchLyricList,
   fetchLyricDetail,
   triggerLyricScan,
@@ -46,6 +47,7 @@ const loadedRangeText = computed(() => {
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const currentLyric = ref<LyricDetail | null>(null)
+const deletingLyricId = ref<number | null>(null)
 
 const matchTypeLabel = (type: string | null) => {
   const map: Record<string, string> = {
@@ -136,6 +138,42 @@ async function handleViewLyric(row: LyricListItem) {
     dialogVisible.value = false
   } finally {
     dialogLoading.value = false
+  }
+}
+
+async function handleDeleteLyric(row: LyricListItem) {
+  if (row.bindStatus !== LYRIC_BIND_STATUS.UNBOUND) {
+    ElMessage.warning('已绑定歌词不能直接删除记录')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认删除歌词记录「${row.title || row.sourcePath || row.id}」？此操作只删除数据库记录，不会删除磁盘上的 .lrc 源文件。`,
+      '删除未绑定歌词记录',
+      {
+        confirmButtonText: '删除记录',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
+  deletingLyricId.value = row.id
+  try {
+    await deleteLyricRecord(row.id)
+    ElMessage.success('歌词记录已删除，磁盘源文件未删除')
+    await loadList()
+  } catch (error: any) {
+    if (error.response?.status === 409) {
+      ElMessage.error(error.response?.data?.message || '该歌词已重新绑定，不能删除')
+    } else {
+      ElMessage.error('删除歌词记录失败')
+    }
+  } finally {
+    deletingLyricId.value = null
   }
 }
 
@@ -333,7 +371,7 @@ onMounted(() => {
           {{ formatTime(row.updatedAt) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"
@@ -343,6 +381,17 @@ onMounted(() => {
             @click="handleViewLyric(row)"
           >
             查看歌词
+          </el-button>
+          <el-button
+            v-if="row.bindStatus === LYRIC_BIND_STATUS.UNBOUND"
+            type="danger"
+            size="small"
+            text
+            :icon="Delete"
+            :loading="deletingLyricId === row.id"
+            @click="handleDeleteLyric(row)"
+          >
+            删除记录
           </el-button>
         </template>
       </el-table-column>
