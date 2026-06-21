@@ -89,7 +89,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "1.2.2",
+                "1.2.3",
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(

@@ -1545,6 +1545,7 @@ Content-Type: application/json
 `path` 为空时使用 `music-vault.lyric-dirs` 的第一个目录。
 扫描目录必须位于 `MUSIC_VAULT_LYRIC_DIRS` 允许范围内。
 `overwritePrimary` 默认为 `false`，不会覆盖已有主歌词绑定。
+歌词扫描目录是本地歌词可用性的事实来源：本次扫描完整成功且 `failed=0` 时，系统会检查当前扫描目录范围内的 `LOCAL_FILE` 歌词记录。若数据库中的 `source_path` 已不再对应实际存在的 `.lrc` 文件，会解除相关 `song_lyrics` 绑定；之后 `/api/open/v1/tracks/{id}/lyrics/meta` 返回 `available=false`，`/api/open/v1/tracks/{id}/lyrics` 返回 `404`。如果扫描目录不可访问、遍历中断或文件处理失败，本次扫描不会执行缺失源文件清理。
 
 响应示例：
 
@@ -1564,6 +1565,7 @@ Content-Type: application/json
 歌词扫描会递归查找 `.lrc` 文件，
 读取 `[ti:]`、`[ar:]`、`[al:]` 标签和文件名中的 `歌手 - 歌名` 作为基础元数据，
 使用内容 SHA-256 去重。
+重复内容命中既有歌词记录时，会刷新其本地 `source_path` 与解析元数据，以支持删除后重新放回或由补齐器生成 LRC 后再次绑定。
 自动绑定依赖音乐扫描生成的 `tracks.normalized_title`，
 因此首次导入或旧库升级时推荐顺序是：
 
@@ -1710,7 +1712,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.2.2",
+  "serviceVersion": "1.2.3",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {

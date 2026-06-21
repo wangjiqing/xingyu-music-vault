@@ -11,11 +11,12 @@ import com.xingyu.musicvault.lyrics.LyricDtos.LyricScanResponse;
 import com.xingyu.musicvault.lyrics.LyricDtos.SongLyricResponse;
 import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.narayana.jta.QuarkusTransactionException;
 import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import org.jboss.logging.Logger;
@@ -31,6 +32,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -65,18 +67,34 @@ public class LyricService {
     @Inject
     OpenApiChangeLogService openApiChangeLogService;
 
-    @Transactional
     public LyricScanResponse scan(String requestedPath, boolean overwritePrimary) {
         Path root = resolveScanRoot(requestedPath);
         ScanCounters counters = new ScanCounters();
         LOG.infof("Scanning lyric directory: root=%s overwritePrimary=%s", root, overwritePrimary);
 
+        Set<Path> existingLyricFiles = new HashSet<>();
         try (Stream<Path> paths = Files.walk(root)) {
-            paths.filter(Files::isRegularFile)
+            List<Path> lrcFiles = paths.filter(Files::isRegularFile)
                     .filter(this::isLrcFile)
-                    .forEach(path -> scanFile(path, overwritePrimary, counters));
+                    .toList();
+            existingLyricFiles.addAll(lrcFiles.stream().map(this::realOrNormalizedPath).collect(Collectors.toSet()));
+            lrcFiles.forEach(path -> scanFile(path, overwritePrimary, counters));
         } catch (IOException | UncheckedIOException exception) {
             throw new BadRequestException("Failed to scan lyric directory: " + exception.getMessage(), exception);
+        }
+
+        if (counters.failed == 0) {
+            try {
+                QuarkusTransaction.requiringNew().run(() -> synchronizeDeletedSourceFiles(root, existingLyricFiles));
+            } catch (QuarkusTransactionException exception) {
+                LOG.errorf(exception, "Failed to synchronize deleted source files after successful lyric scan: root=%s", root);
+            }
+        } else {
+            LOG.warnf(
+                    "Skip deleted lyric source synchronization because lyric scan had file failures: root=%s failed=%d",
+                    root,
+                    counters.failed
+            );
         }
 
         return new LyricScanResponse(
@@ -397,45 +415,153 @@ public class LyricService {
 
     private void scanFile(Path path, boolean overwritePrimary, ScanCounters counters) {
         counters.totalFiles++;
+        String content;
         try {
-            String content = Files.readString(path, StandardCharsets.UTF_8);
-            String contentHash = sha256(content);
-            Lyric lyric = lyricRepository.findByContentHash(contentHash);
-            boolean duplicate = lyric != null;
-            ParsedLyricMetadata metadata = parseMetadata(path, content);
-
-            if (duplicate) {
-                counters.duplicateFiles++;
-            } else {
-                lyric = new Lyric();
-                lyric.title = metadata.title();
-                lyric.artist = metadata.artist();
-                lyric.album = metadata.album();
-                lyric.sourceType = "LOCAL_FILE";
-                lyric.sourcePath = path.toAbsolutePath().normalize().toString();
-                lyric.content = content;
-                lyric.contentHash = contentHash;
-                lyric.format = "LRC";
-                lyric.parseStatus = "PARSED";
-                lyric.persist();
-                counters.imported++;
-            }
-
-            MatchResult match = findBestMatch(metadata);
-            if (match == null) {
-                counters.unmatched++;
-                return;
-            }
-
-            if (bind(match.songId(), lyric.id, match.matchType(), match.score(), overwritePrimary)) {
-                openApiChangeLogService.recordLyricsChange(match.songId());
-                counters.matched++;
-            } else {
-                counters.skippedBindings++;
-            }
-        } catch (Exception exception) {
+            content = Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException | UncheckedIOException exception) {
             counters.failed++;
             LOG.warnf(exception, "Failed to import lyric file: path=%s", path);
+            return;
+        }
+
+        String contentHash = sha256(content);
+        ParsedLyricMetadata metadata = parseMetadata(path, content);
+        ScanCounters beforeImport = counters.snapshot();
+        try {
+            QuarkusTransaction.requiringNew().run(() -> importLyricFile(
+                    path,
+                    content,
+                    contentHash,
+                    metadata,
+                    overwritePrimary,
+                    counters
+            ));
+        } catch (RuntimeException exception) {
+            counters.copyFrom(beforeImport);
+            counters.failed++;
+            LOG.errorf(exception, "Database error importing lyric file: path=%s", path);
+        }
+    }
+
+    private void importLyricFile(
+            Path path,
+            String content,
+            String contentHash,
+            ParsedLyricMetadata metadata,
+            boolean overwritePrimary,
+            ScanCounters counters
+    ) {
+        Lyric lyric = lyricRepository.findByContentHash(contentHash);
+        boolean duplicate = lyric != null;
+
+        if (duplicate) {
+            refreshDuplicateLyricSource(lyric, path, metadata);
+            counters.duplicateFiles++;
+        } else {
+            lyric = new Lyric();
+            lyric.title = metadata.title();
+            lyric.artist = metadata.artist();
+            lyric.album = metadata.album();
+            lyric.sourceType = "LOCAL_FILE";
+            lyric.sourcePath = path.toAbsolutePath().normalize().toString();
+            lyric.content = content;
+            lyric.contentHash = contentHash;
+            lyric.format = "LRC";
+            lyric.parseStatus = "PARSED";
+            lyric.persist();
+            counters.imported++;
+        }
+
+        MatchResult match = findBestMatch(metadata);
+        if (match == null) {
+            counters.unmatched++;
+            return;
+        }
+
+        if (bind(match.songId(), lyric.id, match.matchType(), match.score(), overwritePrimary)) {
+            openApiChangeLogService.recordLyricsChange(match.songId());
+            counters.matched++;
+        } else {
+            counters.skippedBindings++;
+        }
+    }
+
+    private void refreshDuplicateLyricSource(Lyric lyric, Path path, ParsedLyricMetadata metadata) {
+        lyric.title = metadata.title();
+        lyric.artist = metadata.artist();
+        lyric.album = metadata.album();
+        lyric.sourceType = "LOCAL_FILE";
+        lyric.sourcePath = path.toAbsolutePath().normalize().toString();
+        lyric.format = "LRC";
+        lyric.parseStatus = "PARSED";
+        lyric.parseMessage = null;
+    }
+
+    private void synchronizeDeletedSourceFiles(Path root, Set<Path> existingLyricFiles) {
+        List<Lyric> managedLyrics = Lyric.<Lyric>list("sourceType = ?1 and sourcePath is not null", "LOCAL_FILE").stream()
+                .filter(lyric -> sourcePathWithinRoot(lyric.sourcePath, root))
+                .toList();
+        if (managedLyrics.isEmpty()) {
+            return;
+        }
+
+        Set<Long> missingLyricIds = managedLyrics.stream()
+                .filter(lyric -> !sourceFileExistsInScan(lyric.sourcePath, root, existingLyricFiles))
+                .map(lyric -> lyric.id)
+                .collect(Collectors.toSet());
+        if (missingLyricIds.isEmpty()) {
+            return;
+        }
+
+        List<SongLyric> bindings = songLyricRepository.findByLyricIds(missingLyricIds.stream().toList());
+        if (bindings.isEmpty()) {
+            LOG.infof("Found deleted lyric source files with no active bindings: root=%s lyrics=%d", root, missingLyricIds.size());
+            return;
+        }
+
+        List<Long> changedSongIds = bindings.stream()
+                .map(binding -> binding.songId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        for (SongLyric binding : bindings) {
+            binding.delete();
+        }
+        // In the current model, removing the primary lyric binding changes only the track's lyrics resource surface.
+        changedSongIds.forEach(openApiChangeLogService::recordLyricsChange);
+        LOG.infof(
+                "Unbound lyrics with deleted source files: root=%s lyrics=%d bindings=%d songs=%d",
+                root,
+                missingLyricIds.size(),
+                bindings.size(),
+                changedSongIds.size()
+        );
+    }
+
+    private boolean sourcePathWithinRoot(String sourcePath, Path root) {
+        return sourcePathCandidates(sourcePath, root).stream().anyMatch(path -> path.startsWith(root));
+    }
+
+    private boolean sourceFileExistsInScan(String sourcePath, Path root, Set<Path> existingLyricFiles) {
+        return sourcePathCandidates(sourcePath, root).stream().anyMatch(existingLyricFiles::contains);
+    }
+
+    private Set<Path> sourcePathCandidates(String sourcePath, Path root) {
+        Path path = Path.of(sourcePath);
+        Set<Path> candidates = new HashSet<>();
+        // Path equality is case-sensitive; when a source exists, toRealPath normalizes to the filesystem's canonical casing.
+        candidates.add(realOrNormalizedPath(path));
+        if (!path.isAbsolute()) {
+            candidates.add(realOrNormalizedPath(root.resolve(path)));
+        }
+        return candidates;
+    }
+
+    private Path realOrNormalizedPath(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException exception) {
+            return path.toAbsolutePath().normalize();
         }
     }
 
@@ -674,6 +800,22 @@ public class LyricService {
         int unmatched;
         int skippedBindings;
         int failed;
+
+        ScanCounters snapshot() {
+            ScanCounters snapshot = new ScanCounters();
+            snapshot.copyFrom(this);
+            return snapshot;
+        }
+
+        void copyFrom(ScanCounters source) {
+            totalFiles = source.totalFiles;
+            imported = source.imported;
+            duplicateFiles = source.duplicateFiles;
+            matched = source.matched;
+            unmatched = source.unmatched;
+            skippedBindings = source.skippedBindings;
+            failed = source.failed;
+        }
     }
 
     private record ParsedLyricMetadata(String title, String artist, String album) {
