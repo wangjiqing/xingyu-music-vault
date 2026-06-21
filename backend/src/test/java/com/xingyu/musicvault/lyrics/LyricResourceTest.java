@@ -11,13 +11,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
 class LyricResourceTest {
@@ -181,6 +186,130 @@ class LyricResourceTest {
     }
 
     @Test
+    void scanReusesUnboundSourcePathRecordWhenDeletedLrcIsRestoredWithChangedContent() throws IOException {
+        Long songId = createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        Path lrcPath = lyricDir.resolve("周杰伦 - 晴天.lrc");
+        String firstContent = "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]first\n";
+        String secondContent = "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]second\n";
+        Files.writeString(lrcPath, firstContent);
+
+        scanLyrics()
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(1))
+                .body("matched", equalTo(1));
+
+        Lyric firstLyric = Lyric.find("sourcePath", lrcPath.toRealPath().toString()).firstResult();
+        Long originalLyricId = firstLyric.id;
+        org.junit.jupiter.api.Assertions.assertEquals(sha256(firstContent), firstLyric.contentHash);
+
+        Files.delete(lrcPath);
+        scanLyrics()
+                .body("totalFiles", equalTo(0))
+                .body("failed", equalTo(0));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/songs/{songId}/lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("lyricStatus", equalTo("NO_LYRIC"))
+                .body("lyricId", nullValue());
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics?bindStatus=UNBOUND")
+                .then()
+                .statusCode(200)
+                .body("total", equalTo(1))
+                .body("items[0].id", equalTo(originalLyricId.intValue()));
+
+        Files.writeString(lrcPath, secondContent);
+        scanLyrics()
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(0))
+                .body("matched", equalTo(1))
+                .body("failed", equalTo(0));
+
+        Lyric restoredLyric = Lyric.findById(originalLyricId);
+        org.junit.jupiter.api.Assertions.assertNotNull(restoredLyric);
+        org.junit.jupiter.api.Assertions.assertEquals(1, Lyric.count());
+        org.junit.jupiter.api.Assertions.assertEquals(1, Lyric.count("sourcePath", lrcPath.toRealPath().toString()));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyrics/{id}", originalLyricId)
+                .then()
+                .statusCode(200)
+                .body("contentHash", equalTo(sha256(secondContent)))
+                .body("content", equalTo(secondContent));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/songs/{songId}/lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("lyricStatus", equalTo("BOUND"))
+                .body("lyricId", equalTo(originalLyricId.intValue()))
+                .body("content", equalTo(secondContent));
+    }
+
+    @Test
+    void deleteUnboundLyricRecordDoesNotDeleteSourceFile() throws IOException {
+        Path lrcPath = lyricDir.resolve("周杰伦 - 搁浅.lrc");
+        Files.writeString(lrcPath, "[ti:搁浅]\n[ar:周杰伦]\n");
+        String sourcePath = lrcPath.toRealPath().toString();
+        Lyric lyric = QuarkusTransaction.requiringNew().call(() -> {
+            Lyric value = new Lyric();
+            value.title = "搁浅";
+            value.artist = "周杰伦";
+            value.album = "七里香";
+            value.sourceType = "LOCAL_FILE";
+            value.sourcePath = sourcePath;
+            value.content = "[ti:搁浅]\n[ar:周杰伦]\n";
+            value.contentHash = "delete-unbound-hash";
+            value.format = "LRC";
+            value.parseStatus = "PARSED";
+            value.persist();
+            return value;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/lyrics/{id}", lyric.id)
+                .then()
+                .statusCode(200)
+                .body("success", equalTo(true));
+
+        org.junit.jupiter.api.Assertions.assertNull(Lyric.findById(lyric.id));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(lrcPath));
+    }
+
+    @Test
+    void deleteBoundLyricRecordIsRejected() throws IOException {
+        createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        Path lrcPath = lyricDir.resolve("周杰伦 - 晴天.lrc");
+        Files.writeString(lrcPath, "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]first\n");
+        scanLyrics();
+        Lyric lyric = Lyric.find("sourcePath", lrcPath.toRealPath().toString()).firstResult();
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .delete("/api/lyrics/{id}", lyric.id)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        org.junit.jupiter.api.Assertions.assertNotNull(Lyric.findById(lyric.id));
+        org.junit.jupiter.api.Assertions.assertTrue(Files.exists(lrcPath));
+    }
+
+    @Test
     void listLyricsSupportsUnboundAndFailedFilters() {
         Lyric lyric = createLyric("搁浅", "周杰伦", "七里香", "PARSE_FAILED");
 
@@ -229,6 +358,21 @@ class LyricResourceTest {
         });
     }
 
+    private io.restassured.response.ValidatableResponse scanLyrics() {
+        return given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(lyricDir))
+                .when()
+                .post("/api/lyrics/scan")
+                .then()
+                .statusCode(200);
+    }
+
     private Lyric createLyric(String title, String artist, String album, String parseStatus) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Lyric lyric = new Lyric();
@@ -245,5 +389,14 @@ class LyricResourceTest {
             lyric.persist();
             return lyric;
         });
+    }
+
+    private String sha256(String content) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 }

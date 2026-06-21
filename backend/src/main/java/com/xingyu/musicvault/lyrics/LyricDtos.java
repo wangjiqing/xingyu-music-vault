@@ -24,6 +24,12 @@ public final class LyricDtos {
     ) {
     }
 
+    public record LyricDeleteResponse(
+            boolean success,
+            String message
+    ) {
+    }
+
     public record LyricListItemResponse(
             Long id,
             String title,

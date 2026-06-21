@@ -34,4 +34,11 @@ public class SongLyricRepository implements PanacheRepository<SongLyric> {
                 .createQuery("select distinct songLyric.lyricId from SongLyric songLyric", Long.class)
                 .getResultList();
     }
+
+    public boolean hasBindings(Long lyricId) {
+        if (lyricId == null) {
+            return false;
+        }
+        return count("lyricId", lyricId) > 0;
+    }
 }

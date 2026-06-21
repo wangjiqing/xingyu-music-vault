@@ -124,7 +124,7 @@
 
 ### lyrics
 
-记录歌词本体。v0.5 仅支持本地 LRC 文件导入，不做在线歌词刮削和逐句时间轴解析。
+记录歌词本体。v0.5 仅支持本地 LRC 文件导入，不做在线歌词刮削和逐句时间轴解析。v1.2.4 起，本地歌词扫描优先按规范化后的 `source_path` 复用同一源文件记录，内容哈希作为无同路径记录时的去重兜底。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -135,9 +135,9 @@
 | `language` | varchar(16) | 预留语言字段 |
 | `release_year` | integer | 预留发行年份字段 |
 | `source_type` | varchar(32) not null | 当前为 `LOCAL_FILE` |
-| `source_path` | text | 本地歌词文件路径 |
+| `source_path` | text | 本地歌词文件路径；本地扫描按规范化路径幂等复用 |
 | `content` | text not null | 歌词全文 |
-| `content_hash` | varchar(64) not null | SHA-256 内容哈希，用于去重 |
+| `content_hash` | varchar(64) not null | SHA-256 内容哈希，用于内容去重兜底 |
 | `format` | varchar(16) not null | 当前为 `LRC` |
 | `parse_status` | varchar(32) not null | 当前为 `PARSED`，预留 `PARSE_FAILED` |
 | `parse_message` | text | 解析说明或错误信息 |

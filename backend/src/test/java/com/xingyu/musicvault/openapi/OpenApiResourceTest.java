@@ -81,7 +81,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.2.3"))
+                .body("serviceVersion", equalTo("1.2.4"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -657,20 +657,22 @@ class OpenApiResourceTest {
                 .body("matched", equalTo(2))
                 .body("failed", equalTo(0));
 
-        openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
+        Integer originalLyricId = openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics/meta")
                 .when()
                 .get("/api/open/v1/tracks/{id}/lyrics/meta", removedTrackId)
                 .then()
                 .statusCode(200)
                 .body("available", equalTo(true))
-                .body("lyricId", notNullValue());
+                .body("lyricId", notNullValue())
+                .extract()
+                .path("lyricId");
 
         Files.delete(removedLyric);
 
         scanLyrics(workDir)
                 .statusCode(200)
                 .body("totalFiles", equalTo(1))
-                .body("duplicateFiles", equalTo(1))
+                .body("duplicateFiles", equalTo(0))
                 .body("failed", equalTo(0));
 
         openApi.get("/api/open/v1/tracks/" + removedTrackId)
@@ -710,7 +712,7 @@ class OpenApiResourceTest {
         scanLyrics(workDir)
                 .statusCode(200)
                 .body("totalFiles", equalTo(2))
-                .body("imported", equalTo(1))
+                .body("imported", equalTo(0))
                 .body("matched", equalTo(1))
                 .body("failed", equalTo(0));
 
@@ -720,7 +722,7 @@ class OpenApiResourceTest {
                 .then()
                 .statusCode(200)
                 .body("available", equalTo(true))
-                .body("lyricId", notNullValue());
+                .body("lyricId", equalTo(originalLyricId));
 
         openApi.get("/api/open/v1/tracks/" + removedTrackId + "/lyrics")
                 .when()
@@ -741,7 +743,7 @@ class OpenApiResourceTest {
         scanLyrics(workDir)
                 .statusCode(200)
                 .body("totalFiles", equalTo(2))
-                .body("duplicateFiles", equalTo(2))
+                .body("duplicateFiles", equalTo(0))
                 .body("matched", equalTo(1))
                 .body("failed", equalTo(0));
 

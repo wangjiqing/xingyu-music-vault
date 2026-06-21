@@ -16,7 +16,7 @@
 
 ## 项目定位
 
-Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.2.1 新增的「歌曲工作台」仅用于管理端本地校验，可边播放边查看数据，不提供匿名或公开音频流服务；v1.2.2 补强了工作台在小屏和低高度环境下的自适应布局；v1.2.3 修复歌词扫描对已删除 LRC 源文件的同步行为。
+Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.2.1 新增的「歌曲工作台」仅用于管理端本地校验，可边播放边查看数据，不提供匿名或公开音频流服务；v1.2.2 补强了工作台在小屏和低高度环境下的自适应布局；v1.2.3 修复歌词扫描对已删除 LRC 源文件的同步行为；v1.2.4 修复同路径歌词恢复后重复创建记录的问题，并允许管理员清理未绑定歌词记录。
 
 核心边界：
 
@@ -91,7 +91,7 @@ docker compose up -d --build
 - [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
 - [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)
 - [冬夜雪境主题资源接入](docs/themes/winter-moonlight.md)
-- [Release Notes](docs/release/v1.2.3-release-notes.md)
+- [Release Notes](docs/release/v1.2.4-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -109,6 +109,7 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
+v1.2.4 [x] 歌词 source_path 幂等恢复与未绑定记录清理
 v1.2.3 [x] 歌词扫描删除同步修复
 v1.2.2 [x] 歌曲工作台小屏布局修复
 v1.2.1 [x] 歌曲工作台 MVP：边听边看，只读校验闭环

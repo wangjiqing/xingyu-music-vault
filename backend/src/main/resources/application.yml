@@ -20,7 +20,7 @@ quarkus:
     always-include: true
   smallrye-openapi:
     info-title: Xingyu Music Vault API
-    info-version: 1.2.3
+    info-version: 1.2.4
     info-description: Self-hosted music metadata management API.
   log:
     category:
