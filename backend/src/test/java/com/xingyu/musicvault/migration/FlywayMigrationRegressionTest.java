@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(13, first.migrationsExecuted);
+        assertEquals(14, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -67,6 +67,16 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "openapi_request_nonces",
                     "id", "access_key", "nonce", "request_timestamp", "created_at", "expires_at");
             assertIndexes(connection, "idx_openapi_request_nonces_expires_at");
+            assertColumns(connection, "lyric_alignment_jobs",
+                    "id", "song_id", "lyric_id", "status", "review_status", "import_status",
+                    "audio_relative_path", "worker_audio_path", "trusted_lyrics_hash",
+                    "trusted_lyrics_snapshot", "request_snapshot_json", "job_dir", "error_message",
+                    "result_summary_json", "created_by", "created_at", "updated_at", "queued_at",
+                    "started_at", "completed_at", "failed_at");
+            assertIndexes(connection,
+                    "idx_lyric_alignment_jobs_song_id",
+                    "idx_lyric_alignment_jobs_status",
+                    "idx_lyric_alignment_jobs_created_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -100,7 +110,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(12, result.migrationsExecuted);
+        assertEquals(13, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -112,6 +122,7 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "users", "username", "password_hash", "role", "enabled", "last_login_at");
             assertColumns(connection, "openapi_credentials", "access_key", "secret_encrypted", "scopes_json", "enabled");
             assertColumns(connection, "openapi_request_nonces", "access_key", "nonce", "expires_at");
+            assertColumns(connection, "lyric_alignment_jobs", "id", "song_id", "lyric_id", "status", "trusted_lyrics_snapshot");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
