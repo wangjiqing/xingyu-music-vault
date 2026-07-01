@@ -14,6 +14,10 @@ public interface MusicVaultConfig {
 
     List<String> lyricDirs();
 
+    String alignmentJobsDir();
+
+    String alignmentWorkerMusicDir();
+
     String dbPath();
 
     String apiToken();

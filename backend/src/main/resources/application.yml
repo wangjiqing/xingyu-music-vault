@@ -32,6 +32,8 @@ music-vault:
   config-dir: ${MUSIC_VAULT_CONFIG_DIR:/app/config}
   music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/music}
   lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/lyrics}
+  alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:/alignment-jobs}
+  alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/music}
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
@@ -85,6 +87,8 @@ xingyu:
     config-dir: config
     music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:music}
     lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:lyrics}
+    alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:alignment-jobs}
+    alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:music}
     db-path: data/music-vault.db
   music:
     scan:
@@ -110,6 +114,8 @@ xingyu:
     config-dir: target/test-config
     music-dirs: target/test-music
     lyric-dirs: target/test-music
+    alignment-jobs-dir: target/test-alignment-jobs
+    alignment-worker-music-dir: /worker/music
     db-path: target/test-music-vault.db
   app:
     artwork:
