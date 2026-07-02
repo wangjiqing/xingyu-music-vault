@@ -48,6 +48,17 @@ IMAGE_TAG=v1.2.4
 
 ## 启动服务
 
+首次启用歌词对齐 Worker 前，先准备共享目录和模型缓存目录：
+
+```bash
+mkdir -p alignment-jobs alignment-models
+```
+
+音库容器将 `ALIGNMENT_JOBS_DIR` 挂载为 `/alignment-jobs`，Worker 将同一宿主机目录挂载为
+`/jobs`；`request.json` 中的输入和输出路径使用 Worker 视角的 `/jobs/...`。如果本机已经有
+HuggingFace 模型缓存，可将 `ALIGNMENT_MODELS_DIR` 指向 `~/.cache/huggingface`，Compose 会把它
+挂载到 Worker 的 `/models`。
+
 ```bash
 cd deploy
 docker compose pull

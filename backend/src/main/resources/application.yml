@@ -34,6 +34,9 @@ music-vault:
   lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/lyrics}
   alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:/alignment-jobs}
   alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/music}
+  alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/jobs}
+  alignment-status-sync-interval-seconds: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}
+  alignment-status-sync-interval: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}s
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
@@ -89,6 +92,9 @@ xingyu:
     lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:lyrics}
     alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:alignment-jobs}
     alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:music}
+    alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:alignment-jobs}
+    alignment-status-sync-interval-seconds: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}
+    alignment-status-sync-interval: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}s
     db-path: data/music-vault.db
   music:
     scan:
@@ -116,6 +122,9 @@ xingyu:
     lyric-dirs: target/test-music
     alignment-jobs-dir: target/test-alignment-jobs
     alignment-worker-music-dir: /worker/music
+    alignment-worker-jobs-dir: /jobs
+    alignment-status-sync-interval-seconds: 3600
+    alignment-status-sync-interval: 3600s
     db-path: target/test-music-vault.db
   app:
     artwork:

@@ -18,6 +18,12 @@ public interface MusicVaultConfig {
 
     String alignmentWorkerMusicDir();
 
+    String alignmentWorkerJobsDir();
+
+    int alignmentStatusSyncIntervalSeconds();
+
+    String alignmentStatusSyncInterval();
+
     String dbPath();
 
     String apiToken();

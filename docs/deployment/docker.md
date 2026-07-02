@@ -33,7 +33,7 @@ OpenAPI Token 是后续独立能力，不与管理端 Session 混用。
 在仓库根目录准备本地挂载目录：
 
 ```bash
-mkdir -p data config logs music lyrics artwork
+mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 ```
 
 目录用途：
@@ -45,9 +45,16 @@ mkdir -p data config logs music lyrics artwork
 | `./logs` | `/app/logs` | 读写 | 可选日志目录，当前主要日志仍输出到 `docker logs` |
 | `./music` | `/music` | 默认只读 | 音乐扫描目录 |
 | `./lyrics` | `/lyrics` | 默认只读 | 本地歌词扫描目录 |
+| `./alignment-jobs` | `/alignment-jobs`、Worker `/jobs` | 读写 | 歌词对齐共享任务目录；音库写入请求，Worker 写入状态和结果 |
+| `./alignment-models` | Worker `/models` | 读写 | 歌词对齐 Worker 模型缓存目录；也可在 `.env` 中指向本机 HuggingFace cache |
 | `./artwork` | `/artwork` | 读写 | 封面扫描与后台导入封面存储目录 |
 
 如果音乐、歌词、封面目录已经在其他位置，请在 `.env` 中改为实际路径，不要把真实绝对路径提交到仓库。
+
+歌词对齐 Worker 与音库通过同一个宿主机任务目录通信，但容器内路径不同：音库使用
+`MUSIC_VAULT_ALIGNMENT_JOBS_DIR=/alignment-jobs` 写入任务，Worker 使用 `--jobs-dir /jobs`
+读取任务。因此 `request.json` 中的 `lyricsPath`、`outputDir` 是 Worker 视角的 `/jobs/...`
+路径，这是预期设计。
 
 ## 复制配置
 

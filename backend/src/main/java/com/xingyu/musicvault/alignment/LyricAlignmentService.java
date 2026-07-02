@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobListItemResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ArtifactContent;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateAlignmentJobRequest;
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
@@ -44,6 +46,8 @@ public class LyricAlignmentService {
     private static final String STATUS_FAILED = "FAILED";
     private static final String REVIEW_NOT_AVAILABLE = "NOT_AVAILABLE";
     private static final String IMPORT_NOT_IMPORTED = "NOT_IMPORTED";
+    private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=UTF-8";
+    private static final String APPLICATION_JSON_UTF8 = "application/json; charset=UTF-8";
 
     @Inject
     MusicVaultConfig config;
@@ -129,7 +133,7 @@ public class LyricAlignmentService {
         return get(jobId);
     }
 
-    public PageResponse<AlignmentJobResponse> list(Integer page, Integer size, String status) {
+    public PageResponse<AlignmentJobListItemResponse> list(Integer page, Integer size, String status) {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size);
         String normalizedStatus = normalizeStatus(status);
@@ -137,8 +141,8 @@ public class LyricAlignmentService {
                 ? jobRepository.findAll(Sort.descending("createdAt"))
                 : jobRepository.find("status = ?1", Sort.descending("createdAt"), normalizedStatus);
         long total = query.count();
-        List<AlignmentJobResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
-                .map(this::toResponse)
+        List<AlignmentJobListItemResponse> items = query.page(Page.of(pageValue, sizeValue)).list().stream()
+                .map(this::toListItemResponse)
                 .toList();
         return new PageResponse<>(items, pageValue, sizeValue, total);
     }
@@ -149,6 +153,31 @@ public class LyricAlignmentService {
             throw new NotFoundException("Alignment job not found");
         }
         return toResponse(job);
+    }
+
+    public ArtifactContent getArtifact(String id, AlignmentArtifact artifact) {
+        LyricAlignmentJob job = jobRepository.findById(id);
+        if (job == null) {
+            throw new NotFoundException("Alignment job not found");
+        }
+        Path jobsRoot = Path.of(config.alignmentJobsDir()).toAbsolutePath().normalize();
+        Path jobDir = Path.of(job.jobDir).toAbsolutePath().normalize();
+        if (!jobDir.startsWith(jobsRoot) || jobDir.equals(jobsRoot)) {
+            throw new BadRequestException("Alignment job directory is invalid");
+        }
+        Path artifactPath = jobDir.resolve(artifact.relativePath()).normalize();
+        if (!artifactPath.startsWith(jobDir)) {
+            throw new BadRequestException("Alignment artifact path is invalid");
+        }
+        if (!Files.isRegularFile(artifactPath)) {
+            throw new NotFoundException("Alignment artifact not found");
+        }
+        try {
+            return new ArtifactContent(artifact.fileName(), artifact.mediaType(), Files.readAllBytes(artifactPath));
+        } catch (IOException exception) {
+            LOG.warnf(exception, "Failed to read alignment artifact: jobId=%s artifact=%s", id, artifact.fileName());
+            throw new BadRequestException("Alignment artifact is not readable");
+        }
     }
 
     private void markFailed(String jobId, String message) {
@@ -244,20 +273,39 @@ public class LyricAlignmentService {
             CreateAlignmentJobRequest request
     ) {
         ObjectNode node = objectMapper.createObjectNode();
+        node.put("schemaVersion", 1);
         node.put("jobId", jobId);
-        node.put("songId", trackFile.id);
-        node.put("lyricId", lyricId);
-        node.put("audioRelativePath", audioMapping.relativePath());
-        node.put("workerAudioPath", audioMapping.workerPath());
-        node.put("trustedLyricsHash", trustedLyricsHash);
-        node.put("trustedLyricsFile", "trusted-lyrics.txt");
-        node.put("sectionsFile", request.sections() == null || request.sections().isNull() ? null : "sections.json");
-        node.put("createdBy", createdBy);
-        node.put("createdAt", LocalDateTime.now().toString());
-        if (request.workerOptions() != null && !request.workerOptions().isNull()) {
-            node.set("workerOptions", request.workerOptions());
+        node.put("audioPath", audioMapping.workerPath());
+        node.put("lyricsPath", workerJobPath(jobId, "trusted-lyrics.txt"));
+        node.put("outputDir", workerJobPath(jobId, "result"));
+        if (request.sections() == null || request.sections().isNull()) {
+            node.putNull("sectionManifestPath");
+        } else {
+            node.put("sectionManifestPath", workerJobPath(jobId, "sections.json"));
         }
+        node.put("language", workerOptionText(request.workerOptions(), "language", "zh"));
+        node.put("device", workerOptionText(request.workerOptions(), "device", "cpu"));
+        node.put("createdAt", LocalDateTime.now().toString());
         return node;
+    }
+
+    private String workerOptionText(JsonNode workerOptions, String fieldName, String defaultValue) {
+        if (workerOptions == null || workerOptions.isNull()) {
+            return defaultValue;
+        }
+        JsonNode value = workerOptions.get(fieldName);
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            return defaultValue;
+        }
+        return value.asText().trim();
+    }
+
+    private String workerJobPath(String jobId, String fileName) {
+        String workerJobsRoot = config.alignmentWorkerJobsDir();
+        if (workerJobsRoot == null || workerJobsRoot.isBlank()) {
+            throw new BadRequestException("Alignment worker job directory is not configured");
+        }
+        return Path.of(workerJobsRoot).resolve(jobId).resolve(fileName).normalize().toString();
     }
 
     private AlignmentJobResponse toResponse(LyricAlignmentJob job) {
@@ -268,6 +316,7 @@ public class LyricAlignmentService {
                 job.status,
                 job.reviewStatus,
                 job.importStatus,
+                job.workerOutcome,
                 job.audioRelativePath,
                 job.workerAudioPath,
                 job.trustedLyricsHash,
@@ -275,6 +324,42 @@ public class LyricAlignmentService {
                 readJson(job.requestSnapshotJson),
                 job.errorMessage,
                 readJson(job.resultSummaryJson),
+                readJson(job.workerStatusJson),
+                job.alignmentJsonHash,
+                job.lrcHash,
+                job.swlrcHash,
+                job.reportHash,
+                job.resultAvailable,
+                job.syncMessage,
+                job.createdBy,
+                job.createdAt,
+                job.updatedAt,
+                job.queuedAt,
+                job.startedAt,
+                job.completedAt,
+                job.failedAt
+        );
+    }
+
+    private AlignmentJobListItemResponse toListItemResponse(LyricAlignmentJob job) {
+        return new AlignmentJobListItemResponse(
+                job.id,
+                job.songId,
+                job.lyricId,
+                job.status,
+                job.reviewStatus,
+                job.importStatus,
+                job.workerOutcome,
+                job.audioRelativePath,
+                job.trustedLyricsHash,
+                job.errorMessage,
+                readJson(job.resultSummaryJson),
+                job.alignmentJsonHash,
+                job.lrcHash,
+                job.swlrcHash,
+                job.reportHash,
+                job.resultAvailable,
+                job.syncMessage,
                 job.createdBy,
                 job.createdAt,
                 job.updatedAt,
@@ -352,5 +437,34 @@ public class LyricAlignmentService {
     }
 
     private record AudioMapping(String relativePath, String workerPath) {
+    }
+
+    public enum AlignmentArtifact {
+        REPORT("report.json", LyricAlignmentResultReader.RESULT_DIR + "/" + LyricAlignmentResultReader.REPORT_JSON, APPLICATION_JSON_UTF8),
+        LRC("lyrics.lrc", LyricAlignmentResultReader.RESULT_DIR + "/" + LyricAlignmentResultReader.LYRICS_LRC, TEXT_PLAIN_UTF8),
+        SWLRC("lyrics.swlrc", LyricAlignmentResultReader.RESULT_DIR + "/" + LyricAlignmentResultReader.LYRICS_SWLRC, TEXT_PLAIN_UTF8),
+        ALIGNMENT("alignment.json", LyricAlignmentResultReader.RESULT_DIR + "/" + LyricAlignmentResultReader.ALIGNMENT_JSON, APPLICATION_JSON_UTF8);
+
+        private final String fileName;
+        private final String relativePath;
+        private final String mediaType;
+
+        AlignmentArtifact(String fileName, String relativePath, String mediaType) {
+            this.fileName = fileName;
+            this.relativePath = relativePath;
+            this.mediaType = mediaType;
+        }
+
+        public String fileName() {
+            return fileName;
+        }
+
+        public String relativePath() {
+            return relativePath;
+        }
+
+        public String mediaType() {
+            return mediaType;
+        }
     }
 }
