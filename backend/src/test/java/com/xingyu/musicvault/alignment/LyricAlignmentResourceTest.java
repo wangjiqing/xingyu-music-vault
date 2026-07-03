@@ -35,6 +35,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -47,6 +48,9 @@ class LyricAlignmentResourceTest {
 
     @Inject
     ObjectMapper objectMapper;
+
+    @Inject
+    LyricAlignmentJobStatusSynchronizer statusSynchronizer;
 
     @BeforeEach
     @Transactional
@@ -102,11 +106,13 @@ class LyricAlignmentResourceTest {
                 .body("trustedLyricsSnapshot", equalTo(TRUSTED_LYRICS))
                 .body("jobDir", nullValue())
                 .body("requestSnapshot.jobId", notNullValue())
-                .body("requestSnapshot.audioRelativePath", equalTo("nested/周杰伦 - 晴天.flac"))
-                .body("requestSnapshot.workerAudioPath", equalTo("/worker/music/nested/周杰伦 - 晴天.flac"))
-                .body("requestSnapshot.trustedLyricsFile", equalTo("trusted-lyrics.txt"))
-                .body("requestSnapshot.sectionsFile", equalTo("sections.json"))
-                .body("requestSnapshot.workerOptions.language", equalTo("zh"))
+                .body("requestSnapshot.schemaVersion", equalTo(1))
+                .body("requestSnapshot.audioPath", equalTo("/worker/music/nested/周杰伦 - 晴天.flac"))
+                .body("requestSnapshot.lyricsPath", matchesPattern("/jobs/[0-9a-f\\-]{36}/trusted-lyrics.txt"))
+                .body("requestSnapshot.outputDir", matchesPattern("/jobs/[0-9a-f\\-]{36}/result"))
+                .body("requestSnapshot.sectionManifestPath", matchesPattern("/jobs/[0-9a-f\\-]{36}/sections.json"))
+                .body("requestSnapshot.language", equalTo("zh"))
+                .body("requestSnapshot.device", equalTo("cpu"))
                 .extract()
                 .path("id");
 
@@ -118,14 +124,23 @@ class LyricAlignmentResourceTest {
         assertTrue(Files.exists(jobDir.resolve("READY")));
 
         JsonNode requestJson = objectMapper.readTree(jobDir.resolve("request.json").toFile());
+        assertEquals(9, requestJson.size());
+        assertEquals(1, requestJson.path("schemaVersion").asInt());
         assertEquals(jobId, requestJson.path("jobId").asText());
-        assertEquals(songId.longValue(), requestJson.path("songId").asLong());
-        assertEquals(sha256(TRUSTED_LYRICS), requestJson.path("trustedLyricsHash").asText());
+        assertEquals("/worker/music/nested/周杰伦 - 晴天.flac", requestJson.path("audioPath").asText());
+        assertEquals("/jobs/" + jobId + "/trusted-lyrics.txt", requestJson.path("lyricsPath").asText());
+        assertEquals("/jobs/" + jobId + "/result", requestJson.path("outputDir").asText());
+        assertEquals("/jobs/" + jobId + "/sections.json", requestJson.path("sectionManifestPath").asText());
+        assertEquals("zh", requestJson.path("language").asText());
+        assertEquals("cpu", requestJson.path("device").asText());
 
         FileTime readyTime = Files.getLastModifiedTime(jobDir.resolve("READY"));
         assertFalse(Files.getLastModifiedTime(jobDir.resolve("request.json")).compareTo(readyTime) > 0);
         assertFalse(Files.getLastModifiedTime(jobDir.resolve("trusted-lyrics.txt")).compareTo(readyTime) > 0);
         assertFalse(Files.getLastModifiedTime(jobDir.resolve("sections.json")).compareTo(readyTime) > 0);
+        try (var paths = Files.list(jobDir)) {
+            assertFalse(paths.anyMatch(path -> path.getFileName().toString().startsWith(".")));
+        }
     }
 
     @Test
@@ -211,13 +226,15 @@ class LyricAlignmentResourceTest {
         Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("hash.flac"), TRUSTED_LYRICS);
         String jobId = createAlignmentJob(songId);
 
-        LyricAlignmentJob job = LyricAlignmentJob.findById(jobId);
+        LyricAlignmentJob job = findJob(jobId);
         assertEquals(sha256(TRUSTED_LYRICS), job.trustedLyricsHash);
         assertEquals(TRUSTED_LYRICS, job.trustedLyricsSnapshot);
         JsonNode snapshot = objectMapper.readTree(job.requestSnapshotJson);
         assertEquals(jobId, snapshot.path("jobId").asText());
-        assertEquals("hash.flac", snapshot.path("audioRelativePath").asText());
-        assertEquals("/worker/music/hash.flac", snapshot.path("workerAudioPath").asText());
+        assertEquals(1, snapshot.path("schemaVersion").asInt());
+        assertEquals("/worker/music/hash.flac", snapshot.path("audioPath").asText());
+        assertEquals("/jobs/" + jobId + "/trusted-lyrics.txt", snapshot.path("lyricsPath").asText());
+        assertEquals("/jobs/" + jobId + "/result", snapshot.path("outputDir").asText());
     }
 
     @Test
@@ -269,6 +286,237 @@ class LyricAlignmentResourceTest {
         assertEquals(0, LyricAlignmentJob.count("status", "QUEUED"));
     }
 
+    @Test
+    void synchronizesReadyToQueued() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("ready.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        QuarkusTransaction.requiringNew().run(() -> {
+            LyricAlignmentJob job = LyricAlignmentJob.findById(jobId);
+            job.status = "CREATING";
+            job.queuedAt = null;
+        });
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("QUEUED", job.status);
+        assertNotNull(job.queuedAt);
+    }
+
+    @Test
+    void synchronizesRunningAndKeepsStartedAtStable() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("running.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeMarker(jobId, "RUNNING");
+
+        statusSynchronizer.synchronize(jobId);
+        LocalDateTime firstStartedAt = findJob(jobId).startedAt;
+
+        statusSynchronizer.synchronize(jobId);
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("RUNNING", job.status);
+        assertEquals(firstStartedAt, job.startedAt);
+    }
+
+    @Test
+    void synchronizesSucceededAndReadsResultHashes() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("succeeded.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeStatusJson(jobId, """
+                {
+                  "schemaVersion": 1,
+                  "jobId": "%s",
+                  "status": "SUCCEEDED",
+                  "updatedAt": "2026-07-02T00:00:00Z",
+                  "result": {
+                    "summary": {
+                      "line_count": 1,
+                      "aligned_line_count": 1,
+                      "token_count": 3,
+                      "coverage": 1.0,
+                      "estimated_token_count": 0,
+                      "skipped_line_count": 0
+                    },
+                    "warnings": []
+                  }
+                }
+                """.formatted(jobId));
+        writeResultFiles(jobId);
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("COMPLETED", job.status);
+        assertEquals("PENDING", job.reviewStatus);
+        assertEquals("SUCCEEDED", job.workerOutcome);
+        assertNotNull(job.completedAt);
+        assertEquals(sha256("{\"segments\":[]}\n"), job.alignmentJsonHash);
+        assertEquals(sha256("[00:01.00]故事的小黄花\n"), job.lrcHash);
+        assertEquals(sha256("{\"lines\":[]}\n"), job.swlrcHash);
+        assertEquals(sha256("{\"quality\":{}}\n"), job.reportHash);
+        assertTrue(job.resultAvailable);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyric-alignment/jobs/{id}/artifacts/lrc", jobId)
+                .then()
+                .statusCode(200)
+                .body(equalTo("[00:01.00]故事的小黄花\n"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyric-alignment/jobs/{id}", jobId)
+                .then()
+                .statusCode(200)
+                .body("workerStatus.status", equalTo("SUCCEEDED"))
+                .body("resultAvailable", equalTo(true))
+                .body("resultSummary.lrcAvailable", equalTo(true))
+                .body("resultSummary.workerStatus", equalTo("SUCCEEDED"))
+                .body("resultSummary.lineCount", equalTo(1))
+                .body("resultSummary.alignedLineCount", equalTo(1));
+    }
+
+    @Test
+    void synchronizesNeedsReviewAsCompletedWithPendingReview() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("needs-review.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeResultFiles(jobId);
+        writeMarker(jobId, "NEEDS_REVIEW");
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("COMPLETED", job.status);
+        assertEquals("PENDING", job.reviewStatus);
+        assertEquals("NEEDS_REVIEW", job.workerOutcome);
+    }
+
+    @Test
+    void synchronizesFailedAndAbandoned() throws IOException {
+        Long failedSongId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("failed.flac"), TRUSTED_LYRICS);
+        String failedJobId = createAlignmentJob(failedSongId);
+        writeMarker(failedJobId, "FAILED");
+
+        Long abandonedSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("abandoned.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:03.00]第三份可信歌词\n"
+        );
+        String abandonedJobId = createAlignmentJob(abandonedSongId);
+        writeMarker(abandonedJobId, "ABANDONED");
+
+        statusSynchronizer.synchronizeActiveJobs();
+
+        LyricAlignmentJob failedJob = findJob(failedJobId);
+        assertEquals("FAILED", failedJob.status);
+        assertEquals("FAILED", failedJob.workerOutcome);
+        assertNotNull(failedJob.failedAt);
+
+        LyricAlignmentJob abandonedJob = findJob(abandonedJobId);
+        assertEquals("ABANDONED", abandonedJob.status);
+        assertEquals("ABANDONED", abandonedJob.workerOutcome);
+    }
+
+    @Test
+    void corruptStatusJsonDoesNotInterruptFullSynchronization() throws IOException {
+        Long corruptSongId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("corrupt.flac"), TRUSTED_LYRICS);
+        String corruptJobId = createAlignmentJob(corruptSongId);
+        Files.writeString(JOBS_ROOT.resolve(corruptJobId).resolve("status.json"), "{", StandardCharsets.UTF_8);
+
+        Long runningSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("corrupt-neighbor.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:04.00]第四份可信歌词\n"
+        );
+        String runningJobId = createAlignmentJob(runningSongId);
+        writeMarker(runningJobId, "RUNNING");
+
+        statusSynchronizer.synchronizeActiveJobs();
+
+        LyricAlignmentJob corruptJob = findJob(corruptJobId);
+        assertEquals("Worker status JSON is not readable yet", corruptJob.syncMessage);
+        LyricAlignmentJob runningJob = findJob(runningJobId);
+        assertEquals("RUNNING", runningJob.status);
+    }
+
+    @Test
+    void unsupportedStatusJsonSchemaVersionIsDiagnosticOnly() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("future-status.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        Files.writeString(
+                JOBS_ROOT.resolve(jobId).resolve("status.json"),
+                """
+                {
+                  "schemaVersion": 2,
+                  "status": "SUCCEEDED"
+                }
+                """,
+                StandardCharsets.UTF_8
+        );
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("QUEUED", job.status);
+        assertEquals("Unsupported worker status schemaVersion: 2", job.syncMessage);
+    }
+
+    @Test
+    void missingResultDirectoryDoesNotCrashSynchronization() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("no-result.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeMarker(jobId, "SUCCEEDED");
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("COMPLETED", job.status);
+        assertFalse(job.resultAvailable);
+        assertEquals("Alignment result directory is not available yet", job.syncMessage);
+    }
+
+    @Test
+    void completedJobRepeatSyncDoesNotChangeStartedOrCompletedAt() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("stable.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeMarker(jobId, "RUNNING");
+        statusSynchronizer.synchronize(jobId);
+        writeResultFiles(jobId);
+        writeMarker(jobId, "SUCCEEDED");
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob first = findJob(jobId);
+        LocalDateTime startedAt = first.startedAt;
+        LocalDateTime completedAt = first.completedAt;
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob second = findJob(jobId);
+        assertEquals(startedAt, second.startedAt);
+        assertEquals(completedAt, second.completedAt);
+    }
+
+    @Test
+    void artifactEndpointsRejectUnknownPathsAndReportMissingFiles() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("artifacts.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyric-alignment/jobs/{id}/artifacts/report", jobId)
+                .then()
+                .statusCode(404)
+                .body("error", equalTo("not_found"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/lyric-alignment/jobs/{id}/artifacts/../report", jobId)
+                .then()
+                .statusCode(404);
+    }
+
     private String createAlignmentJob(Long songId) {
         return given()
                 .header("Authorization", AUTHORIZATION)
@@ -312,6 +560,10 @@ class LyricAlignmentResourceTest {
         return songId;
     }
 
+    private LyricAlignmentJob findJob(String jobId) {
+        return QuarkusTransaction.requiringNew().call(() -> LyricAlignmentJob.findById(jobId));
+    }
+
     private Long createSong(Path audioPath) throws IOException {
         Files.createDirectories(audioPath.getParent());
         Files.writeString(audioPath, "audio", StandardCharsets.UTF_8);
@@ -332,6 +584,23 @@ class LyricAlignmentResourceTest {
             trackFile.persist();
             return trackFile.id;
         });
+    }
+
+    private void writeMarker(String jobId, String marker) throws IOException {
+        Files.writeString(JOBS_ROOT.resolve(jobId).resolve(marker), "", StandardCharsets.UTF_8);
+    }
+
+    private void writeStatusJson(String jobId, String content) throws IOException {
+        Files.writeString(JOBS_ROOT.resolve(jobId).resolve("status.json"), content, StandardCharsets.UTF_8);
+    }
+
+    private void writeResultFiles(String jobId) throws IOException {
+        Path resultDir = JOBS_ROOT.resolve(jobId).resolve("result");
+        Files.createDirectories(resultDir);
+        Files.writeString(resultDir.resolve("alignment.json"), "{\"segments\":[]}\n", StandardCharsets.UTF_8);
+        Files.writeString(resultDir.resolve("lyrics.lrc"), "[00:01.00]故事的小黄花\n", StandardCharsets.UTF_8);
+        Files.writeString(resultDir.resolve("lyrics.swlrc"), "{\"lines\":[]}\n", StandardCharsets.UTF_8);
+        Files.writeString(resultDir.resolve("report.json"), "{\"quality\":{}}\n", StandardCharsets.UTF_8);
     }
 
     private void deleteRecursively(Path path) throws IOException {

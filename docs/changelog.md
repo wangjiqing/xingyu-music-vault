@@ -2,6 +2,13 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## Unreleased
+
+### 新增 / 调整
+
+- **歌词对齐 Worker 联调基础**：补充共享任务目录、Worker 结果读取和状态同步字段，`request.json` 调整为 aligner v0.3.0 的 Worker 协议字段；历史任务的旧 `requestSnapshotJson` 不会被覆盖。
+- **部署示例补强**：Dockerfile 默认创建 `/alignment-jobs` 并提供对齐相关环境变量；Compose 示例新增 Worker 模型缓存环境变量，说明音库 `/alignment-jobs` 与 Worker `/jobs` 是同一宿主机目录的不同容器视角。
+
 ## v1.2.4 — 歌词 source_path 幂等恢复与未绑定记录清理
 
 **发布日期：** 2026.06.21

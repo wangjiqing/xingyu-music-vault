@@ -23,6 +23,7 @@ public final class LyricAlignmentDtos {
             String status,
             String reviewStatus,
             String importStatus,
+            String workerOutcome,
             String audioRelativePath,
             String workerAudioPath,
             String trustedLyricsHash,
@@ -30,6 +31,13 @@ public final class LyricAlignmentDtos {
             JsonNode requestSnapshot,
             String errorMessage,
             JsonNode resultSummary,
+            JsonNode workerStatus,
+            String alignmentJsonHash,
+            String lrcHash,
+            String swlrcHash,
+            String reportHash,
+            boolean resultAvailable,
+            String syncMessage,
             String createdBy,
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
@@ -37,6 +45,41 @@ public final class LyricAlignmentDtos {
             LocalDateTime startedAt,
             LocalDateTime completedAt,
             LocalDateTime failedAt
+    ) {
+    }
+
+    public record AlignmentJobListItemResponse(
+            String id,
+            Long songId,
+            Long lyricId,
+            String status,
+            String reviewStatus,
+            String importStatus,
+            String workerOutcome,
+            String audioRelativePath,
+            String trustedLyricsHash,
+            String errorMessage,
+            JsonNode resultSummary,
+            String alignmentJsonHash,
+            String lrcHash,
+            String swlrcHash,
+            String reportHash,
+            boolean resultAvailable,
+            String syncMessage,
+            String createdBy,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            LocalDateTime queuedAt,
+            LocalDateTime startedAt,
+            LocalDateTime completedAt,
+            LocalDateTime failedAt
+    ) {
+    }
+
+    public record ArtifactContent(
+            String fileName,
+            String mediaType,
+            byte[] content
     ) {
     }
 }

@@ -60,13 +60,17 @@ ENV QUARKUS_HTTP_HOST=0.0.0.0 \
     MUSIC_VAULT_CONFIG_DIR=/app/config \
     MUSIC_VAULT_MUSIC_DIRS=/music \
     MUSIC_VAULT_LYRIC_DIRS=/lyrics \
+    MUSIC_VAULT_ALIGNMENT_JOBS_DIR=/alignment-jobs \
+    MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR=/music \
+    MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR=/jobs \
+    ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=5 \
     MUSIC_VAULT_DB_PATH=/app/data/music-vault.db \
     MUSIC_SCAN_DEFAULT_PATH=/music \
     APP_ARTWORK_SCAN_DIR=/artwork \
     MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe \
     MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
 
-RUN mkdir -p /app/data /app/config /app/logs /music /lyrics /artwork
+RUN mkdir -p /app/data /app/config /app/logs /music /lyrics /artwork /alignment-jobs
 
 COPY --from=backend-build /workspace/backend/target/quarkus-app/lib/ ./lib/
 COPY --from=backend-build /workspace/backend/target/quarkus-app/*.jar ./

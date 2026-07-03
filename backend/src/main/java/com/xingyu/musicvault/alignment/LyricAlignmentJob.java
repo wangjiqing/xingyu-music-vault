@@ -56,6 +56,30 @@ public class LyricAlignmentJob extends PanacheEntityBase {
     @Column(name = "result_summary_json", columnDefinition = "text")
     public String resultSummaryJson;
 
+    @Column(name = "worker_outcome", length = 32)
+    public String workerOutcome;
+
+    @Column(name = "worker_status_json", columnDefinition = "text")
+    public String workerStatusJson;
+
+    @Column(name = "alignment_json_hash", length = 64)
+    public String alignmentJsonHash;
+
+    @Column(name = "lrc_hash", length = 64)
+    public String lrcHash;
+
+    @Column(name = "swlrc_hash", length = 64)
+    public String swlrcHash;
+
+    @Column(name = "report_hash", length = 64)
+    public String reportHash;
+
+    @Column(name = "result_available", nullable = false)
+    public boolean resultAvailable;
+
+    @Column(name = "sync_message", columnDefinition = "text")
+    public String syncMessage;
+
     @Column(name = "created_by", nullable = false, columnDefinition = "text")
     public String createdBy;
 
