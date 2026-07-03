@@ -18,6 +18,7 @@ import SongWorkbenchMetadataPanel from '../components/workbench/SongWorkbenchMet
 import SongWorkbenchLyricsPanel from '../components/workbench/SongWorkbenchLyricsPanel.vue'
 import SongWorkbenchArtworkPanel from '../components/workbench/SongWorkbenchArtworkPanel.vue'
 import SongWorkbenchOpenApiPanel from '../components/workbench/SongWorkbenchOpenApiPanel.vue'
+import SongWorkbenchAlignmentPanel from '../components/workbench/SongWorkbenchAlignmentPanel.vue'
 import { currentThemeAssets } from '../theme/currentTheme'
 
 const route = useRoute()
@@ -207,6 +208,11 @@ function handlePlayingChange(value: boolean) {
   }
 }
 
+async function handleAlignmentImported() {
+  if (!selectedId.value) return
+  await loadWorkbench(selectedId.value, false)
+}
+
 watch(
   () => route.query.id,
   (value) => {
@@ -293,6 +299,13 @@ onMounted(() => loadList(false))
               :artwork="workbench.artwork"
               :current-time="playerCurrentTime"
               :duration="playerDuration"
+            />
+          </el-tab-pane>
+          <el-tab-pane label="歌词对齐" name="alignment" class="workbench-scroll-pane">
+            <SongWorkbenchAlignmentPanel
+              :music="workbench.music"
+              @imported="handleAlignmentImported"
+              @view-lyrics="activeTab = 'lyrics'"
             />
           </el-tab-pane>
           <el-tab-pane label="封面" name="artwork">

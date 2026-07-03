@@ -1,4 +1,5 @@
 <script setup lang="ts">
+// Reserved for a future cross-domain review queue. Lyrics alignment review now lives under /lyric-alignment.
 </script>
 
 <template>

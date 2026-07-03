@@ -47,6 +47,7 @@ mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 | `./lyrics` | `/lyrics` | 默认只读 | 本地歌词扫描目录 |
 | `./alignment-jobs` | `/alignment-jobs`、Worker `/jobs` | 读写 | 歌词对齐共享任务目录；音库写入请求，Worker 写入状态和结果 |
 | `./alignment-models` | Worker `/models` | 读写 | 歌词对齐 Worker 模型缓存目录；也可在 `.env` 中指向本机 HuggingFace cache |
+| `./data/alignment-lyrics` | `/app/data/alignment-lyrics` | 读写 | 对齐结果导入后的受控歌词资产目录，存放确认后的 LRC 与 SWLRC |
 | `./artwork` | `/artwork` | 读写 | 封面扫描与后台导入封面存储目录 |
 
 如果音乐、歌词、封面目录已经在其他位置，请在 `.env` 中改为实际路径，不要把真实绝对路径提交到仓库。
@@ -55,6 +56,8 @@ mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 `MUSIC_VAULT_ALIGNMENT_JOBS_DIR=/alignment-jobs` 写入任务，Worker 使用 `--jobs-dir /jobs`
 读取任务。因此 `request.json` 中的 `lyricsPath`、`outputDir` 是 Worker 视角的 `/jobs/...`
 路径，这是预期设计。
+
+`alignment-jobs` 是中间产物目录，不应作为正式歌词资产长期引用。管理员确认导入后，音库会把 Worker 生成的 LRC / SWLRC 复制到 `MUSIC_VAULT_ALIGNMENT_ASSETS_DIR`（默认 `/app/data/alignment-lyrics`），再创建受控歌词记录。
 
 ## 复制配置
 
@@ -73,6 +76,9 @@ DATA_DIR=./data
 MUSIC_DIR=./music
 LYRICS_DIR=./lyrics
 ARTWORK_DIR=./artwork
+ALIGNMENT_JOBS_DIR=./alignment-jobs
+ALIGNMENT_MODELS_DIR=./alignment-models
+ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=5
 ```
 
 Dockerfile 默认使用 `registry.npmmirror.com` 作为 npm 构建源、`maven.aliyun.com/repository/public` 作为 Maven 构建镜像源，并使用 BuildKit cache 缓存 `/root/.npm` 与 `/root/.m2/repository`。如果网络环境更适合官方源，可在 `.env` 中改为：

@@ -89,7 +89,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "1.2.4",
+                "1.3.0",
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(
@@ -227,19 +227,49 @@ public class OpenApiResource {
     }
 
     @GET
+    @Path("/tracks/{id}/word-lyrics")
+    public Response wordLyrics(
+            @PathParam("id") Long id,
+            @HeaderParam("If-None-Match") String ifNoneMatch
+    ) {
+        findActiveTrackFile(id);
+        Lyric lyric = findPrimaryLyric(id);
+        if (!wordLyricsAvailable(lyric)) {
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_WORD_LYRICS_NOT_FOUND", "Word lyrics not found");
+        }
+        java.nio.file.Path swlrcPath = java.nio.file.Path.of(lyric.swlrcPath).toAbsolutePath().normalize();
+        String content;
+        try {
+            content = Files.readString(swlrcPath, StandardCharsets.UTF_8);
+        } catch (java.io.IOException exception) {
+            throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_WORD_LYRICS_NOT_FOUND", "Word lyrics not found");
+        }
+        String hash = wordLyricsHash(lyric);
+        String etag = hashService.lyricsEtag(id, hash);
+        if (hashService.matches(ifNoneMatch, etag)) {
+            return Response.status(Response.Status.NOT_MODIFIED)
+                    .header("ETag", etag)
+                    .build();
+        }
+        return Response.ok(new LyricsResponse(id, lyric.id, "SWLRC", content, hash, lyric.updatedAt))
+                .header("ETag", etag)
+                .build();
+    }
+
+    @GET
     @Path("/tracks/{id}/lyrics/meta")
     public LyricsMetaResponse lyricsMeta(@PathParam("id") Long id) {
         findActiveTrackFile(id);
         SongLyric binding = songLyricRepository.findPrimaryBySongId(id);
         if (binding == null) {
-            return new LyricsMetaResponse(id, false, null, null, null, null, null);
+            return emptyLyricsMeta(id);
         }
         Lyric lyric = Lyric.findById(binding.lyricId);
         if (lyric == null) {
-            return new LyricsMetaResponse(id, false, null, null, null, null, null);
+            return emptyLyricsMeta(id);
         }
         String hash = hashService.lyricsHash(lyric);
-        return new LyricsMetaResponse(id, true, lyric.id, lyric.format, hash, hashService.lyricsEtag(id, hash), lyric.updatedAt);
+        return lyricsMetaResponse(id, lyric, hash);
     }
 
     @GET
@@ -653,6 +683,40 @@ public class OpenApiResource {
             throw new OpenApiException(Response.Status.NOT_FOUND, "OPENAPI_LYRICS_NOT_FOUND", "Lyrics not found");
         }
         return lyric;
+    }
+
+    private LyricsMetaResponse emptyLyricsMeta(Long trackId) {
+        return new LyricsMetaResponse(trackId, false, null, null, null, null, null, false, null, null);
+    }
+
+    private LyricsMetaResponse lyricsMetaResponse(Long trackId, Lyric lyric, String hash) {
+        boolean wordLyricsAvailable = wordLyricsAvailable(lyric);
+        return new LyricsMetaResponse(
+                trackId,
+                true,
+                lyric.id,
+                lyric.format,
+                hash,
+                hashService.lyricsEtag(trackId, hash),
+                lyric.updatedAt,
+                wordLyricsAvailable,
+                wordLyricsAvailable ? "/api/open/v1/tracks/" + trackId + "/word-lyrics" : null,
+                lyric.sourceType
+        );
+    }
+
+    private boolean wordLyricsAvailable(Lyric lyric) {
+        if (lyric == null || lyric.swlrcPath == null || lyric.swlrcPath.isBlank()) {
+            return false;
+        }
+        return Files.isRegularFile(java.nio.file.Path.of(lyric.swlrcPath).toAbsolutePath().normalize());
+    }
+
+    private String wordLyricsHash(Lyric lyric) {
+        if (lyric.swlrcHash == null || lyric.swlrcHash.isBlank()) {
+            return hashService.lyricsHash(lyric);
+        }
+        return "sha256:" + lyric.swlrcHash;
     }
 
     private Artwork findPrimaryArtwork(Long trackId) {

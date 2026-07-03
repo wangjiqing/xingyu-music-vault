@@ -20,7 +20,7 @@ quarkus:
     always-include: true
   smallrye-openapi:
     info-title: Xingyu Music Vault API
-    info-version: 1.2.4
+    info-version: 1.3.0
     info-description: Self-hosted music metadata management API.
   log:
     category:
@@ -35,6 +35,7 @@ music-vault:
   alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:/alignment-jobs}
   alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/music}
   alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/jobs}
+  alignment-assets-dir: ${MUSIC_VAULT_ALIGNMENT_ASSETS_DIR:/app/data/alignment-lyrics}
   alignment-status-sync-interval-seconds: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}
   alignment-status-sync-interval: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}s
   db-path: ${MUSIC_VAULT_DB_PATH:/app/data/music-vault.db}
@@ -93,6 +94,7 @@ xingyu:
     alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:alignment-jobs}
     alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:music}
     alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:alignment-jobs}
+    alignment-assets-dir: ${MUSIC_VAULT_ALIGNMENT_ASSETS_DIR:data/alignment-lyrics}
     alignment-status-sync-interval-seconds: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}
     alignment-status-sync-interval: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}s
     db-path: data/music-vault.db
@@ -123,6 +125,7 @@ xingyu:
     alignment-jobs-dir: target/test-alignment-jobs
     alignment-worker-music-dir: /worker/music
     alignment-worker-jobs-dir: /jobs
+    alignment-assets-dir: target/test-alignment-assets
     alignment-status-sync-interval-seconds: 3600
     alignment-status-sync-interval: 3600s
     db-path: target/test-music-vault.db

@@ -7,6 +7,11 @@ import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
 import com.xingyu.musicvault.lyrics.Lyric;
 import com.xingyu.musicvault.lyrics.SongLyric;
+import com.xingyu.musicvault.openapi.OpenApiCredential;
+import com.xingyu.musicvault.openapi.OpenApiCredentialCryptoService;
+import com.xingyu.musicvault.openapi.OpenApiRequestNonce;
+import com.xingyu.musicvault.openapi.OpenApiScope;
+import com.xingyu.musicvault.openapi.OpenApiTestClient;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
@@ -26,6 +31,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -39,10 +45,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
+// Tests use the test-only legacy bearer token. Production deployments must disable
+// test-legacy-token; review and import are protected by the admin session cookie flow.
 class LyricAlignmentResourceTest {
     private static final String AUTHORIZATION = "Bearer change-me";
     private static final Path MUSIC_ROOT = Path.of("target/test-music");
     private static final Path JOBS_ROOT = Path.of("target/test-alignment-jobs");
+    private static final Path ASSETS_ROOT = Path.of("target/test-alignment-assets");
     private static final Path OUTSIDE_ROOT = Path.of("target/test-outside-music");
     private static final String TRUSTED_LYRICS = "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]故事的小黄花\n";
 
@@ -52,16 +61,24 @@ class LyricAlignmentResourceTest {
     @Inject
     LyricAlignmentJobStatusSynchronizer statusSynchronizer;
 
+    @Inject
+    OpenApiCredentialCryptoService cryptoService;
+
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
         deleteRecursively(JOBS_ROOT);
+        deleteRecursively(ASSETS_ROOT);
         deleteRecursively(MUSIC_ROOT);
         deleteRecursively(OUTSIDE_ROOT);
         Files.createDirectories(JOBS_ROOT);
+        Files.createDirectories(ASSETS_ROOT);
         Files.createDirectories(MUSIC_ROOT);
         Files.createDirectories(OUTSIDE_ROOT);
+        LyricAlignmentJobEvent.deleteAll();
         LyricAlignmentJob.deleteAll();
+        OpenApiRequestNonce.deleteAll();
+        OpenApiCredential.deleteAll();
         SongLyric.deleteAll();
         Lyric.deleteAll();
         TrackFile.deleteAll();
@@ -73,6 +90,9 @@ class LyricAlignmentResourceTest {
     void restoreJobsRoot() throws IOException {
         if (Files.exists(JOBS_ROOT)) {
             JOBS_ROOT.toFile().setWritable(true, false);
+        }
+        if (Files.exists(ASSETS_ROOT)) {
+            ASSETS_ROOT.toFile().setWritable(true, false);
         }
     }
 
@@ -517,6 +537,333 @@ class LyricAlignmentResourceTest {
                 .statusCode(404);
     }
 
+    @Test
+    void completedPendingJobCanBeApprovedAndRejectedOnce() throws IOException {
+        Long approveSongId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("approve.flac"), TRUSTED_LYRICS);
+        String approveJobId = completeJob(approveSongId, "SUCCEEDED");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"可以导入\", \"reviewedBy\":\"reviewer\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", approveJobId)
+                .then()
+                .statusCode(200)
+                .body("reviewStatus", equalTo("APPROVED"))
+                .body("reviewedBy", equalTo("reviewer"))
+                .body("reviewNote", equalTo("可以导入"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"重复\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/reject", approveJobId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        Long rejectSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("reject.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:05.00]第五份可信歌词\n"
+        );
+        String rejectJobId = completeJob(rejectSongId, "NEEDS_REVIEW");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"时间轴不稳定\", \"reviewedBy\":\"reviewer\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/reject", rejectJobId)
+                .then()
+                .statusCode(200)
+                .body("reviewStatus", equalTo("REJECTED"));
+
+        assertEquals(2, LyricAlignmentJobEvent.count("action in ?1", java.util.List.of("APPROVED", "REJECTED")));
+    }
+
+    @Test
+    void runningFailedAndAbandonedJobsCannotBeReviewed() throws IOException {
+        Long runningSongId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("review-running.flac"), TRUSTED_LYRICS);
+        String runningJobId = createAlignmentJob(runningSongId);
+        writeMarker(runningJobId, "RUNNING");
+        statusSynchronizer.synchronize(runningJobId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"no\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", runningJobId)
+                .then()
+                .statusCode(409);
+
+        Long failedSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("review-failed.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:06.00]第六份可信歌词\n"
+        );
+        String failedJobId = createAlignmentJob(failedSongId);
+        writeMarker(failedJobId, "FAILED");
+        statusSynchronizer.synchronize(failedJobId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"no\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", failedJobId)
+                .then()
+                .statusCode(409);
+
+        Long abandonedSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("review-abandoned.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:07.00]第七份可信歌词\n"
+        );
+        String abandonedJobId = createAlignmentJob(abandonedSongId);
+        writeMarker(abandonedJobId, "ABANDONED");
+        statusSynchronizer.synchronize(abandonedJobId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"no\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", abandonedJobId)
+                .then()
+                .statusCode(409);
+    }
+
+    @Test
+    void onlyApprovedJobCanBeImported() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("not-approved.flac"), TRUSTED_LYRICS);
+        String jobId = completeJob(songId, "SUCCEEDED");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"importedBy\":\"importer\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        assertEquals("NOT_IMPORTED", findJob(jobId).importStatus);
+    }
+
+    @Test
+    void importCopiesLrcAndSwlrcCreatesConfirmedLyricAndKeepsOriginalAsset() throws IOException {
+        Path trustedSource = MUSIC_ROOT.resolve("lyrics/original.lrc");
+        Files.createDirectories(trustedSource.getParent());
+        Files.writeString(trustedSource, TRUSTED_LYRICS, StandardCharsets.UTF_8);
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("import.flac"), TRUSTED_LYRICS, trustedSource);
+        Long originalLyricId = primaryLyricId(songId);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"importedBy\":\"importer\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(200)
+                .body("jobId", equalTo(jobId))
+                .body("importStatus", equalTo("IMPORTED"))
+                .body("importedLyricId", notNullValue())
+                .body("lrcHash", equalTo(sha256("[00:01.00]故事的小黄花\n")))
+                .body("swlrcHash", equalTo(sha256("{\"lines\":[]}\n")));
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("IMPORTED", job.importStatus);
+        assertNotNull(job.importedAt);
+        assertEquals("importer", job.importedBy);
+        assertNotNull(job.importedLyricId);
+
+        Lyric imported = QuarkusTransaction.requiringNew().call(() -> Lyric.findById(job.importedLyricId));
+        assertEquals("ALIGNMENT", imported.sourceType);
+        assertEquals(jobId, imported.sourceTaskId);
+        assertEquals(originalLyricId, imported.parentLyricsId);
+        assertEquals(job.lrcHash, imported.contentHash);
+        assertEquals(job.swlrcHash, imported.swlrcHash);
+        assertTrue(imported.sourcePath.startsWith(ASSETS_ROOT.toAbsolutePath().normalize().toString()));
+        assertTrue(imported.swlrcPath.startsWith(ASSETS_ROOT.toAbsolutePath().normalize().toString()));
+        assertEquals("[00:01.00]故事的小黄花\n", Files.readString(Path.of(imported.sourcePath), StandardCharsets.UTF_8));
+        assertEquals("{\"lines\":[]}\n", Files.readString(Path.of(imported.swlrcPath), StandardCharsets.UTF_8));
+        assertEquals(TRUSTED_LYRICS, Files.readString(trustedSource, StandardCharsets.UTF_8));
+        assertEquals(originalLyricId, QuarkusTransaction.requiringNew().call(() -> Lyric.<Lyric>findById(originalLyricId)).id);
+        assertEquals(imported.id, primaryLyricId(songId));
+
+        OpenApiTestClient openApi = QuarkusTransaction.requiringNew()
+                .call(() -> OpenApiTestClient.create(cryptoService, List.of(OpenApiScope.OPENAPI_READ)));
+
+        openApi.get("/api/open/v1/tracks/" + songId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("format", equalTo("LRC"))
+                .body("content", equalTo("[00:01.00]故事的小黄花\n"));
+
+        openApi.get("/api/open/v1/tracks/" + songId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", songId)
+                .then()
+                .statusCode(200)
+                .body("wordLyricsAvailable", equalTo(true))
+                .body("wordLyricsUrl", equalTo("/api/open/v1/tracks/" + songId + "/word-lyrics"))
+                .body("lyricsVersionSource", equalTo("ALIGNMENT"));
+
+        openApi.get("/api/open/v1/tracks/" + songId + "/word-lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/word-lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("format", equalTo("SWLRC"))
+                .body("content", equalTo("{\"lines\":[]}\n"));
+    }
+
+    @Test
+    void repeatedImportIsIdempotent() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("idempotent.flac"), TRUSTED_LYRICS);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+
+        Number firstLyricIdValue = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("importedLyricId");
+        Long firstLyricId = firstLyricIdValue.longValue();
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(200)
+                .body("importedLyricId", equalTo(firstLyricId.intValue()));
+
+        assertEquals(1, Lyric.count("sourceType = ?1 and sourceTaskId = ?2", "ALIGNMENT", jobId));
+        assertEquals(1, SongLyric.count("songId = ?1 and lyricId = ?2", songId, firstLyricId));
+    }
+
+    @Test
+    void importFailureDoesNotChangeExistingLyricBinding() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("missing-swlrc.flac"), TRUSTED_LYRICS);
+        Long originalLyricId = primaryLyricId(songId);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+        Files.delete(JOBS_ROOT.resolve(jobId).resolve("result").resolve("lyrics.swlrc"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(400);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("IMPORT_FAILED", job.importStatus);
+        assertNotNull(job.importErrorMessage);
+        assertEquals(originalLyricId, primaryLyricId(songId));
+        assertEquals(1, Lyric.count());
+    }
+
+    @Test
+    void unavailableAssetDirectoryMarksImportFailedAndKeepsBinding() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("asset-dir-blocked.flac"), TRUSTED_LYRICS);
+        Long originalLyricId = primaryLyricId(songId);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+        deleteRecursively(ASSETS_ROOT);
+        Files.writeString(ASSETS_ROOT, "not a directory", StandardCharsets.UTF_8);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(400);
+
+        assertEquals("IMPORT_FAILED", findJob(jobId).importStatus);
+        assertEquals(originalLyricId, primaryLyricId(songId));
+    }
+
+
+    @Test
+    void hashMismatchAndMissingResultDirectoryRejectImport() throws IOException {
+        Long mismatchSongId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("hash-mismatch.flac"), TRUSTED_LYRICS);
+        String mismatchJobId = completeJob(mismatchSongId, "SUCCEEDED");
+        approve(mismatchJobId);
+        Files.writeString(JOBS_ROOT.resolve(mismatchJobId).resolve("result").resolve("lyrics.lrc"), "tampered\n", StandardCharsets.UTF_8);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", mismatchJobId)
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("Alignment LRC result hash does not match the synchronized hash"));
+
+        Long missingSongId = createSongWithPrimaryLyric(
+                MUSIC_ROOT.resolve("missing-result.flac"),
+                "[ti:晴天]\n[ar:周杰伦]\n[00:08.00]第八份可信歌词\n"
+        );
+        String missingJobId = completeJob(missingSongId, "SUCCEEDED");
+        approve(missingJobId);
+        deleteRecursively(JOBS_ROOT.resolve(missingJobId).resolve("result"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", missingJobId)
+                .then()
+                .statusCode(400)
+                .body("message", equalTo("Alignment result directory is not available"));
+    }
+
+    @Test
+    void nonAdminCannotReviewOrImport() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("auth.flac"), TRUSTED_LYRICS);
+        String jobId = completeJob(songId, "SUCCEEDED");
+
+        given()
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", jobId)
+                .then()
+                .statusCode(401);
+
+        approve(jobId);
+
+        given()
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(401);
+    }
+
     private String createAlignmentJob(Long songId) {
         return given()
                 .header("Authorization", AUTHORIZATION)
@@ -528,6 +875,25 @@ class LyricAlignmentResourceTest {
                 .statusCode(200)
                 .extract()
                 .path("id");
+    }
+
+    private String completeJob(Long songId, String outcome) throws IOException {
+        String jobId = createAlignmentJob(songId);
+        writeResultFiles(jobId);
+        writeMarker(jobId, outcome);
+        statusSynchronizer.synchronize(jobId);
+        return jobId;
+    }
+
+    private void approve(String jobId) {
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"reviewNote\":\"ok\", \"reviewedBy\":\"reviewer\"}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/approve", jobId)
+                .then()
+                .statusCode(200);
     }
 
     private Long createSongWithPrimaryLyric(Path audioPath, String content) throws IOException {
@@ -562,6 +928,13 @@ class LyricAlignmentResourceTest {
 
     private LyricAlignmentJob findJob(String jobId) {
         return QuarkusTransaction.requiringNew().call(() -> LyricAlignmentJob.findById(jobId));
+    }
+
+    private Long primaryLyricId(Long songId) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            SongLyric binding = SongLyric.<SongLyric>find("songId = ?1 and isPrimary = true", songId).firstResult();
+            return binding == null ? null : binding.lyricId;
+        });
     }
 
     private Long createSong(Path audioPath) throws IOException {

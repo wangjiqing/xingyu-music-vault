@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(15, first.migrationsExecuted);
+        assertEquals(16, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -74,12 +74,26 @@ class FlywayMigrationRegressionTest {
                     "result_summary_json", "created_by", "created_at", "updated_at", "queued_at",
                     "started_at", "completed_at", "failed_at", "worker_outcome", "worker_status_json",
                     "alignment_json_hash", "lrc_hash", "swlrc_hash", "report_hash", "result_available",
-                    "sync_message");
+                    "sync_message", "reviewed_by", "reviewed_at", "review_note", "imported_by",
+                    "imported_at", "import_error_message", "imported_lyric_id");
+            assertColumns(connection, "lyrics",
+                    "source_task_id", "parent_lyrics_id", "swlrc_path", "swlrc_hash",
+                    "confirmed_at", "confirmed_by");
+            assertColumns(connection, "lyric_alignment_job_events",
+                    "id", "task_id", "music_id", "action", "operator", "note", "before_status",
+                    "after_status", "error_message", "created_at");
             assertIndexes(connection,
                     "idx_lyric_alignment_jobs_song_id",
                     "idx_lyric_alignment_jobs_status",
                     "idx_lyric_alignment_jobs_created_at",
-                    "idx_lyric_alignment_jobs_worker_outcome");
+                    "idx_lyric_alignment_jobs_worker_outcome",
+                    "idx_lyrics_content_hash",
+                    "idx_lyrics_source_task_id",
+                    "idx_lyrics_alignment_source_task_id",
+                    "idx_lyrics_parent_lyrics_id",
+                    "idx_lyric_alignment_job_events_task_id",
+                    "idx_lyric_alignment_job_events_action",
+                    "idx_lyric_alignment_job_events_created_at");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -113,7 +127,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(14, result.migrationsExecuted);
+        assertEquals(15, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -126,7 +140,9 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "openapi_credentials", "access_key", "secret_encrypted", "scopes_json", "enabled");
             assertColumns(connection, "openapi_request_nonces", "access_key", "nonce", "expires_at");
             assertColumns(connection, "lyric_alignment_jobs", "id", "song_id", "lyric_id", "status", "trusted_lyrics_snapshot",
-                    "worker_outcome", "result_available", "sync_message");
+                    "worker_outcome", "result_available", "sync_message", "reviewed_by", "imported_lyric_id");
+            assertColumns(connection, "lyrics", "source_task_id", "swlrc_path", "confirmed_at");
+            assertColumns(connection, "lyric_alignment_job_events", "task_id", "music_id", "action", "operator");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
