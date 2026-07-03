@@ -56,6 +56,24 @@ public class Lyric extends PanacheEntityBase {
     @Column(name = "parse_message", columnDefinition = "text")
     public String parseMessage;
 
+    @Column(name = "source_task_id", columnDefinition = "text")
+    public String sourceTaskId;
+
+    @Column(name = "parent_lyrics_id")
+    public Long parentLyricsId;
+
+    @Column(name = "swlrc_path", columnDefinition = "text")
+    public String swlrcPath;
+
+    @Column(name = "swlrc_hash", length = 64)
+    public String swlrcHash;
+
+    @Column(name = "confirmed_at")
+    public LocalDateTime confirmedAt;
+
+    @Column(name = "confirmed_by", columnDefinition = "text")
+    public String confirmedBy;
+
     @Column(name = "created_at", nullable = false)
     public LocalDateTime createdAt;
 

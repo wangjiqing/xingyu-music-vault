@@ -1,0 +1,233 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { Plus, RefreshRight, Tickets } from '@element-plus/icons-vue'
+import type { MusicItem } from '../../api/music'
+import {
+  createLyricAlignmentJob,
+  fetchLyricAlignmentJobs,
+  type LyricAlignmentJob,
+  type LyricAlignmentJobListItem,
+} from '../../api/lyricAlignment'
+import { useAuth } from '../../composables/useAuth'
+import { shortAlignmentJobId } from '../../constants/lyricAlignmentStatus'
+import LyricAlignmentStatusTags from '../alignment/LyricAlignmentStatusTags.vue'
+import LyricAlignmentTaskDetail from '../alignment/LyricAlignmentTaskDetail.vue'
+
+const props = defineProps<{
+  music: MusicItem
+}>()
+
+const emit = defineEmits<{
+  (event: 'imported'): void
+  (event: 'viewLyrics'): void
+}>()
+
+const router = useRouter()
+const { user } = useAuth()
+const loading = ref(false)
+const creating = ref(false)
+const jobs = ref<LyricAlignmentJobListItem[]>([])
+const selectedJobId = ref('')
+
+const sortedJobs = computed(() =>
+  [...jobs.value].sort((left, right) => timeValue(right.updatedAt || right.createdAt) - timeValue(left.updatedAt || left.createdAt)),
+)
+const latestJob = computed(() => sortedJobs.value[0] || null)
+const selectedJob = computed(() => sortedJobs.value.find((item) => item.id === selectedJobId.value) || latestJob.value)
+
+watch(
+  () => props.music.id,
+  () => loadJobs(),
+)
+
+onMounted(() => loadJobs())
+
+function timeValue(value?: string | null): number {
+  if (!value) return 0
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function formatTime(value?: string | null): string {
+  if (!value) return '-'
+  return value.replace('T', ' ').substring(0, 19)
+}
+
+function errorText(error: any, fallback: string): string {
+  const message = error?.response?.data?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
+}
+
+async function loadJobs() {
+  loading.value = true
+  try {
+    const res = await fetchLyricAlignmentJobs({ page: 0, size: 100 })
+    jobs.value = res.items.filter((item) => item.songId === props.music.id)
+    if (!selectedJobId.value || !jobs.value.some((item) => item.id === selectedJobId.value)) {
+      selectedJobId.value = latestJob.value?.id || ''
+    }
+  } catch (error: any) {
+    ElMessage.error(errorText(error, '加载歌词对齐任务失败'))
+    jobs.value = []
+    selectedJobId.value = ''
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleCreate() {
+  creating.value = true
+  try {
+    const job = await createLyricAlignmentJob({
+      songId: props.music.id,
+      createdBy: user.value?.username || 'admin',
+      workerOptions: { device: 'cpu' },
+    })
+    ElMessage.success('歌词对齐任务已创建')
+    selectedJobId.value = job.id
+    await loadJobs()
+  } catch (error: any) {
+    ElMessage.error(errorText(error, '创建歌词对齐任务失败'))
+  } finally {
+    creating.value = false
+  }
+}
+
+function handleJobUpdated(updated: LyricAlignmentJob) {
+  const index = jobs.value.findIndex((item) => item.id === updated.id)
+  if (index >= 0) {
+    jobs.value.splice(index, 1, updated)
+  }
+}
+
+async function handleImported(updated: LyricAlignmentJob) {
+  handleJobUpdated(updated)
+  emit('imported')
+  await loadJobs()
+}
+
+function openTaskList() {
+  router.push({ path: '/lyric-alignment', query: { songId: String(props.music.id) } })
+}
+</script>
+
+<template>
+  <div v-loading="loading" class="alignment-workbench-panel">
+    <div class="alignment-toolbar">
+      <div>
+        <h2>歌词对齐</h2>
+        <p v-if="latestJob">最近任务：{{ shortAlignmentJobId(latestJob.id) }}</p>
+        <p v-else>当前歌曲还没有歌词对齐任务</p>
+      </div>
+      <div class="toolbar-actions">
+        <el-button :icon="Tickets" @click="openTaskList">任务列表</el-button>
+        <el-button :icon="RefreshRight" @click="loadJobs">刷新</el-button>
+        <el-button type="primary" :icon="Plus" :loading="creating" @click="handleCreate">
+          创建对齐任务
+        </el-button>
+      </div>
+    </div>
+
+    <template v-if="latestJob">
+      <div class="latest-strip">
+        <LyricAlignmentStatusTags :job="latestJob" />
+        <span>创建：{{ formatTime(latestJob.createdAt) }}</span>
+        <span>完成：{{ formatTime(latestJob.completedAt) }}</span>
+      </div>
+
+      <div v-if="sortedJobs.length > 1" class="job-switcher">
+        <span>历史任务</span>
+        <el-select v-model="selectedJobId" size="small" class="job-select">
+          <el-option
+            v-for="item in sortedJobs"
+            :key="item.id"
+            :label="`${shortAlignmentJobId(item.id)} · ${formatTime(item.updatedAt || item.createdAt)}`"
+            :value="item.id"
+          />
+        </el-select>
+      </div>
+
+      <LyricAlignmentTaskDetail
+        v-if="selectedJob"
+        :job-id="selectedJob.id"
+        @updated="handleJobUpdated"
+        @imported="handleImported"
+        @view-lyrics="emit('viewLyrics')"
+      />
+    </template>
+
+    <el-empty v-else description="暂无歌词对齐任务" :image-size="140">
+      <el-button type="primary" :icon="Plus" :loading="creating" @click="handleCreate">
+        创建对齐任务
+      </el-button>
+    </el-empty>
+  </div>
+</template>
+
+<style scoped>
+.alignment-workbench-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: calc(8px * var(--workbench-scale, 1));
+  scrollbar-width: thin;
+}
+.alignment-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.alignment-toolbar h2 {
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: 18px;
+  line-height: 1.35;
+}
+.alignment-toolbar p {
+  margin: 6px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.latest-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--el-fill-color-lighter) 70%, transparent);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.job-switcher {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+.job-select {
+  width: min(420px, 100%);
+}
+@media (max-width: 900px) {
+  .alignment-toolbar {
+    flex-direction: column;
+  }
+  .toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+</style>

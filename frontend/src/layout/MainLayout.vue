@@ -15,6 +15,7 @@ import {
   Key,
   ArrowRight,
   VideoPlay,
+  Tickets,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { fetchAdminServerInfo } from '../api/serverInfo'
@@ -76,6 +77,7 @@ const menuItems = [
   { path: '/artists', title: '歌手', icon: User },
   { path: '/albums', title: '专辑', icon: Collection },
   { path: '/lyrics', title: '歌词', icon: Mic },
+  { path: '/lyric-alignment', title: '歌词对齐', icon: Tickets },
   { path: '/artwork', title: '封面', icon: Picture },
   { path: '/openapi', title: 'OpenAPI', icon: Connection },
   { path: '/openapi/credentials', title: 'OpenAPI 凭证', icon: Key },

@@ -44,7 +44,14 @@ public final class LyricAlignmentDtos {
             LocalDateTime queuedAt,
             LocalDateTime startedAt,
             LocalDateTime completedAt,
-            LocalDateTime failedAt
+            LocalDateTime failedAt,
+            String reviewedBy,
+            LocalDateTime reviewedAt,
+            String reviewNote,
+            String importedBy,
+            LocalDateTime importedAt,
+            String importErrorMessage,
+            Long importedLyricId
     ) {
     }
 
@@ -72,7 +79,37 @@ public final class LyricAlignmentDtos {
             LocalDateTime queuedAt,
             LocalDateTime startedAt,
             LocalDateTime completedAt,
-            LocalDateTime failedAt
+            LocalDateTime failedAt,
+            String reviewedBy,
+            LocalDateTime reviewedAt,
+            String importedBy,
+            LocalDateTime importedAt,
+            String importErrorMessage,
+            Long importedLyricId
+    ) {
+    }
+
+    public record ReviewAlignmentJobRequest(
+            String reviewNote,
+            String reviewedBy
+    ) {
+    }
+
+    public record ImportAlignmentJobRequest(
+            String importedBy
+    ) {
+    }
+
+    public record ImportAlignmentJobResponse(
+            String jobId,
+            Long songId,
+            Long lyricId,
+            Long importedLyricId,
+            String importStatus,
+            String lrcHash,
+            String swlrcHash,
+            LocalDateTime importedAt,
+            String importedBy
     ) {
     }
 

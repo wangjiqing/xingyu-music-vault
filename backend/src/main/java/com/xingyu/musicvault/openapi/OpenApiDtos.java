@@ -99,7 +99,10 @@ public final class OpenApiDtos {
             String format,
             String hash,
             String etag,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            boolean wordLyricsAvailable,
+            String wordLyricsUrl,
+            String lyricsVersionSource
     ) {
     }
 

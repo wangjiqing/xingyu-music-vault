@@ -86,10 +86,24 @@ public class OpenApiPreviewService {
 
     private LyricsMetaResponse toLyricsMeta(Long trackId, Lyric lyric) {
         if (lyric == null) {
-            return new LyricsMetaResponse(trackId, false, null, null, null, null, null);
+            return new LyricsMetaResponse(trackId, false, null, null, null, null, null, false, null, null);
         }
         String hash = hashService.lyricsHash(lyric);
-        return new LyricsMetaResponse(trackId, true, lyric.id, lyric.format, hash, hashService.lyricsEtag(trackId, hash), lyric.updatedAt);
+        boolean wordLyricsAvailable = lyric.swlrcPath != null
+                && !lyric.swlrcPath.isBlank()
+                && java.nio.file.Files.isRegularFile(java.nio.file.Path.of(lyric.swlrcPath).toAbsolutePath().normalize());
+        return new LyricsMetaResponse(
+                trackId,
+                true,
+                lyric.id,
+                lyric.format,
+                hash,
+                hashService.lyricsEtag(trackId, hash),
+                lyric.updatedAt,
+                wordLyricsAvailable,
+                wordLyricsAvailable ? "/api/open/v1/tracks/" + trackId + "/word-lyrics" : null,
+                lyric.sourceType
+        );
     }
 
     private ArtworkMetaResponse toArtworkMeta(Long trackId, Artwork artwork) {

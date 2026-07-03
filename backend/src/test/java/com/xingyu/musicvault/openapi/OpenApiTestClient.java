@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-class OpenApiTestClient {
+public class OpenApiTestClient {
     private static final byte[] EMPTY_BODY = new byte[0];
     private static final String SECRET = "xmv_sk_test_secret";
 
@@ -28,7 +28,7 @@ class OpenApiTestClient {
         this.secret = secret;
     }
 
-    static OpenApiTestClient create(OpenApiCredentialCryptoService cryptoService, List<OpenApiScope> scopes) {
+    public static OpenApiTestClient create(OpenApiCredentialCryptoService cryptoService, List<OpenApiScope> scopes) {
         String accessKey = "xmv_ak_test_" + UUID.randomUUID();
         OpenApiCredential credential = new OpenApiCredential();
         credential.name = "OpenAPI test credential";
@@ -41,11 +41,11 @@ class OpenApiTestClient {
         return new OpenApiTestClient(cryptoService, accessKey, SECRET);
     }
 
-    RequestSpecification get(String path) {
+    public RequestSpecification get(String path) {
         return signed("GET", path, EMPTY_BODY);
     }
 
-    RequestSpecification get(String path, Object... queryPairs) {
+    public RequestSpecification get(String path, Object... queryPairs) {
         RequestSpecification request = signed("GET", pathWithCanonicalQuery(path, queryPairs), EMPTY_BODY);
         for (int i = 0; i < queryPairs.length; i += 2) {
             request.queryParam(String.valueOf(queryPairs[i]), queryPairs[i + 1]);
@@ -53,7 +53,7 @@ class OpenApiTestClient {
         return request;
     }
 
-    RequestSpecification signed(String method, String pathWithQuery, byte[] body) {
+    public RequestSpecification signed(String method, String pathWithQuery, byte[] body) {
         String timestamp = String.valueOf(Instant.now().toEpochMilli());
         String nonce = UUID.randomUUID().toString();
         String canonical = String.join("\n",

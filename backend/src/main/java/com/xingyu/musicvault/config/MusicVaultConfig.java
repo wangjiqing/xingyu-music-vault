@@ -20,6 +20,8 @@ public interface MusicVaultConfig {
 
     String alignmentWorkerJobsDir();
 
+    String alignmentAssetsDir();
+
     int alignmentStatusSyncIntervalSeconds();
 
     String alignmentStatusSyncInterval();

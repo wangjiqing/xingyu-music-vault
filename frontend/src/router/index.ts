@@ -69,6 +69,12 @@ const router = createRouter({
           meta: { title: '歌词' },
         },
         {
+          path: 'lyric-alignment',
+          name: 'LyricAlignmentJobs',
+          component: () => import('../views/LyricAlignmentJobsView.vue'),
+          meta: { title: '歌词对齐' },
+        },
+        {
           path: 'artwork',
           name: 'ArtworkManage',
           component: () => import('../views/ArtworkManage.vue'),

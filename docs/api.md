@@ -97,6 +97,84 @@ POST /api/admin/auth/logout
 }
 ```
 
+### 歌词对齐任务（v1.3.0）
+
+歌词对齐任务接口仅供管理员使用。音库只写入共享任务目录、读取 Worker 状态与结果，并在管理员人工审核后确认导入；不会自动覆盖原始可信歌词，也不会在音库容器内安装或调用 Python、WhisperX、PyTorch、Docker Socket、HTTP 回调或消息队列。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/lyric-alignment/jobs` | 创建对齐任务，写入 `request.json`、`trusted-lyrics.txt`、可选 `sections.json`，最后创建 `READY` |
+| GET | `/api/lyric-alignment/jobs` | 查询任务列表；不返回完整可信歌词或完整结果文件 |
+| GET | `/api/lyric-alignment/jobs/{id}` | 查询任务详情 |
+| GET | `/api/lyric-alignment/jobs/{id}/artifacts/lrc` | 读取 Worker 生成的 LRC 结果 |
+| GET | `/api/lyric-alignment/jobs/{id}/artifacts/swlrc` | 读取 Worker 生成的 SWLRC 结果 |
+| GET | `/api/lyric-alignment/jobs/{id}/artifacts/report` | 读取 Worker 生成的 report.json |
+| GET | `/api/lyric-alignment/jobs/{id}/artifacts/alignment` | 读取 Worker 生成的 alignment.json |
+| POST | `/api/admin/lyric-alignment/jobs/{id}/approve` | 管理员审核通过 |
+| POST | `/api/admin/lyric-alignment/jobs/{id}/reject` | 管理员审核驳回 |
+| POST | `/api/admin/lyric-alignment/jobs/{id}/import` | 将审核通过的 LRC / SWLRC 确认导入为受控歌词资产 |
+
+`/api/admin/lyric-alignment/jobs/**` 是管理端规范路径；`/api/lyric-alignment/jobs/**` 保留任务创建、查询和 artifact 读取兼容入口，仍受管理员鉴权保护。
+
+#### 审核
+
+```http
+POST /api/admin/lyric-alignment/jobs/{jobId}/approve
+Content-Type: application/json
+```
+
+```json
+{
+  "reviewNote": "副歌和主歌位置可接受，允许导入。",
+  "reviewedBy": "admin"
+}
+```
+
+仅 `status=COMPLETED` 且 `reviewStatus=PENDING` 的任务可审核。通过后 `reviewStatus=APPROVED`，驳回后 `reviewStatus=REJECTED`，并记录 `reviewedBy`、`reviewedAt`、`reviewNote`。重复审核、未完成任务、`FAILED` 或 `ABANDONED` 任务返回 `409 conflict`。Worker 的 `NEEDS_REVIEW` 只表示执行结论，不能替代人工审核状态。
+
+#### 确认导入
+
+```http
+POST /api/admin/lyric-alignment/jobs/{jobId}/import
+Content-Type: application/json
+```
+
+```json
+{
+  "importedBy": "admin"
+}
+```
+
+导入前校验任务已完成、已审核通过、结果目录存在、`lyrics.lrc` 与 `lyrics.swlrc` 均存在、当前文件 hash 与同步时记录一致、关联歌曲存在、受控歌词资产目录可写。导入会把结果复制到 `music-vault.alignment-assets-dir`，创建或复用 `sourceType=ALIGNMENT` 的 `lyrics` 记录，保存 `sourceTaskId`、`parentLyricsId`、`swlrcPath`、`swlrcHash`、`confirmedAt`、`confirmedBy`，并将新 LRC 绑定为当前歌曲主歌词。
+
+已导入任务再次导入会幂等返回同一个 `importedLyricId`，不会重复生成资产或破坏绑定。导入失败时任务 `importStatus=IMPORT_FAILED` 并记录 `importErrorMessage`；原始可信歌词和既有正式歌词资产保持不变。
+
+响应：
+
+```json
+{
+  "jobId": "f5283726-42c4-4915-8df5-32e8df94d79a",
+  "songId": 1,
+  "lyricId": 10,
+  "importedLyricId": 11,
+  "importStatus": "IMPORTED",
+  "lrcHash": "4a1b...",
+  "swlrcHash": "5b2c...",
+  "importedAt": "2026-07-03T21:57:39.979",
+  "importedBy": "admin"
+}
+```
+
+#### 任务状态
+
+执行状态：`CREATING`、`QUEUED`、`RUNNING`、`COMPLETED`、`FAILED`、`ABANDONED`。
+
+审核状态：`NOT_AVAILABLE`、`PENDING`、`APPROVED`、`REJECTED`。
+
+导入状态：`NOT_IMPORTED`、`IMPORTED`、`IMPORT_FAILED`。
+
+每次审核通过、审核驳回、导入成功、导入失败都会写入 `lyric_alignment_job_events`，包含任务、歌曲、动作、操作者、状态变化、备注或错误信息。
+
 ### 歌曲工作台（v1.2.1）
 
 歌曲工作台接口仅供管理端登录后使用，面向本地 / 局域网可信整理场景。接口只读，不修改元数据、歌词、封面或音频文件，不影响 `/api/open/v1/**` 的 AK/SK + HMAC 认证策略。
@@ -1696,6 +1774,7 @@ OpenAPI 错误码：
 | `OPENAPI_RATE_LIMITED` | OpenAPI 请求超过限流阈值 |
 | `OPENAPI_TRACK_NOT_FOUND` | 曲目不存在或不可访问 |
 | `OPENAPI_LYRICS_NOT_FOUND` | 歌词不存在 |
+| `OPENAPI_WORD_LYRICS_NOT_FOUND` | 逐字歌词不存在 |
 | `OPENAPI_ARTWORK_NOT_FOUND` | 封面不存在或不可访问 |
 | `OPENAPI_UNSUPPORTED_SORT` | 不支持的排序字段 |
 | `OPENAPI_INTERNAL_ERROR` | OpenAPI 内部错误 |
@@ -1712,6 +1791,7 @@ OpenAPI 错误码：
 | GET | `/api/open/v1/tracks/{id}` | 曲目详情 |
 | GET | `/api/open/v1/tracks/{id}/lyrics` | 歌词原文（按需拉取） |
 | GET | `/api/open/v1/tracks/{id}/lyrics/meta` | 歌词元数据 |
+| GET | `/api/open/v1/tracks/{id}/word-lyrics` | 可选逐字歌词 SWLRC；仅导入对齐结果且 SWLRC 存在时可用 |
 | GET | `/api/open/v1/tracks/{id}/artwork` | 封面图片（二进制流） |
 | GET | `/api/open/v1/tracks/{id}/artwork/meta` | 封面元数据 |
 | GET | `/api/open/v1/artists` | 歌手聚合列表（全量，无分页） |
@@ -1731,7 +1811,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.2.4",
+  "serviceVersion": "1.3.0",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
@@ -1976,6 +2056,39 @@ GET /api/open/v1/tracks/{id}/lyrics/meta
 本接口不返回 `language` 和 `hasTimeTag`。
 `hash` 由歌词内容、歌词格式和语言组合后计算 SHA-256，格式为 `sha256:<hex>`。
 `etag` 使用当前歌词 hash 生成，供 `/lyrics` 条件请求使用。
+
+v1.3.0 起，`lyrics/meta` 对导入了逐字歌词的歌曲追加以下可选字段：
+
+```json
+{
+  "wordLyricsAvailable": true,
+  "wordLyricsUrl": "/api/open/v1/tracks/1/word-lyrics",
+  "lyricsVersionSource": "ALIGNMENT"
+}
+```
+
+旧 LRC 客户端可以忽略这些新增字段。`wordLyricsAvailable=false` 或 `wordLyricsUrl=null` 表示没有可用 SWLRC。
+
+### 逐字歌词 SWLRC
+
+```http
+GET /api/open/v1/tracks/1/word-lyrics
+```
+
+仅当前主歌词来自已导入的对齐结果，且关联 SWLRC 文件真实存在时返回。无逐字歌词时返回 `404 OPENAPI_WORD_LYRICS_NOT_FOUND`，客户端应降级为普通 LRC。
+
+成功响应：
+
+```json
+{
+  "trackId": 1,
+  "lyricId": 11,
+  "format": "SWLRC",
+  "content": "{...}",
+  "hash": "sha256:...",
+  "updatedAt": "2026-07-03T21:57:39"
+}
+```
 
 ### 封面文件
 

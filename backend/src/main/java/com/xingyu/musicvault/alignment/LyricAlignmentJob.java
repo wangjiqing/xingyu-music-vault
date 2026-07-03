@@ -101,6 +101,27 @@ public class LyricAlignmentJob extends PanacheEntityBase {
     @Column(name = "failed_at")
     public LocalDateTime failedAt;
 
+    @Column(name = "reviewed_by", columnDefinition = "text")
+    public String reviewedBy;
+
+    @Column(name = "reviewed_at")
+    public LocalDateTime reviewedAt;
+
+    @Column(name = "review_note", columnDefinition = "text")
+    public String reviewNote;
+
+    @Column(name = "imported_by", columnDefinition = "text")
+    public String importedBy;
+
+    @Column(name = "imported_at")
+    public LocalDateTime importedAt;
+
+    @Column(name = "import_error_message", columnDefinition = "text")
+    public String importErrorMessage;
+
+    @Column(name = "imported_lyric_id")
+    public Long importedLyricId;
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();
