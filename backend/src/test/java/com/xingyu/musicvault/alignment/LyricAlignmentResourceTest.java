@@ -308,6 +308,18 @@ class LyricAlignmentResourceTest {
     }
 
     @Test
+    void createsMissingAlignmentJobsRootForLocalDevelopment() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("missing-root.flac"), TRUSTED_LYRICS);
+        deleteRecursively(JOBS_ROOT);
+
+        String jobId = createAlignmentJob(songId);
+
+        assertTrue(Files.isDirectory(JOBS_ROOT));
+        assertTrue(Files.isRegularFile(JOBS_ROOT.resolve(jobId).resolve("request.json")));
+        assertTrue(Files.isRegularFile(JOBS_ROOT.resolve(jobId).resolve("READY")));
+    }
+
+    @Test
     void synchronizesReadyToQueued() throws IOException {
         Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("ready.flac"), TRUSTED_LYRICS);
         String jobId = createAlignmentJob(songId);

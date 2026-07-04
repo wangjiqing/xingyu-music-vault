@@ -121,6 +121,74 @@ class LyricDraftResourceTest {
     }
 
     @Test
+    void latestDraftContextReturnsDefaultsAndTrustedAssetSummary() throws IOException {
+        Long songId = createSong(MUSIC_ROOT.resolve("latest-context.flac"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{musicId}/lyric-draft-jobs/latest", songId)
+                .then()
+                .statusCode(200)
+                .body("musicId", equalTo(songId.intValue()))
+                .body("defaultOptions.language", equalTo("zh"))
+                .body("defaultOptions.asrModel", equalTo("medium"))
+                .body("defaultOptions.skipSeparation", equalTo(false))
+                .body("defaultOptions.vadFilter", equalTo(true))
+                .body("latestJob", nullValue())
+                .body("draft", nullValue())
+                .body("trustedLyricsAsset", nullValue());
+
+        String queuedJobId = createDraftJob(songId);
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{musicId}/lyric-draft-jobs/latest", songId)
+                .then()
+                .statusCode(200)
+                .body("latestJob.id", equalTo(queuedJobId))
+                .body("latestJob.workerSignals.ready", equalTo(true))
+                .body("latestJob.workerSignals.running", equalTo(false))
+                .body("latestJob.workerSignals.statusJsonAvailable", equalTo(false))
+                .body("latestJob.workerSignals.resultDirectoryAvailable", equalTo(false))
+                .body("latestJob.workerSignals.stageMessage", equalTo("READY 已写入，正在等待 Worker 领取任务"));
+
+        writeDraftResultFiles(queuedJobId, DRAFT_TEXT);
+        writeStatusJson(queuedJobId, """
+                {
+                  "schemaVersion": 2,
+                  "taskType": "LYRIC_DRAFT_EXTRACTION",
+                  "status": "SUCCEEDED"
+                }
+                """);
+        statusSynchronizer.synchronize(queuedJobId);
+        Number trustedLyricsIdValue = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"note\":\"已校对\", \"confirmedBy\":\"reviewer\"}")
+                .when()
+                .post("/api/admin/lyric-draft-jobs/{jobId}/confirm", queuedJobId)
+                .then()
+                .statusCode(200)
+                .extract()
+                .path("trustedLyricsId");
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{musicId}/lyric-draft-jobs/latest", songId)
+                .then()
+                .statusCode(200)
+                .body("latestJob.id", equalTo(queuedJobId))
+                .body("latestJob.taskType", equalTo("LYRIC_DRAFT_EXTRACTION"))
+                .body("latestJob.draftStatus", equalTo("CONFIRMED"))
+                .body("latestJob.confirmedTrustedLyricsId", equalTo(trustedLyricsIdValue.intValue()))
+                .body("draft.draftStatus", equalTo("CONFIRMED"))
+                .body("trustedLyricsAsset.id", equalTo(trustedLyricsIdValue.intValue()))
+                .body("trustedLyricsAsset.sourceType", equalTo("DRAFT_CONFIRMED"));
+    }
+
+    @Test
     void rejectsDuplicateActiveDraftJobForSameSong() throws IOException {
         Long songId = createSong(MUSIC_ROOT.resolve("duplicate.flac"));
         createDraftJob(songId);

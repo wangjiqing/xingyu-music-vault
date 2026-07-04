@@ -2,9 +2,11 @@ import http from './http'
 import type { PageResponse } from './types'
 
 export type AlignmentArtifactType = 'lrc' | 'swlrc' | 'report' | 'alignment'
+export type DraftArtifactType = 'cleaned' | 'raw' | 'segments' | 'report'
 
 export interface LyricAlignmentJob {
   id: string
+  taskType: string
   songId: number
   lyricId: number | null
   status: string
@@ -19,6 +21,7 @@ export interface LyricAlignmentJob {
   errorMessage?: string | null
   resultSummary?: Record<string, unknown> | null
   workerStatus?: Record<string, unknown> | null
+  workerSignals?: WorkerSignals | null
   alignmentJsonHash?: string | null
   lrcHash?: string | null
   swlrcHash?: string | null
@@ -39,6 +42,22 @@ export interface LyricAlignmentJob {
   importedAt?: string | null
   importErrorMessage?: string | null
   importedLyricId?: number | null
+  draftStatus?: string | null
+  confirmedTrustedLyricsId?: number | null
+}
+
+export interface WorkerSignals {
+  jobDirectoryAvailable: boolean
+  ready: boolean
+  running: boolean
+  succeeded: boolean
+  needsReview: boolean
+  failed: boolean
+  abandoned: boolean
+  statusJsonAvailable: boolean
+  resultDirectoryAvailable: boolean
+  stderrLogAvailable: boolean
+  stageMessage: string
 }
 
 export type LyricAlignmentJobListItem = LyricAlignmentJob
@@ -51,9 +70,95 @@ export interface LyricAlignmentJobQuery {
 
 export interface CreateAlignmentJobRequest {
   songId: number
+  sourceLyricsAssetId?: number | null
   createdBy?: string
   sections?: unknown
   workerOptions?: Record<string, unknown>
+}
+
+export interface CreateLyricDraftJobRequest {
+  language?: string
+  asrModel?: string
+  skipSeparation?: boolean
+  vadFilter?: boolean
+  conditionOnPreviousText?: boolean
+  keepSuspectedMetadata?: boolean
+  retainIntermediate?: boolean
+  createdBy?: string
+}
+
+export interface LyricDraftDefaultOptions {
+  language: string
+  asrModel: string
+  skipSeparation: boolean
+  vadFilter: boolean
+  conditionOnPreviousText: boolean
+  keepSuspectedMetadata: boolean
+  retainIntermediate: boolean
+}
+
+export interface LyricDraftTrustedAsset {
+  id: number
+  sourceType: string
+  contentHash: string
+  confirmedAt: string | null
+  confirmedBy: string | null
+}
+
+export interface LyricDraft {
+  jobId: string
+  musicId: number
+  executionStatus: string
+  draftStatus: string
+  originalText: string
+  originalTextHash: string
+  editableText: string
+  editableTextHash: string
+  reportSummary?: Record<string, unknown> | null
+  createdAt: string
+  updatedAt: string
+  editedBy?: string | null
+  editedAt?: string | null
+  confirmedBy?: string | null
+  confirmedAt?: string | null
+  confirmedTrustedLyricsId?: number | null
+  rejectedBy?: string | null
+  rejectedAt?: string | null
+  rejectNote?: string | null
+  errorMessage?: string | null
+}
+
+export interface MusicLyricDraftContext {
+  musicId: number
+  defaultOptions: LyricDraftDefaultOptions
+  latestJob: LyricAlignmentJob | null
+  draft: LyricDraft | null
+  trustedLyricsAsset: LyricDraftTrustedAsset | null
+}
+
+export interface UpdateLyricDraftRequest {
+  text: string
+  editedBy?: string
+}
+
+export interface ConfirmLyricDraftRequest {
+  note?: string
+  confirmedBy?: string
+}
+
+export interface ConfirmLyricDraftResponse {
+  jobId: string
+  draftId: number
+  trustedLyricsId: number
+  draftStatus: string
+  editableTextHash: string
+  confirmedAt: string
+  confirmedBy: string
+}
+
+export interface RejectLyricDraftRequest {
+  rejectNote: string
+  rejectedBy?: string
 }
 
 export interface ReviewAlignmentJobRequest {
@@ -125,6 +230,59 @@ export async function fetchLyricAlignmentArtifact(
   artifact: AlignmentArtifactType,
 ): Promise<string> {
   const { data } = await http.get(`/api/admin/lyric-alignment/jobs/${id}/artifacts/${artifact}`, {
+    responseType: 'text',
+    transformResponse: [(value) => value],
+  })
+  return typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+}
+
+export async function fetchMusicLyricDraftContext(musicId: number): Promise<MusicLyricDraftContext> {
+  const { data } = await http.get(`/api/admin/music/${musicId}/lyric-draft-jobs/latest`)
+  return data
+}
+
+export async function createLyricDraftJob(
+  musicId: number,
+  payload: CreateLyricDraftJobRequest,
+): Promise<LyricAlignmentJob> {
+  const { data } = await http.post(`/api/admin/music/${musicId}/lyric-draft-jobs`, payload)
+  return data
+}
+
+export async function fetchLyricDraft(jobId: string): Promise<LyricDraft> {
+  const { data } = await http.get(`/api/admin/lyric-draft-jobs/${jobId}/draft`)
+  return data
+}
+
+export async function updateLyricDraft(
+  jobId: string,
+  payload: UpdateLyricDraftRequest,
+): Promise<LyricDraft> {
+  const { data } = await http.put(`/api/admin/lyric-draft-jobs/${jobId}/draft`, payload)
+  return data
+}
+
+export async function confirmLyricDraft(
+  jobId: string,
+  payload: ConfirmLyricDraftRequest,
+): Promise<ConfirmLyricDraftResponse> {
+  const { data } = await http.post(`/api/admin/lyric-draft-jobs/${jobId}/confirm`, payload)
+  return data
+}
+
+export async function rejectLyricDraft(
+  jobId: string,
+  payload: RejectLyricDraftRequest,
+): Promise<LyricDraft> {
+  const { data } = await http.post(`/api/admin/lyric-draft-jobs/${jobId}/reject`, payload)
+  return data
+}
+
+export async function fetchLyricDraftArtifact(
+  jobId: string,
+  artifact: DraftArtifactType,
+): Promise<string> {
+  const { data } = await http.get(`/api/admin/lyric-draft-jobs/${jobId}/artifacts/${artifact}`, {
     responseType: 'text',
     transformResponse: [(value) => value],
   })

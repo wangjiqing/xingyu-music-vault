@@ -19,4 +19,12 @@ public class LyricAlignmentJobRepository implements PanacheRepositoryBase<LyricA
                 List.of("CREATING", "QUEUED", "RUNNING")
         ).firstResult();
     }
+
+    public LyricAlignmentJob findLatestDraftJobForSong(Long songId) {
+        return find(
+                "songId = ?1 and taskType = ?2 order by updatedAt desc, createdAt desc",
+                songId,
+                "LYRIC_DRAFT_EXTRACTION"
+        ).firstResult();
+    }
 }

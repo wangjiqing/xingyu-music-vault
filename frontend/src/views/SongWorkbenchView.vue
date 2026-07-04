@@ -19,6 +19,7 @@ import SongWorkbenchLyricsPanel from '../components/workbench/SongWorkbenchLyric
 import SongWorkbenchArtworkPanel from '../components/workbench/SongWorkbenchArtworkPanel.vue'
 import SongWorkbenchOpenApiPanel from '../components/workbench/SongWorkbenchOpenApiPanel.vue'
 import SongWorkbenchAlignmentPanel from '../components/workbench/SongWorkbenchAlignmentPanel.vue'
+import SongWorkbenchDraftPanel from '../components/workbench/SongWorkbenchDraftPanel.vue'
 import { currentThemeAssets } from '../theme/currentTheme'
 
 const route = useRoute()
@@ -33,7 +34,8 @@ const workbench = ref<MusicWorkbench | null>(null)
 const openApiPreview = ref<OpenApiPreview | null>(null)
 const openApiError = ref('')
 const playbackError = ref('')
-const activeTab = ref('lyrics')
+const activeTab = ref(resolveRouteTab(route.query.tab))
+const preselectedSourceLyricsId = ref<number | null>(null)
 const prefetching = ref(false)
 const playbackMode = ref<PlaybackMode>('order')
 const playerCurrentTime = ref(0)
@@ -54,6 +56,27 @@ const currentMusic = computed(() => workbench.value?.music || list.value.find((i
 const hasMoreRows = computed(() => list.value.length < total.value)
 const playerCanNext = computed(() => canNext.value || hasMoreRows.value || playbackMode.value === 'repeat-list' || playbackMode.value === 'shuffle')
 const artworkBackgroundUrl = computed(() => workbench.value?.artwork.available ? workbench.value.artwork.previewUrl : '')
+
+function resolveRouteTab(value: unknown): string {
+  const tab = typeof value === 'string' ? value : ''
+  return ['lyrics', 'draft', 'alignment', 'artwork', 'metadata', 'openapi'].includes(tab) ? tab : 'lyrics'
+}
+
+function resolveSourceLyricsId(value: unknown): number | null {
+  const id = Number(value)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
+
+function workbenchQuery(id: number) {
+  const query: Record<string, string> = { id: String(id) }
+  if (activeTab.value !== 'lyrics') {
+    query.tab = activeTab.value
+  }
+  if (preselectedSourceLyricsId.value && activeTab.value === 'alignment') {
+    query.sourceLyricsAssetId = String(preselectedSourceLyricsId.value)
+  }
+  return query
+}
 
 function displayTitle(item: MusicItem | null): string {
   if (!item) return '未选择歌曲'
@@ -116,7 +139,7 @@ async function loadWorkbench(id: number, autoplay = false) {
     workbench.value = data
     openApiPreview.value = data.openApiPreview
     selectedId.value = id
-    router.replace({ path: '/music/workbench', query: { id } })
+    router.replace({ path: '/music/workbench', query: workbenchQuery(id) })
   } catch {
     workbench.value = null
     openApiPreview.value = null
@@ -213,6 +236,11 @@ async function handleAlignmentImported() {
   await loadWorkbench(selectedId.value, false)
 }
 
+function handleDraftTrustedConfirmed(trustedLyricsId: number) {
+  preselectedSourceLyricsId.value = trustedLyricsId
+  activeTab.value = 'alignment'
+}
+
 watch(
   () => route.query.id,
   (value) => {
@@ -222,6 +250,30 @@ watch(
     }
   },
 )
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    const nextTab = resolveRouteTab(value)
+    if (nextTab !== activeTab.value) {
+      activeTab.value = nextTab
+    }
+  },
+)
+
+watch(
+  () => route.query.sourceLyricsAssetId,
+  (value) => {
+    preselectedSourceLyricsId.value = resolveSourceLyricsId(value)
+  },
+  { immediate: true },
+)
+
+watch(activeTab, () => {
+  if (selectedId.value) {
+    router.replace({ path: '/music/workbench', query: workbenchQuery(selectedId.value) })
+  }
+})
 
 onMounted(() => loadList(false))
 </script>
@@ -301,9 +353,17 @@ onMounted(() => loadList(false))
               :duration="playerDuration"
             />
           </el-tab-pane>
+          <el-tab-pane label="歌词草稿" name="draft" class="workbench-scroll-pane">
+            <SongWorkbenchDraftPanel
+              :music="workbench.music"
+              :current-lyric-available="workbench.lyrics.available"
+              @trusted-confirmed="handleDraftTrustedConfirmed"
+            />
+          </el-tab-pane>
           <el-tab-pane label="歌词对齐" name="alignment" class="workbench-scroll-pane">
             <SongWorkbenchAlignmentPanel
               :music="workbench.music"
+              :preselected-source-lyrics-id="preselectedSourceLyricsId"
               @imported="handleAlignmentImported"
               @view-lyrics="activeTab = 'lyrics'"
             />

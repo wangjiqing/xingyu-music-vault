@@ -27,6 +27,18 @@ export const ALIGNMENT_WORKER_OUTCOME: Record<string, string> = {
   ABANDONED: 'Worker 已放弃',
 }
 
+export const LYRIC_TASK_TYPE: Record<string, string> = {
+  LYRICS_ALIGNMENT: '逐字歌词对齐',
+  LYRIC_DRAFT_EXTRACTION: '歌词草稿提取',
+}
+
+export const LYRIC_DRAFT_STATUS: Record<string, string> = {
+  PENDING_REVIEW: '待校对',
+  EDITING: '编辑中',
+  CONFIRMED: '已确认可信歌词',
+  REJECTED: '已驳回',
+}
+
 export function alignmentExecutionStatusLabel(status?: string | null): string {
   if (!status) return '-'
   return ALIGNMENT_EXECUTION_STATUS[status] || status
@@ -45,6 +57,16 @@ export function alignmentImportStatusLabel(status?: string | null): string {
 export function alignmentWorkerOutcomeLabel(outcome?: string | null): string {
   if (!outcome) return '-'
   return ALIGNMENT_WORKER_OUTCOME[outcome] || outcome
+}
+
+export function lyricTaskTypeLabel(taskType?: string | null): string {
+  if (!taskType) return '逐字歌词对齐'
+  return LYRIC_TASK_TYPE[taskType] || taskType
+}
+
+export function lyricDraftStatusLabel(status?: string | null): string {
+  if (!status) return '-'
+  return LYRIC_DRAFT_STATUS[status] || status
 }
 
 export function alignmentExecutionStatusTagType(status?: string | null): string {
@@ -86,6 +108,20 @@ export function alignmentWorkerOutcomeTagType(outcome?: string | null): string {
     ABANDONED: 'info',
   }
   return outcome ? map[outcome] || 'info' : 'info'
+}
+
+export function lyricTaskTypeTagType(taskType?: string | null): string {
+  return taskType === 'LYRIC_DRAFT_EXTRACTION' ? 'warning' : 'primary'
+}
+
+export function lyricDraftStatusTagType(status?: string | null): string {
+  const map: Record<string, string> = {
+    PENDING_REVIEW: 'warning',
+    EDITING: 'primary',
+    CONFIRMED: 'success',
+    REJECTED: 'danger',
+  }
+  return status ? map[status] || 'info' : 'info'
 }
 
 export function shortAlignmentJobId(id: string): string {
