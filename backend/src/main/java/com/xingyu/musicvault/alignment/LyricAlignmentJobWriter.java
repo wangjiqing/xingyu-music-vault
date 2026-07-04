@@ -36,6 +36,12 @@ public class LyricAlignmentJobWriter {
         }
     }
 
+    public void writeRequestOnly(Path jobDir, JsonNode requestSnapshot) throws IOException {
+        ObjectWriter writer = objectMapper.writerWithDefaultPrettyPrinter();
+        Files.createDirectory(jobDir);
+        writeJsonAtomically(jobDir, REQUEST_FILE, requestSnapshot, writer);
+    }
+
     public void markReady(Path jobDir) throws IOException {
         writeStringAtomically(jobDir, READY_FILE, "");
     }

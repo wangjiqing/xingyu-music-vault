@@ -59,6 +59,12 @@ public class Lyric extends PanacheEntityBase {
     @Column(name = "source_task_id", columnDefinition = "text")
     public String sourceTaskId;
 
+    @Column(name = "source_draft_id")
+    public Long sourceDraftId;
+
+    @Column(name = "source_text_hash", length = 64)
+    public String sourceTextHash;
+
     @Column(name = "parent_lyrics_id")
     public Long parentLyricsId;
 

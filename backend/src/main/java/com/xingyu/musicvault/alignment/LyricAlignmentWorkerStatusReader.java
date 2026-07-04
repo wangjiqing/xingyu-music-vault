@@ -28,12 +28,14 @@ public class LyricAlignmentWorkerStatusReader {
 
     public WorkerStatusSnapshot read(Path jobDir) {
         if (jobDir == null || !Files.isDirectory(jobDir)) {
-            return new WorkerStatusSnapshot(false, false, false, false, false, false, null, null, null, "Alignment job directory is missing");
+            return new WorkerStatusSnapshot(false, false, false, false, false, false, null, null, null, null, null, "Alignment job directory is missing");
         }
 
         JsonNode statusJson = null;
         String statusJsonRaw = null;
         String status = null;
+        Integer schemaVersion = null;
+        String taskType = null;
         String syncMessage = null;
         Path statusPath = jobDir.resolve(STATUS_JSON);
         if (Files.isRegularFile(statusPath)) {
@@ -41,13 +43,19 @@ public class LyricAlignmentWorkerStatusReader {
                 statusJsonRaw = Files.readString(statusPath, StandardCharsets.UTF_8);
                 statusJson = objectMapper.readTree(statusJsonRaw);
                 JsonNode schemaVersionNode = statusJson.get("schemaVersion");
-                if (schemaVersionNode != null && schemaVersionNode.canConvertToInt()
-                        && schemaVersionNode.asInt() != 1) {
-                    syncMessage = "Unsupported worker status schemaVersion: " + schemaVersionNode.asInt();
+                if (schemaVersionNode != null && schemaVersionNode.canConvertToInt()) {
+                    schemaVersion = schemaVersionNode.asInt();
+                }
+                if (schemaVersion != null && schemaVersion != 1 && schemaVersion != 2) {
+                    syncMessage = "Unsupported worker status schemaVersion: " + schemaVersion;
                 } else {
                     JsonNode statusNode = statusJson.get("status");
                     if (statusNode != null && statusNode.isTextual()) {
                         status = statusNode.asText();
+                    }
+                    JsonNode taskTypeNode = statusJson.get("taskType");
+                    if (taskTypeNode != null && taskTypeNode.isTextual()) {
+                        taskType = taskTypeNode.asText();
                     }
                 }
             } catch (IOException | RuntimeException exception) {
@@ -65,6 +73,8 @@ public class LyricAlignmentWorkerStatusReader {
                 Files.exists(jobDir.resolve(FAILED)),
                 Files.exists(jobDir.resolve(ABANDONED)),
                 status,
+                schemaVersion,
+                taskType,
                 statusJson,
                 statusJsonRaw,
                 syncMessage
@@ -79,6 +89,8 @@ public class LyricAlignmentWorkerStatusReader {
             boolean failed,
             boolean abandoned,
             String status,
+            Integer schemaVersion,
+            String taskType,
             JsonNode statusJson,
             String statusJsonRaw,
             String syncMessage

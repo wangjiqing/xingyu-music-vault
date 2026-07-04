@@ -6,11 +6,12 @@
 
 ### 新增 / 调整
 
-- **歌词对齐 Worker 联调基础**：补充共享任务目录、Worker 结果读取和状态同步字段，`request.json` 调整为 aligner v0.3.0 的 Worker 协议字段；历史任务的旧 `requestSnapshotJson` 不会被覆盖。
+- **歌词对齐 Worker 联调基础**：补充共享任务目录、Worker 结果读取和状态同步字段，既支持 aligner v0.3.0 的 v1 对齐协议，也支持 aligner v0.4.0 的 v2 任务类型协议；历史任务的旧 `requestSnapshotJson` 不会被覆盖。
 - **歌词对齐人工审核与导入**：新增管理端审核通过 / 驳回和确认导入接口。对齐结果必须由管理员审核通过后才能导入；导入会将 `lyrics.lrc`、`lyrics.swlrc` 从中间任务目录复制到音库受控资产目录，并新建 `ALIGNMENT` 来源歌词记录，不会删除或覆盖原始可信歌词。
+- **歌词草稿提取任务**：新增 `LYRIC_DRAFT_EXTRACTION` 任务类型和 `lyric_drafts` 草稿表。Worker v0.4.0 可从音频产出 `transcript.cleaned.txt`，音库保存原始草稿快照和可编辑文本；管理员确认后生成 `DRAFT_CONFIRMED` 来源可信歌词资产，但不会自动替换当前 LRC/SWLRC，也不会自动创建逐字对齐任务。
 - **SWLRC 兼容输出**：OpenAPI 继续默认输出当前生效 LRC；导入 SWLRC 后，`lyrics/meta` 会暴露可选逐字歌词可用性和 URL，旧客户端可忽略新增字段。
-- **部署示例补强**：Dockerfile 默认创建 `/alignment-jobs` 并提供对齐相关环境变量；Compose 示例新增 Worker 模型缓存环境变量，说明音库 `/alignment-jobs` 与 Worker `/jobs` 是同一宿主机目录的不同容器视角。
-- **仍不包含**：在线逐字时间轴编辑、批量审核、批量导入、自动审核、Worker 重跑 UI、GPU / 多 Worker 调度、Docker Socket、HTTP 回调、消息队列或音库内置 Python / WhisperX / PyTorch。
+- **部署示例补强**：Dockerfile 默认创建 `/alignment-jobs` 并提供对齐相关环境变量；Compose 示例使用 `wangjiqing/xingyu-lyrics-aligner:0.4.0`，新增 Worker 镜像、模型缓存、草稿默认 ASR 模型和草稿文本大小限制配置。
+- **仍不包含**：草稿在线编辑前端、在线逐字时间轴编辑、批量草稿提取、批量审核、批量导入、自动审核、Worker 重跑 UI、GPU / 多 Worker 调度、Docker Socket、HTTP 回调、消息队列或音库内置 Python / WhisperX / PyTorch。
 
 ## v1.2.4 — 歌词 source_path 幂等恢复与未绑定记录清理
 
