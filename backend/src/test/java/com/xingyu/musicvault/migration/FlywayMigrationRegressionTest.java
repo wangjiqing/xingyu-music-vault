@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(17, first.migrationsExecuted);
+        assertEquals(19, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -101,6 +101,8 @@ class FlywayMigrationRegressionTest {
                     "idx_lyrics_source_draft_id",
                     "idx_lyrics_alignment_source_task_id",
                     "idx_lyrics_parent_lyrics_id",
+                    "idx_lyrics_source_type_source_path",
+                    "idx_lyrics_source_type_task",
                     "idx_lyric_drafts_music_id",
                     "idx_lyric_drafts_draft_status",
                     "idx_lyric_drafts_created_at",
@@ -140,7 +142,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(16, result.migrationsExecuted);
+        assertEquals(18, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));

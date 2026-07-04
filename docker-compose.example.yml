@@ -1,6 +1,6 @@
 services:
   xingyu-music-vault:
-    image: xingyu-music-vault:${IMAGE_TAG:-v1.3.0}
+    image: xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,7 +17,7 @@ services:
       - ${CONFIG_DIR:-./config}:/app/config
       - ${LOGS_DIR:-./logs}:/app/logs
       - ${MUSIC_DIR:-./music}:/music:ro
-      - ${LYRICS_DIR:-./lyrics}:/lyrics:ro
+      - ${LYRICS_DIR:-./lyrics}:/lyrics:rw
       - ${ALIGNMENT_JOBS_DIR:-./alignment-jobs}:/alignment-jobs
       - ${ARTWORK_DIR:-./artwork}:/artwork
     environment:
@@ -32,6 +32,8 @@ services:
       MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR: /music
       MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR: /jobs
       MUSIC_VAULT_ALIGNMENT_ASSETS_DIR: /app/data/alignment-lyrics
+      MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT: ${MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT:-/lyrics}
+      MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR: ${MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR:-alignment}
       ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL: ${ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL:-medium}
       ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION: ${ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION:-false}
       ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER: ${ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER:-true}

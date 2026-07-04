@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.openapi;
 
+import com.xingyu.musicvault.api.ApplicationInfo;
 import com.xingyu.musicvault.artwork.Artwork;
 import com.xingyu.musicvault.artwork.ArtworkService;
 import com.xingyu.musicvault.artwork.MusicArtworkBinding;
@@ -81,6 +82,9 @@ public class OpenApiResource {
     @Inject
     OpenApiHashService hashService;
 
+    @Inject
+    ApplicationInfo applicationInfo;
+
     @ConfigProperty(name = "app.artwork.scan-dir")
     String artworkScanDir;
 
@@ -89,7 +93,7 @@ public class OpenApiResource {
     public ServerInfoResponse serverInfo() {
         return new ServerInfoResponse(
                 "xingyu-music-vault",
-                "1.3.0",
+                applicationInfo.version(),
                 "v1",
                 true,
                 new LinkedHashMap<>(Map.of(

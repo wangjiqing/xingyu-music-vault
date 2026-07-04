@@ -34,6 +34,7 @@ class LyricResourceTest {
     @BeforeEach
     @Transactional
     void cleanData() throws IOException {
+        deleteRecursively(ALLOWED_MUSIC_ROOT);
         Files.createDirectories(ALLOWED_MUSIC_ROOT);
         lyricDir = Files.createTempDirectory(ALLOWED_MUSIC_ROOT, "lyrics-api-test-");
         SongLyric.deleteAll();
@@ -310,6 +311,147 @@ class LyricResourceTest {
     }
 
     @Test
+    void scanExcludesManagedAlignmentDirectory() throws IOException {
+        createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        Path managedLrc = ALLOWED_MUSIC_ROOT.resolve("alignment/1/job-1/lyrics.lrc");
+        Files.createDirectories(managedLrc.getParent());
+        Files.writeString(managedLrc, "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]managed alignment\n", StandardCharsets.UTF_8);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(ALLOWED_MUSIC_ROOT))
+                .when()
+                .post("/api/lyrics/scan")
+                .then()
+                .statusCode(200)
+                .body("totalFiles", equalTo(0))
+                .body("imported", equalTo(0))
+                .body("matched", equalTo(0))
+                .body("failed", equalTo(0));
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, Lyric.count());
+    }
+
+    @Test
+    void localScanDoesNotReuseAlignmentByContentHash() throws IOException {
+        assertLocalScanDoesNotReuseGeneratedLyric("ALIGNMENT", "alignment-source-task");
+    }
+
+    @Test
+    void localScanDoesNotReuseDraftConfirmedByContentHash() throws IOException {
+        assertLocalScanDoesNotReuseGeneratedLyric("DRAFT_CONFIRMED", "draft-source-task");
+    }
+
+    @Test
+    void deletedAlignmentAssetDoesNotParticipateInLocalDeleteSynchronization() throws IOException {
+        Long songId = createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        Long lyricId = QuarkusTransaction.requiringNew().call(() -> {
+            Lyric lyric = new Lyric();
+            lyric.title = "晴天";
+            lyric.artist = "周杰伦";
+            lyric.sourceType = "ALIGNMENT";
+            lyric.sourceTaskId = "missing-alignment-asset";
+            lyric.sourcePath = ALLOWED_MUSIC_ROOT.resolve("alignment/%d/missing-alignment-asset/lyrics.lrc".formatted(songId)).toString();
+            lyric.content = "[00:01.00]db content survives\n";
+            lyric.contentHash = sha256(lyric.content);
+            lyric.format = "LRC";
+            lyric.parseStatus = "PARSED";
+            lyric.persist();
+
+            SongLyric binding = new SongLyric();
+            binding.songId = songId;
+            binding.lyricId = lyric.id;
+            binding.matchType = "TITLE_ARTIST";
+            binding.matchScore = 100;
+            binding.isPrimary = true;
+            binding.persist();
+            return lyric.id;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(ALLOWED_MUSIC_ROOT))
+                .when()
+                .post("/api/lyrics/scan")
+                .then()
+                .statusCode(200)
+                .body("failed", equalTo(0));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/songs/{songId}/lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("lyricStatus", equalTo("BOUND"))
+                .body("lyricId", equalTo(lyricId.intValue()))
+                .body("content", equalTo("[00:01.00]db content survives\n"));
+    }
+
+    @Test
+    void legacyAlignmentAssetPathDoesNotParticipateInLocalDeleteSynchronization() throws IOException {
+        Long songId = createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        Path legacyPath = Path.of("target/test-alignment-assets/%d/job-legacy/lyrics.lrc".formatted(songId));
+        Long lyricId = QuarkusTransaction.requiringNew().call(() -> {
+            Lyric lyric = new Lyric();
+            lyric.title = "晴天";
+            lyric.artist = "周杰伦";
+            lyric.sourceType = "ALIGNMENT";
+            lyric.sourceTaskId = "job-legacy";
+            lyric.sourcePath = legacyPath.toAbsolutePath().normalize().toString();
+            lyric.content = "[00:01.00]legacy db content survives\n";
+            lyric.contentHash = sha256(lyric.content);
+            lyric.format = "LRC";
+            lyric.parseStatus = "PARSED";
+            lyric.persist();
+
+            SongLyric binding = new SongLyric();
+            binding.songId = songId;
+            binding.lyricId = lyric.id;
+            binding.matchType = "TITLE_ARTIST";
+            binding.matchScore = 100;
+            binding.isPrimary = true;
+            binding.persist();
+            return lyric.id;
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "path": "%s"
+                        }
+                        """.formatted(ALLOWED_MUSIC_ROOT))
+                .when()
+                .post("/api/lyrics/scan")
+                .then()
+                .statusCode(200)
+                .body("totalFiles", equalTo(0))
+                .body("failed", equalTo(0));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/songs/{songId}/lyrics", songId)
+                .then()
+                .statusCode(200)
+                .body("lyricStatus", equalTo("BOUND"))
+                .body("lyricId", equalTo(lyricId.intValue()))
+                .body("content", equalTo("[00:01.00]legacy db content survives\n"));
+    }
+
+    @Test
     void listLyricsSupportsUnboundAndFailedFilters() {
         Lyric lyric = createLyric("搁浅", "周杰伦", "七里香", "PARSE_FAILED");
 
@@ -398,5 +540,54 @@ class LyricResourceTest {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
         }
+    }
+
+    private void assertLocalScanDoesNotReuseGeneratedLyric(String sourceType, String sourceTaskId) throws IOException {
+        Long songId = createSong("周杰伦 - 晴天.flac", "晴天", "周杰伦");
+        String content = "[ti:晴天]\n[ar:周杰伦]\n[00:01.00]same content\n";
+        Lyric generated = QuarkusTransaction.requiringNew().call(() -> {
+            Lyric value = new Lyric();
+            value.title = "晴天";
+            value.artist = "周杰伦";
+            value.sourceType = sourceType;
+            value.sourceTaskId = sourceTaskId;
+            value.sourcePath = ALLOWED_MUSIC_ROOT.resolve("alignment/generated/" + sourceTaskId + "/lyrics.lrc").toString();
+            value.content = content;
+            value.contentHash = sha256(content);
+            value.format = "ALIGNMENT".equals(sourceType) ? "LRC" : "TEXT";
+            value.parseStatus = "PARSED";
+            value.persist();
+            return value;
+        });
+        Path localLrc = lyricDir.resolve("周杰伦 - 晴天.lrc");
+        Files.writeString(localLrc, content, StandardCharsets.UTF_8);
+
+        scanLyrics()
+                .body("totalFiles", equalTo(1))
+                .body("imported", equalTo(1))
+                .body("matched", equalTo(1))
+                .body("failed", equalTo(0));
+
+        Lyric reloadedGenerated = Lyric.findById(generated.id);
+        org.junit.jupiter.api.Assertions.assertEquals(sourceType, reloadedGenerated.sourceType);
+        org.junit.jupiter.api.Assertions.assertEquals(sourceTaskId, reloadedGenerated.sourceTaskId);
+        org.junit.jupiter.api.Assertions.assertEquals(2, Lyric.count());
+        org.junit.jupiter.api.Assertions.assertEquals(1, Lyric.count("sourceType = ?1", "LOCAL_FILE"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, SongLyric.count("songId = ?1", songId));
+    }
+
+    private void deleteRecursively(Path path) throws IOException {
+        if (!Files.exists(path)) {
+            return;
+        }
+        if (Files.isDirectory(path)) {
+            try (var stream = Files.walk(path)) {
+                for (Path child : stream.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(child);
+                }
+            }
+            return;
+        }
+        Files.deleteIfExists(path);
     }
 }

@@ -20,7 +20,7 @@ quarkus:
     always-include: true
   smallrye-openapi:
     info-title: Xingyu Music Vault API
-    info-version: 1.3.0
+    info-version: ${quarkus.application.version}
     info-description: Self-hosted music metadata management API.
   log:
     category:
@@ -36,6 +36,8 @@ music-vault:
   alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/music}
   alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/jobs}
   alignment-assets-dir: ${MUSIC_VAULT_ALIGNMENT_ASSETS_DIR:/app/data/alignment-lyrics}
+  alignment-lyrics-root: ${MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT:}
+  alignment-lyrics-subdir: ${MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR:alignment}
   alignment-draft-default-asr-model: ${ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL:medium}
   alignment-draft-default-skip-separation: ${ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION:false}
   alignment-draft-default-vad-filter: ${ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER:true}
@@ -99,6 +101,8 @@ xingyu:
     alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/Users/wangjiqing/Project/Musics/Music}
     alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/Users/wangjiqing/Project/Musics/alignment-jobs}
     alignment-assets-dir: ${MUSIC_VAULT_ALIGNMENT_ASSETS_DIR:/Users/wangjiqing/Project/Musics/alignment-assets}
+    alignment-lyrics-root: ${MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT:}
+    alignment-lyrics-subdir: ${MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR:alignment}
     alignment-draft-default-asr-model: ${ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL:medium}
     alignment-draft-default-skip-separation: ${ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION:true}
     alignment-draft-default-vad-filter: ${ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER:false}
@@ -134,6 +138,8 @@ xingyu:
     alignment-worker-music-dir: /worker/music
     alignment-worker-jobs-dir: /jobs
     alignment-assets-dir: target/test-alignment-assets
+    alignment-lyrics-root: target/test-music
+    alignment-lyrics-subdir: alignment
     alignment-draft-default-asr-model: medium
     alignment-draft-default-skip-separation: false
     alignment-draft-default-vad-filter: true

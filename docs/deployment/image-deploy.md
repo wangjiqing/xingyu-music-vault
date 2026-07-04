@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.0}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.0}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.0}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v1.3.0
+IMAGE_TAG=v1.3.1
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -59,6 +59,11 @@ mkdir -p alignment-jobs alignment-models
 `wangjiqing/xingyu-lyrics-aligner:0.4.0`，同一 Worker 支持 `LYRIC_DRAFT_EXTRACTION` 和
 `LYRICS_ALIGNMENT`。如果本机已经有 HuggingFace 模型缓存，可将 `ALIGNMENT_MODELS_DIR` 指向
 `~/.cache/huggingface`，Compose 会把它挂载到 Worker 的 `/models`。
+
+v1.3.1 起，image compose 默认将 `/lyrics` 以读写方式挂载，并设置
+`MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics`。新的审核通过对齐导入会把正式 LRC / SWLRC
+发布到 `/lyrics/alignment/{songId}/{jobId}`，普通歌词扫描会排除该受控子目录。未配置
+`MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` 时服务可启动并读取历史 `ALIGNMENT` 资产，但新的审核导入会被拒绝。
 
 ```bash
 cd deploy
@@ -88,7 +93,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.0`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.1`），然后执行：
 
 ```bash
 cd deploy

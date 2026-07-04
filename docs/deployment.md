@@ -2,7 +2,7 @@
 
 ## 部署方式
 
-v1.3.0 提供两种主部署模式：
+v1.3.1 提供两种主部署模式：
 
 - 源码构建部署：使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 本地构建镜像，见 [Docker 一键部署](deployment/docker.md)
 - 镜像拉取部署：直接拉取 GHCR / Docker Hub 已发布镜像，见 [镜像拉取部署](deployment/image-deploy.md)
@@ -11,7 +11,7 @@ v1.3.0 提供两种主部署模式：
 
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
-v1.3.0 继续沿用家庭网络反向代理、HTTPS 与非标准公网端口部署建议，并新增音库 + 歌词 Worker 双容器部署。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
+v1.3.1 继续沿用家庭网络反向代理、HTTPS 与非标准公网端口部署建议，并新增音库 + 歌词 Worker 双容器部署。正式对齐 LRC / SWLRC 会发布到显式配置的歌词目录受控 `alignment` 子目录。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
 
 ## 部署安全边界
 
@@ -118,7 +118,7 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.0} .
+docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.1} .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -128,14 +128,14 @@ docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.0} .
 ```bash
 cd backend
 mvn package
-docker build -t xingyu-music-vault:v1.3.0 .
+docker build -t xingyu-music-vault:v1.3.1 .
 ```
 
 镜像使用 JRE 21 运行环境，包含 `ffmpeg` / `ffprobe`，不内置本地音乐文件，不内置 SQLite 运行数据。运行数据通过 `/app/data` 挂载，音乐目录通过 `/music:ro` 只读挂载。
 
 ## Docker Compose
 
-v1.3.0 推荐从仓库根目录复制模板启动：
+v1.3.1 推荐从仓库根目录复制模板启动：
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml
@@ -261,6 +261,8 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 | `MUSIC_VAULT_CONFIG_DIR` | 配置目录 | `/app/config` |
 | `MUSIC_VAULT_MUSIC_DIRS` | 音乐目录 | `/music` |
 | `MUSIC_VAULT_LYRIC_DIRS` | 歌词目录 | `/lyrics` |
+| `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` | 正式对齐 LRC / SWLRC 发布根目录，必须等于某个歌词目录 | `/lyrics` |
+| `MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR` | 正式对齐资产受控子目录名 | `alignment` |
 | `MUSIC_VAULT_DB_PATH` | 数据库路径 | `/app/data/music-vault.db` |
 | `MUSIC_VAULT_API_TOKEN` | 历史管理 API Token 配置，v1.1.2 管理端登录不再依赖它 | `change-me` |
 | `XINGYU_ADMIN_COOKIE_SECURE` | 管理端 Session Cookie 是否启用 Secure，HTTPS 反向代理后可设为 `true` | `false` |
@@ -283,7 +285,7 @@ Docker Compose / 生产部署建议继续将宿主机音乐目录只读挂载到
 
 `MUSIC_VAULT_MUSIC_DIRS` 是扫描路径安全校验的允许根目录。扫描任务中的 `musicDirs` 必须位于该配置范围内；Docker Compose 场景通常保持 `/music`，并将宿主机真实音乐目录挂载为 `/music:ro`。
 
-Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认为 `/lyrics`（独立挂载于 `/lyrics:ro`）。如果歌词文件存放在音乐目录下，可改为 `/music` 并调整挂载路径。
+Docker 环境下 `MUSIC_VAULT_LYRIC_DIRS` 默认为 `/lyrics`（独立挂载于 `/lyrics:rw`）。v1.3.1 起，新的正式对齐 LRC / SWLRC 导入要求 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` 显式配置为某个歌词扫描根目录，Compose 示例默认使用 `/lyrics`，并发布到 `/lyrics/alignment/{songId}/{jobId}`。如果歌词文件存放在音乐目录下，可改为 `/music` 并同步调整挂载路径和 alignment root。
 
 OpenAPI 认证只作用于 `/api/open/v1/*`。v1.1.3 起必须使用管理后台创建的 AK/SK + HMAC 签名，不再接受 `Authorization: Bearer <legacy-token>` 或 `X-Xingyu-Api-Token`。
 
