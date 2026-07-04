@@ -4,14 +4,19 @@
 
 ## Unreleased
 
+暂无。
+
+## v1.3.0 — 歌词草稿与逐字对齐任务闭环
+
 ### 新增 / 调整
 
-- **歌词对齐 Worker 联调基础**：补充共享任务目录、Worker 结果读取和状态同步字段，既支持 aligner v0.3.0 的 v1 对齐协议，也支持 aligner v0.4.0 的 v2 任务类型协议；历史任务的旧 `requestSnapshotJson` 不会被覆盖。
-- **歌词对齐人工审核与导入**：新增管理端审核通过 / 驳回和确认导入接口。对齐结果必须由管理员审核通过后才能导入；导入会将 `lyrics.lrc`、`lyrics.swlrc` 从中间任务目录复制到音库受控资产目录，并新建 `ALIGNMENT` 来源歌词记录，不会删除或覆盖原始可信歌词。
-- **歌词草稿提取任务**：新增 `LYRIC_DRAFT_EXTRACTION` 任务类型和 `lyric_drafts` 草稿表。Worker v0.4.0 可从音频产出 `transcript.cleaned.txt`，音库保存原始草稿快照和可编辑文本；管理员确认后生成 `DRAFT_CONFIRMED` 来源可信歌词资产，但不会自动替换当前 LRC/SWLRC，也不会自动创建逐字对齐任务。
-- **SWLRC 兼容输出**：OpenAPI 继续默认输出当前生效 LRC；导入 SWLRC 后，`lyrics/meta` 会暴露可选逐字歌词可用性和 URL，旧客户端可忽略新增字段。
-- **部署示例补强**：Dockerfile 默认创建 `/alignment-jobs` 并提供对齐相关环境变量；Compose 示例使用 `wangjiqing/xingyu-lyrics-aligner:0.4.0`，新增 Worker 镜像、模型缓存、草稿默认 ASR 模型和草稿文本大小限制配置。
-- **仍不包含**：草稿在线编辑前端、在线逐字时间轴编辑、批量草稿提取、批量审核、批量导入、自动审核、Worker 重跑 UI、GPU / 多 Worker 调度、Docker Socket、HTTP 回调、消息队列或音库内置 Python / WhisperX / PyTorch。
+- **歌词对齐任务闭环**：新增对齐任务创建、共享目录输入写入、Worker 状态同步、结果摘要读取、artifact 受控预览、人工审核和确认导入流程。对齐结果必须由管理员审核通过后才能导入；导入会将 `lyrics.lrc`、`lyrics.swlrc` 从 Worker 中间任务目录复制到音库受控资产目录，并新建 `ALIGNMENT` 来源歌词记录，不会删除或覆盖原始可信歌词。
+- **Worker 共享目录协作**：音库只负责写入任务目录、读取 Worker 状态与结果、审核和导入；Worker 由独立 `xingyu-lyrics-aligner:0.4.0` 容器运行，通过 `/alignment-jobs` 与 `/jobs` 共享目录通信，不挂 Docker Socket，不使用 HTTP 回调、消息队列或数据库队列。
+- **歌词草稿提取与校对**：新增 `LYRIC_DRAFT_EXTRACTION` 任务类型和 `lyric_drafts` 草稿表。Worker v0.4.0 可从音频产出 `transcript.cleaned.txt`，音库保存原始草稿快照和可编辑文本；管理端支持边听边校对、保存草稿、恢复原始提取文本、驳回草稿和确认可信歌词。
+- **草稿确认可信歌词**：管理员确认草稿后生成 `DRAFT_CONFIRMED` 来源可信歌词资产，可作为后续逐字对齐任务输入；确认草稿不会自动替换当前 LRC / SWLRC，也不会自动创建逐字对齐任务。
+- **LRC / SWLRC 审核与导入**：对齐任务完成后可预览 LRC、SWLRC、report 和 alignment JSON。审核通过后才能确认导入，导入后的 LRC 兼容既有播放接口，SWLRC 作为可选逐字歌词附加资产暴露给支持的客户端。
+- **Compose 双容器部署**：Dockerfile 默认创建 `/alignment-jobs` 并提供对齐相关环境变量；Compose 示例固定使用 `wangjiqing/xingyu-lyrics-aligner:0.4.0`，新增 Worker 镜像、模型缓存、共享 jobs 目录、草稿默认 ASR 模型和草稿文本大小限制配置。
+- **仍不包含**：在线逐字时间轴编辑器、批量全库转写、批量审核、批量导入、自动确认可信歌词、自动创建对齐任务、Worker 重跑 UI、GPU / 多 Worker 调度、Docker Socket、HTTP 回调、消息队列或音库内置 Python / WhisperX / PyTorch。
 
 ## v1.2.4 — 歌词 source_path 幂等恢复与未绑定记录清理
 

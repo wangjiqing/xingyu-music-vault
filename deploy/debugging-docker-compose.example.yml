@@ -1,6 +1,6 @@
 services:
   music-vault:
-    image: ghcr.io/wangjiqing/xingyu-music-vault:latest
+    image: ghcr.io/wangjiqing/xingyu-music-vault:v1.3.0
     build:
       context: ..
       dockerfile: Dockerfile

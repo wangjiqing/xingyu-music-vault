@@ -141,6 +141,8 @@ Worker 完成后，音库同步任务状态和结果摘要。`SUCCEEDED` 与 `NE
 
 管理员审核通过后，仍需再次确认导入。导入时音库从任务 `result` 目录读取 `lyrics.lrc` 与 `lyrics.swlrc`，校验当前文件 hash 与同步保存的 hash 一致，再复制到音库受控歌词资产目录。正式歌词记录不会长期引用 `alignment-jobs` 中间目录。
 
+当前 v1.3.0 的 `ALIGNMENT` LRC / SWLRC 已从 Worker jobs 中间目录复制到 `alignment-assets-dir`。后续版本应将正式对齐资产迁移到 `LYRICS_DIR` / `MUSIC_VAULT_LYRIC_DIRS` 下的受控 alignment 子目录；迁移前需要让歌词扫描器避免把 `ALIGNMENT` 资产重复识别为 `LOCAL_FILE`，并让删除同步避免误解绑或误删音库生成资产。
+
 导入成功后：
 
 - 新建 `lyrics.source_type=ALIGNMENT` 的 LRC 记录，`content` 保存导入后的 LRC 正文。
