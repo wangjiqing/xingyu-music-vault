@@ -1,6 +1,6 @@
 services:
   xingyu-music-vault:
-    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.1.2}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.0}
     build:
       context: ..
       dockerfile: Dockerfile
@@ -10,16 +10,16 @@ services:
     container_name: xingyu-music-vault
     ports:
       # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
-      # v1.1.2 已提供管理端登录；OpenAPI Token、反向代理建议与
-      # HTTPS / 公网暴露风险说明仍在后续 v1.1.x 补充。
-      - "${APP_PORT:-8080}:8080"
+      # 远端访问推荐通过 HTTPS 反向代理，容器内部端口仍为 8080。
+      - "${APP_PORT:-18081}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
       - ${CONFIG_DIR:-./config}:/app/config
       - ${LOGS_DIR:-./logs}:/app/logs
       - ${MUSIC_DIR:-./music}:/music:ro
-      - ${LYRICS_DIR:-./lyrics}:/lyrics:ro
-      - ${ARTWORK_DIR:-./artwork}:/artwork
+      - ${LYRICS_DIR:-./lyrics}:/lyrics:rw
+      - ${ALIGNMENT_JOBS_DIR:-./alignment-jobs}:/alignment-jobs
+      - ${ARTWORK_DIR:-./artwork}:${APP_ARTWORK_SCAN_DIR:-/artwork}
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - QUARKUS_HTTP_HOST=0.0.0.0
@@ -28,17 +28,31 @@ services:
       - MUSIC_VAULT_CONFIG_DIR=/app/config
       - MUSIC_VAULT_MUSIC_DIRS=/music
       - MUSIC_VAULT_LYRIC_DIRS=/lyrics
+      - MUSIC_VAULT_ALIGNMENT_JOBS_DIR=/alignment-jobs
+      - MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR=/music
+      - MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR=/jobs
+      - MUSIC_VAULT_ALIGNMENT_ASSETS_DIR=/app/data/alignment-lyrics
+      - ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL=${ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL:-medium}
+      - ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION=${ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION:-false}
+      - ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER=${ALIGNMENT_DRAFT_DEFAULT_VAD_FILTER:-true}
+      - ALIGNMENT_DRAFT_MAX_TEXT_BYTES=${ALIGNMENT_DRAFT_MAX_TEXT_BYTES:-131072}
+      - ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:-5}
       - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
       - MUSIC_SCAN_DEFAULT_PATH=/music
-      - APP_ARTWORK_SCAN_DIR=/artwork
+      - APP_ARTWORK_SCAN_DIR=${APP_ARTWORK_SCAN_DIR:-/artwork}
       - MUSIC_VAULT_API_TOKEN=${MUSIC_VAULT_API_TOKEN:-change-me}
       - XINGYU_ADMIN_COOKIE_SECURE=${XINGYU_ADMIN_COOKIE_SECURE:-false}
       - XINGYU_ADMIN_COOKIE_SAME_SITE=${XINGYU_ADMIN_COOKIE_SAME_SITE:-Lax}
       - XINGYU_ADMIN_SESSION_TTL_MINUTES=${XINGYU_ADMIN_SESSION_TTL_MINUTES:-1440}
+      - XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED=${XINGYU_ADMIN_TEST_LEGACY_TOKEN_ENABLED:-false}
       - MUSIC_VAULT_FFPROBE_PATH=/usr/bin/ffprobe
       - MUSIC_VAULT_FFMPEG_PATH=/usr/bin/ffmpeg
+      - XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY=${XINGYU_OPENAPI_CREDENTIAL_MASTER_KEY:-change-me-openapi-master-key}
+      - XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS=${XINGYU_OPENAPI_HMAC_TIMESTAMP_WINDOW_SECONDS:-300}
+      - XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS=${XINGYU_OPENAPI_HMAC_NONCE_TTL_SECONDS:-600}
+      - XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES=${XINGYU_OPENAPI_HMAC_MAX_BODY_BYTES:-1048576}
       - XINGYU_OPENAPI_AUTH_ENABLED=${XINGYU_OPENAPI_AUTH_ENABLED:-false}
-      - XINGYU_OPENAPI_AUTH_TOKEN=${XINGYU_OPENAPI_AUTH_TOKEN:-change-me-openapi}
+      - XINGYU_OPENAPI_AUTH_TOKEN=${XINGYU_OPENAPI_AUTH_TOKEN:-}
       - XINGYU_OPENAPI_RATE_LIMIT_ENABLED=${XINGYU_OPENAPI_RATE_LIMIT_ENABLED:-false}
       - XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE=${XINGYU_OPENAPI_RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
       - XINGYU_OPENAPI_ACCESS_LOG_ENABLED=${XINGYU_OPENAPI_ACCESS_LOG_ENABLED:-true}
@@ -48,3 +62,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  xingyu-lyrics-aligner-worker:
+    image: ${ALIGNMENT_WORKER_IMAGE:-wangjiqing/xingyu-lyrics-aligner:0.4.0}
+    container_name: xingyu-lyrics-aligner-worker
+    command: xingyu-align worker run --jobs-dir /jobs --music-dir /music --device cpu
+    user: "10001:10001"
+    environment:
+      HF_HOME: /models
+      HUGGINGFACE_HUB_CACHE: /models/hub
+      TRANSFORMERS_CACHE: /models/hub
+    volumes:
+      - ${ALIGNMENT_JOBS_DIR:-./alignment-jobs}:/jobs
+      - ${MUSIC_DIR:-./music}:/music:ro
+      - ${ALIGNMENT_MODELS_DIR:-./alignment-models}:/models
+    restart: unless-stopped
