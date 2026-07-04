@@ -76,6 +76,7 @@ class LyricAlignmentResourceTest {
         Files.createDirectories(MUSIC_ROOT);
         Files.createDirectories(OUTSIDE_ROOT);
         LyricAlignmentJobEvent.deleteAll();
+        LyricDraft.deleteAll();
         LyricAlignmentJob.deleteAll();
         OpenApiRequestNonce.deleteAll();
         OpenApiCredential.deleteAll();
@@ -460,14 +461,14 @@ class LyricAlignmentResourceTest {
     }
 
     @Test
-    void unsupportedStatusJsonSchemaVersionIsDiagnosticOnly() throws IOException {
+    void unsupportedFutureStatusJsonSchemaVersionIsDiagnosticOnly() throws IOException {
         Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("future-status.flac"), TRUSTED_LYRICS);
         String jobId = createAlignmentJob(songId);
         Files.writeString(
                 JOBS_ROOT.resolve(jobId).resolve("status.json"),
                 """
                 {
-                  "schemaVersion": 2,
+                  "schemaVersion": 3,
                   "status": "SUCCEEDED"
                 }
                 """,
@@ -478,7 +479,7 @@ class LyricAlignmentResourceTest {
 
         LyricAlignmentJob job = findJob(jobId);
         assertEquals("QUEUED", job.status);
-        assertEquals("Unsupported worker status schemaVersion: 2", job.syncMessage);
+        assertEquals("Unsupported worker status schemaVersion: 3", job.syncMessage);
     }
 
     @Test

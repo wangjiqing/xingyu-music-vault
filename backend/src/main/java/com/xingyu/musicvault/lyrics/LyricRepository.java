@@ -18,4 +18,8 @@ public class LyricRepository implements PanacheRepository<Lyric> {
     public Lyric findAlignmentBySourceTaskId(String sourceTaskId) {
         return find("sourceType = ?1 and sourceTaskId = ?2", "ALIGNMENT", sourceTaskId).firstResult();
     }
+
+    public Lyric findDraftConfirmedBySourceTaskId(String sourceTaskId) {
+        return find("sourceType = ?1 and sourceTaskId = ?2", "DRAFT_CONFIRMED", sourceTaskId).firstResult();
+    }
 }

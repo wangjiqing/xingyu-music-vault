@@ -10,14 +10,28 @@ public final class LyricAlignmentDtos {
 
     public record CreateAlignmentJobRequest(
             Long songId,
+            Long sourceLyricsAssetId,
             String createdBy,
             JsonNode sections,
             JsonNode workerOptions
     ) {
     }
 
+    public record CreateLyricDraftJobRequest(
+            String language,
+            String asrModel,
+            Boolean skipSeparation,
+            Boolean vadFilter,
+            Boolean conditionOnPreviousText,
+            Boolean keepSuspectedMetadata,
+            Boolean retainIntermediate,
+            String createdBy
+    ) {
+    }
+
     public record AlignmentJobResponse(
             String id,
+            String taskType,
             Long songId,
             Long lyricId,
             String status,
@@ -57,6 +71,7 @@ public final class LyricAlignmentDtos {
 
     public record AlignmentJobListItemResponse(
             String id,
+            String taskType,
             Long songId,
             Long lyricId,
             String status,
@@ -117,6 +132,59 @@ public final class LyricAlignmentDtos {
             String fileName,
             String mediaType,
             byte[] content
+    ) {
+    }
+
+    public record LyricDraftResponse(
+            String jobId,
+            Long musicId,
+            String executionStatus,
+            String draftStatus,
+            String originalText,
+            String originalTextHash,
+            String editableText,
+            String editableTextHash,
+            JsonNode reportSummary,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            String editedBy,
+            LocalDateTime editedAt,
+            String confirmedBy,
+            LocalDateTime confirmedAt,
+            Long confirmedTrustedLyricsId,
+            String rejectedBy,
+            LocalDateTime rejectedAt,
+            String rejectNote,
+            String errorMessage
+    ) {
+    }
+
+    public record UpdateLyricDraftRequest(
+            String text,
+            String editedBy
+    ) {
+    }
+
+    public record ConfirmLyricDraftRequest(
+            String note,
+            String confirmedBy
+    ) {
+    }
+
+    public record ConfirmLyricDraftResponse(
+            String jobId,
+            Long draftId,
+            Long trustedLyricsId,
+            String draftStatus,
+            String editableTextHash,
+            LocalDateTime confirmedAt,
+            String confirmedBy
+    ) {
+    }
+
+    public record RejectLyricDraftRequest(
+            String rejectNote,
+            String rejectedBy
     ) {
     }
 }

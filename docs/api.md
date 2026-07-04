@@ -97,6 +97,60 @@ POST /api/admin/auth/logout
 }
 ```
 
+### 歌词草稿提取任务（v1.3.0）
+
+歌词草稿提取任务用于“音频 → 未对齐候选歌词文本 → 人工校对 → 确认为可信歌词资产”。它不会自动把 ASR 草稿当作可信歌词，不会自动创建逐字对齐任务，也不会替换当前生效 LRC / SWLRC。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| POST | `/api/admin/music/{musicId}/lyric-draft-jobs` | 创建 `LYRIC_DRAFT_EXTRACTION` 草稿提取任务，写入 v2 `request.json` 并最后创建 `READY` |
+| GET | `/api/admin/lyric-draft-jobs/{jobId}/draft` | 获取草稿原始文本快照、可编辑文本、状态和报告摘要 |
+| PUT | `/api/admin/lyric-draft-jobs/{jobId}/draft` | 保存人工校对后的草稿文本 |
+| POST | `/api/admin/lyric-draft-jobs/{jobId}/confirm` | 确认草稿，生成 `DRAFT_CONFIRMED` 来源可信歌词资产 |
+| POST | `/api/admin/lyric-draft-jobs/{jobId}/reject` | 驳回草稿，必须填写原因 |
+| GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/cleaned` | 读取 Worker 输出的 `transcript.cleaned.txt` |
+| GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/raw` | 读取 Worker 输出的 `transcript.raw.txt` |
+| GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/segments` | 读取 Worker 输出的 `transcript.segments.json` |
+| GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/report` | 读取 Worker 输出的 `report.json` |
+
+创建请求：
+
+```json
+{
+  "language": "zh",
+  "asrModel": "medium",
+  "skipSeparation": false,
+  "vadFilter": true,
+  "conditionOnPreviousText": false,
+  "keepSuspectedMetadata": false,
+  "retainIntermediate": false,
+  "createdBy": "admin"
+}
+```
+
+音库写入的 v2 `request.json`：
+
+```json
+{
+  "schemaVersion": 2,
+  "jobId": "uuid",
+  "taskType": "LYRIC_DRAFT_EXTRACTION",
+  "audioPath": "/music/Artist/Song.flac",
+  "outputDir": "/jobs/{jobId}/result",
+  "language": "zh",
+  "device": "cpu",
+  "asrModel": "medium",
+  "skipSeparation": false,
+  "vadFilter": true,
+  "conditionOnPreviousText": false,
+  "keepSuspectedMetadata": false,
+  "retainIntermediate": false,
+  "createdAt": "2026-07-04T17:00:00"
+}
+```
+
+Worker 成功后音库读取 `result/transcript.cleaned.txt` 并保存为 `lyric_drafts.originalText` 原始快照，同时初始化 `editableText`。草稿状态为 `PENDING_REVIEW`、`EDITING`、`CONFIRMED`、`REJECTED`。确认后创建 `lyrics.sourceType=DRAFT_CONFIRMED` 的可信歌词资产，保存 `sourceTaskId`、`sourceDraftId`、`sourceTextHash`、`confirmedAt`、`confirmedBy`；不会绑定为当前主歌词。之后创建逐字对齐任务时，可通过 `sourceLyricsAssetId` 明确选择这份可信歌词资产。
+
 ### 歌词对齐任务（v1.3.0）
 
 歌词对齐任务接口仅供管理员使用。音库只写入共享任务目录、读取 Worker 状态与结果，并在管理员人工审核后确认导入；不会自动覆盖原始可信歌词，也不会在音库容器内安装或调用 Python、WhisperX、PyTorch、Docker Socket、HTTP 回调或消息队列。
@@ -115,6 +169,8 @@ POST /api/admin/auth/logout
 | POST | `/api/admin/lyric-alignment/jobs/{id}/import` | 将审核通过的 LRC / SWLRC 确认导入为受控歌词资产 |
 
 `/api/admin/lyric-alignment/jobs/**` 是管理端规范路径；`/api/lyric-alignment/jobs/**` 保留任务创建、查询和 artifact 读取兼容入口，仍受管理员鉴权保护。
+
+创建对齐任务时可选传入 `sourceLyricsAssetId`，用于选择当前歌曲关联的歌词资产或同歌曲草稿确认生成的 `DRAFT_CONFIRMED` 可信歌词资产。未传时仍使用当前歌曲主绑定歌词。
 
 #### 审核
 

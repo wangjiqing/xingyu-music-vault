@@ -8,10 +8,16 @@ import com.xingyu.musicvault.common.ConflictException;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobListItemResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ArtifactContent;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ConfirmLyricDraftRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ConfirmLyricDraftResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateAlignmentJobRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateLyricDraftJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.RejectLyricDraftRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ReviewAlignmentJobRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.UpdateLyricDraftRequest;
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.library.Track;
@@ -60,7 +66,15 @@ public class LyricAlignmentService {
     private static final String IMPORT_NOT_IMPORTED = "NOT_IMPORTED";
     private static final String IMPORT_IMPORTED = "IMPORTED";
     private static final String IMPORT_FAILED = "IMPORT_FAILED";
+    private static final String TASK_ALIGNMENT = "LYRICS_ALIGNMENT";
+    private static final String TASK_DRAFT = "LYRIC_DRAFT_EXTRACTION";
     private static final String SOURCE_ALIGNMENT = "ALIGNMENT";
+    private static final String SOURCE_DRAFT_CONFIRMED = "DRAFT_CONFIRMED";
+    private static final String DRAFT_PENDING_REVIEW = "PENDING_REVIEW";
+    private static final String DRAFT_EDITING = "EDITING";
+    private static final String DRAFT_CONFIRMED = "CONFIRMED";
+    private static final String DRAFT_REJECTED = "REJECTED";
+    private static final int MAX_DRAFT_LINES = 2000;
     private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=UTF-8";
     private static final String APPLICATION_JSON_UTF8 = "application/json; charset=UTF-8";
 
@@ -78,6 +92,9 @@ public class LyricAlignmentService {
 
     @Inject
     LyricAlignmentJobRepository jobRepository;
+
+    @Inject
+    LyricDraftRepository draftRepository;
 
     @Inject
     LyricAlignmentJobWriter jobWriter;
@@ -98,11 +115,8 @@ public class LyricAlignmentService {
             throw new NotFoundException("Song not found");
         }
         validateAudioFilePath(trackFile.filePath);
-        SongLyric binding = songLyricRepository.findPrimaryBySongId(request.songId());
-        if (binding == null) {
-            throw new BadRequestException("Trusted lyric not found");
-        }
-        Lyric lyric = lyricRepository.findById(binding.lyricId);
+        LyricSource lyricSource = resolveAlignmentLyricSource(request.songId(), request.sourceLyricsAssetId());
+        Lyric lyric = lyricSource.lyric();
         if (lyric == null || lyric.content == null || lyric.content.isBlank()) {
             throw new BadRequestException("Trusted lyric not found");
         }
@@ -115,14 +129,15 @@ public class LyricAlignmentService {
             throw new BadRequestException("Invalid alignment job id");
         }
         String trustedLyricsHash = sha256(lyric.content);
-        ObjectNode requestSnapshot = requestSnapshot(jobId, trackFile, binding.lyricId, audioMapping, trustedLyricsHash, createdBy, request);
+        ObjectNode requestSnapshot = requestSnapshot(jobId, trackFile, lyric.id, audioMapping, trustedLyricsHash, createdBy, request);
         String requestSnapshotJson = writeJson(requestSnapshot);
 
         LyricAlignmentJob job = QuarkusTransaction.requiringNew().call(() -> {
             LyricAlignmentJob value = new LyricAlignmentJob();
             value.id = jobId;
+            value.taskType = TASK_ALIGNMENT;
             value.songId = request.songId();
-            value.lyricId = binding.lyricId;
+            value.lyricId = lyric.id;
             value.status = STATUS_CREATING;
             value.reviewStatus = REVIEW_NOT_AVAILABLE;
             value.importStatus = IMPORT_NOT_IMPORTED;
@@ -147,6 +162,66 @@ public class LyricAlignmentService {
             jobWriter.markReady(jobDir);
         } catch (IOException | RuntimeException exception) {
             LOG.errorf(exception, "Failed to create alignment job: jobId=%s songId=%d", jobId, request.songId());
+            cleanupPartialJobDirectory(jobsRoot, jobDir);
+            markFailed(jobId, exception.getMessage());
+        }
+
+        return get(jobId);
+    }
+
+    public AlignmentJobResponse createDraftJob(Long musicId, CreateLyricDraftJobRequest request) {
+        if (musicId == null) {
+            throw new BadRequestException("musicId is required");
+        }
+        String createdBy = normalizeCreatedBy(request == null ? null : request.createdBy());
+        TrackFile trackFile = TrackFile.findById(musicId);
+        if (trackFile == null) {
+            throw new NotFoundException("Song not found");
+        }
+        validateAudioFilePath(trackFile.filePath);
+        if (jobRepository.findActiveDraftJobForSong(musicId) != null) {
+            throw new ConflictException("A lyric draft extraction job is already queued or running for this song");
+        }
+
+        Path jobsRoot = resolveWritableJobsRoot();
+        AudioMapping audioMapping = mapAudioPath(trackFile.filePath);
+        String jobId = UUID.randomUUID().toString();
+        Path jobDir = jobsRoot.resolve(jobId).normalize();
+        if (!jobDir.startsWith(jobsRoot)) {
+            throw new BadRequestException("Invalid lyric draft job id");
+        }
+        ObjectNode requestSnapshot = draftRequestSnapshot(jobId, audioMapping, request);
+        String requestSnapshotJson = writeJson(requestSnapshot);
+
+        QuarkusTransaction.requiringNew().run(() -> {
+            LyricAlignmentJob value = new LyricAlignmentJob();
+            value.id = jobId;
+            value.taskType = TASK_DRAFT;
+            value.songId = musicId;
+            value.lyricId = null;
+            value.status = STATUS_CREATING;
+            value.reviewStatus = REVIEW_NOT_AVAILABLE;
+            value.importStatus = IMPORT_NOT_IMPORTED;
+            value.audioRelativePath = audioMapping.relativePath();
+            value.workerAudioPath = audioMapping.workerPath();
+            value.trustedLyricsHash = null;
+            value.trustedLyricsSnapshot = null;
+            value.requestSnapshotJson = requestSnapshotJson;
+            value.jobDir = jobDir.toString();
+            value.createdBy = createdBy;
+            value.persist();
+        });
+
+        try {
+            jobWriter.writeRequestOnly(jobDir, requestSnapshot);
+            QuarkusTransaction.requiringNew().run(() -> {
+                LyricAlignmentJob queuedJob = jobRepository.findById(jobId);
+                queuedJob.status = STATUS_QUEUED;
+                queuedJob.queuedAt = LocalDateTime.now();
+            });
+            jobWriter.markReady(jobDir);
+        } catch (IOException | RuntimeException exception) {
+            LOG.errorf(exception, "Failed to create lyric draft job: jobId=%s songId=%d", jobId, musicId);
             cleanupPartialJobDirectory(jobsRoot, jobDir);
             markFailed(jobId, exception.getMessage());
         }
@@ -199,6 +274,151 @@ public class LyricAlignmentService {
             LOG.warnf(exception, "Failed to read alignment artifact: jobId=%s artifact=%s", id, artifact.fileName());
             throw new BadRequestException("Alignment artifact is not readable");
         }
+    }
+
+    public ArtifactContent getDraftArtifact(String id, DraftArtifact artifact) {
+        LyricAlignmentJob job = requireDraftJob(id);
+        Path jobsRoot = Path.of(config.alignmentJobsDir()).toAbsolutePath().normalize();
+        Path jobDir = Path.of(job.jobDir).toAbsolutePath().normalize();
+        if (!jobDir.startsWith(jobsRoot) || jobDir.equals(jobsRoot)) {
+            throw new BadRequestException("Lyric draft job directory is invalid");
+        }
+        Path artifactPath = jobDir.resolve(artifact.relativePath()).normalize();
+        if (!artifactPath.startsWith(jobDir)) {
+            throw new BadRequestException("Lyric draft artifact path is invalid");
+        }
+        if (!Files.isRegularFile(artifactPath)) {
+            throw new NotFoundException("Lyric draft artifact not found");
+        }
+        try {
+            int maxBytes = Math.max(1024, config.alignmentDraftMaxTextBytes());
+            if (Files.size(artifactPath) > maxBytes) {
+                throw new BadRequestException("Lyric draft artifact exceeds maximum allowed size");
+            }
+            return new ArtifactContent(artifact.fileName(), artifact.mediaType(), Files.readAllBytes(artifactPath));
+        } catch (IOException exception) {
+            LOG.warnf(exception, "Failed to read lyric draft artifact: jobId=%s artifact=%s", id, artifact.fileName());
+            throw new BadRequestException("Lyric draft artifact is not readable");
+        }
+    }
+
+    public LyricDraftResponse getDraft(String jobId) {
+        LyricAlignmentJob job = requireDraftJob(jobId);
+        LyricDraft draft = draftRepository.findByJobId(jobId);
+        if (draft == null) {
+            throw new NotFoundException("Lyric draft not found");
+        }
+        return toDraftResponse(job, draft);
+    }
+
+    public LyricDraftResponse updateDraft(String jobId, UpdateLyricDraftRequest request) {
+        String operator = normalizeOperator(request == null ? null : request.editedBy());
+        String text = normalizeDraftText(request == null ? null : request.text());
+        return QuarkusTransaction.requiringNew().call(() -> {
+            LyricAlignmentJob job = requireDraftJob(jobId);
+            LyricDraft draft = draftRepository.findByJobId(jobId);
+            if (draft == null) {
+                throw new NotFoundException("Lyric draft not found");
+            }
+            validateDraftEditable(job, draft);
+            draft.editableText = text;
+            draft.editableTextHash = sha256(text);
+            draft.draftStatus = DRAFT_EDITING;
+            draft.editedBy = operator;
+            draft.editedAt = LocalDateTime.now();
+            return toDraftResponse(job, draft);
+        });
+    }
+
+    public ConfirmLyricDraftResponse confirmDraft(String jobId, ConfirmLyricDraftRequest request) {
+        String operator = normalizeOperator(request == null ? null : request.confirmedBy());
+        String note = normalizeNote(request == null ? null : request.note());
+        try {
+            return QuarkusTransaction.requiringNew().call(() -> {
+                LyricAlignmentJob job = requireDraftJob(jobId);
+                LyricDraft draft = draftRepository.findByJobId(jobId);
+                if (draft == null) {
+                    throw new NotFoundException("Lyric draft not found");
+                }
+                if (DRAFT_CONFIRMED.equals(draft.draftStatus) && draft.confirmedTrustedLyricsId != null) {
+                    Lyric existing = lyricRepository.findById(draft.confirmedTrustedLyricsId);
+                    if (existing == null) {
+                        throw new ConflictException("Confirmed trusted lyric record is missing");
+                    }
+                    return confirmDraftResponse(draft, existing.id);
+                }
+                validateDraftEditable(job, draft);
+                TrustedDraftAsset asset = writeTrustedDraftAsset(job, draft);
+
+                TrackFile trackFile = TrackFile.findById(job.songId);
+                if (trackFile == null) {
+                    throw new NotFoundException("Song not found");
+                }
+                Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
+                LocalDateTime now = LocalDateTime.now();
+                Lyric lyric = lyricRepository.findDraftConfirmedBySourceTaskId(job.id);
+                if (lyric == null) {
+                    lyric = new Lyric();
+                }
+                lyric.title = track == null ? stripExtension(trackFile.fileName) : track.title;
+                lyric.artist = track == null ? null : track.artist;
+                lyric.album = track == null ? null : track.album;
+                lyric.language = null;
+                lyric.sourceType = SOURCE_DRAFT_CONFIRMED;
+                lyric.sourcePath = asset.path().toString();
+                lyric.content = draft.editableText;
+                lyric.contentHash = draft.editableTextHash;
+                lyric.format = "TEXT";
+                lyric.parseStatus = "PARSED";
+                lyric.parseMessage = note;
+                lyric.sourceTaskId = job.id;
+                lyric.sourceDraftId = draft.id;
+                lyric.sourceTextHash = draft.editableTextHash;
+                lyric.parentLyricsId = null;
+                lyric.confirmedAt = now;
+                lyric.confirmedBy = operator;
+                if (lyric.id == null) {
+                    lyric.persist();
+                }
+
+                draft.draftStatus = DRAFT_CONFIRMED;
+                draft.confirmedTrustedLyricsId = lyric.id;
+                draft.confirmedBy = operator;
+                if (draft.confirmedAt == null) {
+                    draft.confirmedAt = now;
+                }
+                draft.errorMessage = null;
+                recordEvent(job, "DRAFT_CONFIRMED", operator, note, null, DRAFT_CONFIRMED, null);
+                return confirmDraftResponse(draft, lyric.id);
+            });
+        } catch (RuntimeException exception) {
+            recordDraftError(jobId, exception.getMessage());
+            throw exception;
+        }
+    }
+
+    public LyricDraftResponse rejectDraft(String jobId, RejectLyricDraftRequest request) {
+        String operator = normalizeOperator(request == null ? null : request.rejectedBy());
+        String note = normalizeRejectNote(request == null ? null : request.rejectNote());
+        return QuarkusTransaction.requiringNew().call(() -> {
+            LyricAlignmentJob job = requireDraftJob(jobId);
+            LyricDraft draft = draftRepository.findByJobId(jobId);
+            if (draft == null) {
+                throw new NotFoundException("Lyric draft not found");
+            }
+            if (DRAFT_CONFIRMED.equals(draft.draftStatus)) {
+                throw new ConflictException("Confirmed lyric drafts cannot be rejected");
+            }
+            if (DRAFT_REJECTED.equals(draft.draftStatus)) {
+                throw new ConflictException("Lyric draft has already been rejected");
+            }
+            draft.draftStatus = DRAFT_REJECTED;
+            draft.rejectedBy = operator;
+            draft.rejectedAt = LocalDateTime.now();
+            draft.rejectNote = note;
+            recordEvent(job, "DRAFT_REJECTED", operator, note, null, DRAFT_REJECTED, null);
+            return toDraftResponse(job, draft);
+        });
     }
 
     public AlignmentJobResponse approve(String id, ReviewAlignmentJobRequest request) {
@@ -304,6 +524,9 @@ public class LyricAlignmentService {
                 if (job == null) {
                     throw new NotFoundException("Alignment job not found");
                 }
+                if (!TASK_ALIGNMENT.equals(taskType(job))) {
+                    throw new ConflictException("Lyric draft jobs cannot be reviewed as alignment jobs");
+                }
                 if (!STATUS_COMPLETED.equals(job.status)) {
                     throw new ConflictException("Only completed alignment jobs can be reviewed");
                 }
@@ -358,9 +581,129 @@ public class LyricAlignmentService {
         return new ImportSource(lrcPath, swlrcPath);
     }
 
+    private LyricAlignmentJob requireDraftJob(String jobId) {
+        LyricAlignmentJob job = jobRepository.findById(jobId);
+        if (job == null) {
+            throw new NotFoundException("Lyric draft job not found");
+        }
+        if (!TASK_DRAFT.equals(job.taskType)) {
+            throw new BadRequestException("Job is not a lyric draft extraction job");
+        }
+        return job;
+    }
+
+    private void validateDraftEditable(LyricAlignmentJob job, LyricDraft draft) {
+        if (!STATUS_COMPLETED.equals(job.status)) {
+            throw new ConflictException("Only completed lyric draft jobs can be edited or confirmed");
+        }
+        if (!DRAFT_PENDING_REVIEW.equals(draft.draftStatus) && !DRAFT_EDITING.equals(draft.draftStatus)) {
+            throw new ConflictException("Lyric draft cannot be edited or confirmed in current status");
+        }
+    }
+
+    private String normalizeDraftText(String text) {
+        if (text == null) {
+            throw new BadRequestException("text is required");
+        }
+        String normalized = stripBom(text).replace("\r\n", "\n").replace('\r', '\n');
+        StringBuilder builder = new StringBuilder(normalized.length());
+        for (int index = 0; index < normalized.length(); index++) {
+            char ch = normalized.charAt(index);
+            if ((Character.isISOControl(ch) && ch != '\n' && ch != '\t') || ch == '\u007F') {
+                continue;
+            }
+            builder.append(ch);
+        }
+        normalized = builder.toString();
+        if (normalized.isBlank()) {
+            throw new BadRequestException("Lyric draft text cannot be empty");
+        }
+        int maxBytes = Math.max(1024, config.alignmentDraftMaxTextBytes());
+        if (normalized.getBytes(StandardCharsets.UTF_8).length > maxBytes) {
+            throw new BadRequestException("Lyric draft text exceeds maximum allowed size");
+        }
+        long lineCount = normalized.lines().count();
+        if (lineCount > MAX_DRAFT_LINES) {
+            throw new BadRequestException("Lyric draft text has too many lines");
+        }
+        return normalized.endsWith("\n") ? normalized : normalized + "\n";
+    }
+
+    private String normalizeRejectNote(String note) {
+        if (note == null || note.isBlank()) {
+            throw new BadRequestException("rejectNote is required");
+        }
+        return note.trim();
+    }
+
+    private TrustedDraftAsset writeTrustedDraftAsset(LyricAlignmentJob job, LyricDraft draft) {
+        try {
+            Path root = resolveWritableAlignmentAssetsRoot();
+            Path targetDir = root.resolve(String.valueOf(job.songId)).resolve("drafts").normalize();
+            if (!targetDir.startsWith(root) || targetDir.equals(root)) {
+                throw new BadRequestException("Lyric draft asset directory is invalid");
+            }
+            Files.createDirectories(targetDir);
+            if (!Files.isWritable(targetDir)) {
+                throw new BadRequestException("Lyric draft asset directory is not writable");
+            }
+            Path target = targetDir.resolve(job.id + ".trusted-lyrics.txt").normalize();
+            if (!target.startsWith(targetDir)) {
+                throw new BadRequestException("Lyric draft asset path is invalid");
+            }
+            if (Files.exists(target) && draft.editableTextHash.equals(sha256File(target))) {
+                return new TrustedDraftAsset(target);
+            }
+            if (Files.exists(target)) {
+                throw new BadRequestException("Lyric draft trusted asset already exists with different content");
+            }
+            Path temp = target.resolveSibling("." + target.getFileName() + ".tmp-" + UUID.randomUUID());
+            boolean moved = false;
+            try {
+                Files.writeString(temp, draft.editableText, StandardCharsets.UTF_8);
+                if (!draft.editableTextHash.equals(sha256File(temp))) {
+                    throw new BadRequestException("Lyric draft trusted asset hash does not match source text");
+                }
+                try {
+                    Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException exception) {
+                    LOG.warnf(exception, "Atomic move is not supported for lyric draft trusted asset; falling back to replace move: target=%s", target);
+                    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+                moved = true;
+            } finally {
+                if (!moved) {
+                    Files.deleteIfExists(temp);
+                }
+            }
+            return new TrustedDraftAsset(target);
+        } catch (IOException exception) {
+            LOG.warnf(exception, "Failed to write lyric draft trusted asset: jobId=%s", job.id);
+            throw new BadRequestException("Failed to write lyric draft trusted asset: " + safeMessage(exception));
+        }
+    }
+
+    private void recordDraftError(String jobId, String message) {
+        try {
+            QuarkusTransaction.requiringNew().run(() -> {
+                LyricDraft draft = draftRepository.findByJobId(jobId);
+                if (draft != null && !DRAFT_CONFIRMED.equals(draft.draftStatus)) {
+                    draft.errorMessage = message == null || message.isBlank()
+                            ? "Failed to confirm lyric draft"
+                            : message;
+                }
+            });
+        } catch (RuntimeException exception) {
+            LOG.errorf(exception, "Failed to record lyric draft error: jobId=%s", jobId);
+        }
+    }
+
     private void validateImportableStatus(LyricAlignmentJob job) {
         if (job == null) {
             throw new NotFoundException("Alignment job not found");
+        }
+        if (!TASK_ALIGNMENT.equals(taskType(job))) {
+            throw new ConflictException("Only alignment jobs can be imported");
         }
         if (!STATUS_COMPLETED.equals(job.status)) {
             throw new ConflictException("Only completed alignment jobs can be imported");
@@ -593,6 +936,32 @@ public class LyricAlignmentService {
         throw new BadRequestException("Audio path is not mapped to the worker music directory");
     }
 
+    private LyricSource resolveAlignmentLyricSource(Long songId, Long sourceLyricsAssetId) {
+        if (sourceLyricsAssetId == null) {
+            SongLyric binding = songLyricRepository.findPrimaryBySongId(songId);
+            if (binding == null) {
+                throw new BadRequestException("Trusted lyric not found");
+            }
+            Lyric lyric = lyricRepository.findById(binding.lyricId);
+            return new LyricSource(lyric, true);
+        }
+        Lyric lyric = lyricRepository.findById(sourceLyricsAssetId);
+        if (lyric == null) {
+            throw new NotFoundException("Trusted lyric asset not found");
+        }
+        SongLyric binding = songLyricRepository.findBySongIdAndLyricId(songId, sourceLyricsAssetId);
+        if (binding != null) {
+            return new LyricSource(lyric, true);
+        }
+        if (SOURCE_DRAFT_CONFIRMED.equals(lyric.sourceType) && lyric.sourceTaskId != null) {
+            LyricAlignmentJob sourceJob = jobRepository.findById(lyric.sourceTaskId);
+            if (sourceJob != null && songId.equals(sourceJob.songId)) {
+                return new LyricSource(lyric, false);
+            }
+        }
+        throw new BadRequestException("Trusted lyric asset does not belong to this song");
+    }
+
     private ObjectNode requestSnapshot(
             String jobId,
             TrackFile trackFile,
@@ -619,6 +988,32 @@ public class LyricAlignmentService {
         return node;
     }
 
+    private ObjectNode draftRequestSnapshot(String jobId, AudioMapping audioMapping, CreateLyricDraftJobRequest request) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("schemaVersion", 2);
+        node.put("jobId", jobId);
+        node.put("taskType", TASK_DRAFT);
+        node.put("audioPath", audioMapping.workerPath());
+        node.put("outputDir", workerJobPath(jobId, "result"));
+        node.put("language", nonBlankOrDefault(request == null ? null : request.language(), "zh"));
+        node.put("device", "cpu");
+        node.put("asrModel", nonBlankOrDefault(
+                request == null ? null : request.asrModel(),
+                nonBlankOrDefault(config.alignmentDraftDefaultAsrModel(), "medium")
+        ));
+        node.put("skipSeparation", request != null && Boolean.TRUE.equals(request.skipSeparation()));
+        node.put("vadFilter", request == null || request.vadFilter() == null || Boolean.TRUE.equals(request.vadFilter()));
+        node.put("conditionOnPreviousText", request != null && Boolean.TRUE.equals(request.conditionOnPreviousText()));
+        node.put("keepSuspectedMetadata", request != null && Boolean.TRUE.equals(request.keepSuspectedMetadata()));
+        node.put("retainIntermediate", request != null && Boolean.TRUE.equals(request.retainIntermediate()));
+        node.put("createdAt", LocalDateTime.now().toString());
+        return node;
+    }
+
+    private String nonBlankOrDefault(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value.trim();
+    }
+
     private String workerOptionText(JsonNode workerOptions, String fieldName, String defaultValue) {
         if (workerOptions == null || workerOptions.isNull()) {
             return defaultValue;
@@ -641,6 +1036,7 @@ public class LyricAlignmentService {
     private AlignmentJobResponse toResponse(LyricAlignmentJob job) {
         return new AlignmentJobResponse(
                 job.id,
+                taskType(job),
                 job.songId,
                 job.lyricId,
                 job.status,
@@ -681,6 +1077,7 @@ public class LyricAlignmentService {
     private AlignmentJobListItemResponse toListItemResponse(LyricAlignmentJob job) {
         return new AlignmentJobListItemResponse(
                 job.id,
+                taskType(job),
                 job.songId,
                 job.lyricId,
                 job.status,
@@ -724,6 +1121,43 @@ public class LyricAlignmentService {
         }
     }
 
+    private LyricDraftResponse toDraftResponse(LyricAlignmentJob job, LyricDraft draft) {
+        return new LyricDraftResponse(
+                draft.jobId,
+                draft.musicId,
+                job.status,
+                draft.draftStatus,
+                draft.originalText,
+                draft.originalTextHash,
+                draft.editableText,
+                draft.editableTextHash,
+                readJson(draft.reportSummaryJson),
+                draft.createdAt,
+                draft.updatedAt,
+                draft.editedBy,
+                draft.editedAt,
+                draft.confirmedBy,
+                draft.confirmedAt,
+                draft.confirmedTrustedLyricsId,
+                draft.rejectedBy,
+                draft.rejectedAt,
+                draft.rejectNote,
+                draft.errorMessage
+        );
+    }
+
+    private ConfirmLyricDraftResponse confirmDraftResponse(LyricDraft draft, Long trustedLyricId) {
+        return new ConfirmLyricDraftResponse(
+                draft.jobId,
+                draft.id,
+                trustedLyricId,
+                draft.draftStatus,
+                draft.editableTextHash,
+                draft.confirmedAt,
+                draft.confirmedBy
+        );
+    }
+
     private String writeJson(JsonNode json) {
         try {
             return objectMapper.writeValueAsString(json);
@@ -737,6 +1171,17 @@ public class LyricAlignmentService {
             return "admin";
         }
         return createdBy.trim();
+    }
+
+    private String taskType(LyricAlignmentJob job) {
+        return job.taskType == null || job.taskType.isBlank() ? TASK_ALIGNMENT : job.taskType;
+    }
+
+    private String stripBom(String value) {
+        if (value != null && !value.isEmpty() && value.charAt(0) == '\uFEFF') {
+            return value.substring(1);
+        }
+        return value;
     }
 
     private String normalizeOperator(String operator) {
@@ -818,10 +1263,16 @@ public class LyricAlignmentService {
     private record AudioMapping(String relativePath, String workerPath) {
     }
 
+    private record LyricSource(Lyric lyric, boolean boundToSong) {
+    }
+
     private record ImportSource(Path lrcPath, Path swlrcPath) {
     }
 
     private record ImportedFiles(Path lrcPath, Path swlrcPath, String lrcContent) {
+    }
+
+    private record TrustedDraftAsset(Path path) {
     }
 
     public enum AlignmentArtifact {
@@ -835,6 +1286,35 @@ public class LyricAlignmentService {
         private final String mediaType;
 
         AlignmentArtifact(String fileName, String relativePath, String mediaType) {
+            this.fileName = fileName;
+            this.relativePath = relativePath;
+            this.mediaType = mediaType;
+        }
+
+        public String fileName() {
+            return fileName;
+        }
+
+        public String relativePath() {
+            return relativePath;
+        }
+
+        public String mediaType() {
+            return mediaType;
+        }
+    }
+
+    public enum DraftArtifact {
+        CLEANED("transcript.cleaned.txt", LyricDraftResultReader.RESULT_DIR + "/" + LyricDraftResultReader.TRANSCRIPT_CLEANED, TEXT_PLAIN_UTF8),
+        RAW("transcript.raw.txt", LyricDraftResultReader.RESULT_DIR + "/" + LyricDraftResultReader.TRANSCRIPT_RAW, TEXT_PLAIN_UTF8),
+        SEGMENTS("transcript.segments.json", LyricDraftResultReader.RESULT_DIR + "/" + LyricDraftResultReader.TRANSCRIPT_SEGMENTS, APPLICATION_JSON_UTF8),
+        REPORT("report.json", LyricDraftResultReader.RESULT_DIR + "/" + LyricDraftResultReader.REPORT_JSON, APPLICATION_JSON_UTF8);
+
+        private final String fileName;
+        private final String relativePath;
+        private final String mediaType;
+
+        DraftArtifact(String fileName, String relativePath, String mediaType) {
             this.fileName = fileName;
             this.relativePath = relativePath;
             this.mediaType = mediaType;

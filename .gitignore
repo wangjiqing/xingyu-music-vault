@@ -6,6 +6,10 @@ target/
 *.ear
 .mvn/wrapper/maven-wrapper.jar
 
+# Local Test
+.env.alignment-test
+docker-compose.alignment-test.yml
+
 # Gradle
 .gradle/
 build/

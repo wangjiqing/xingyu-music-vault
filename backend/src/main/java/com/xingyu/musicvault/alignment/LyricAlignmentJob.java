@@ -17,10 +17,13 @@ public class LyricAlignmentJob extends PanacheEntityBase {
     @Column(length = 36)
     public String id;
 
+    @Column(name = "task_type", nullable = false, length = 64)
+    public String taskType;
+
     @Column(name = "song_id", nullable = false)
     public Long songId;
 
-    @Column(name = "lyric_id", nullable = false)
+    @Column(name = "lyric_id")
     public Long lyricId;
 
     @Column(nullable = false, length = 32)
@@ -38,10 +41,10 @@ public class LyricAlignmentJob extends PanacheEntityBase {
     @Column(name = "worker_audio_path", nullable = false, columnDefinition = "text")
     public String workerAudioPath;
 
-    @Column(name = "trusted_lyrics_hash", nullable = false, length = 64)
+    @Column(name = "trusted_lyrics_hash", length = 64)
     public String trustedLyricsHash;
 
-    @Column(name = "trusted_lyrics_snapshot", nullable = false, columnDefinition = "text")
+    @Column(name = "trusted_lyrics_snapshot", columnDefinition = "text")
     public String trustedLyricsSnapshot;
 
     @Column(name = "request_snapshot_json", nullable = false, columnDefinition = "text")

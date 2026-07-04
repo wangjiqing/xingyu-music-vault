@@ -22,6 +22,10 @@ public interface MusicVaultConfig {
 
     String alignmentAssetsDir();
 
+    String alignmentDraftDefaultAsrModel();
+
+    int alignmentDraftMaxTextBytes();
+
     int alignmentStatusSyncIntervalSeconds();
 
     String alignmentStatusSyncInterval();
