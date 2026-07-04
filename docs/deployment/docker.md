@@ -1,6 +1,6 @@
 # Docker 一键部署
 
-本文档面向 v1.3.0 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
+本文档面向 v1.3.1 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
 
 ## 部署安全边界
 
@@ -44,7 +44,7 @@ mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 | `./config` | `/app/config` | 读写 | 预留配置目录 |
 | `./logs` | `/app/logs` | 读写 | 可选日志目录，当前主要日志仍输出到 `docker logs` |
 | `./music` | `/music` | 默认只读 | 音乐扫描目录 |
-| `./lyrics` | `/lyrics` | 默认只读 | 本地歌词扫描目录 |
+| `./lyrics` | `/lyrics` | 读写 | 本地歌词扫描目录；正式对齐 LRC / SWLRC 会发布到受控 `alignment` 子目录 |
 | `./alignment-jobs` | `/alignment-jobs`、Worker `/jobs` | 读写 | 歌词草稿提取 / 逐字对齐共享任务目录；音库写入请求，Worker 写入状态和结果 |
 | `./alignment-models` | Worker `/models` | 读写 | Worker 模型缓存目录；也可在 `.env` 中指向本机 HuggingFace cache |
 | `./data/alignment-lyrics` | `/app/data/alignment-lyrics` | 读写 | 受控歌词资产目录，存放草稿确认后的可信歌词以及对齐导入后的 LRC / SWLRC |
@@ -57,9 +57,9 @@ mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 读取任务。因此 `request.json` 中的 `lyricsPath`、`outputDir` 是 Worker 视角的 `/jobs/...`
 路径，这是预期设计。
 
-`alignment-jobs` 是中间产物目录，不应作为正式歌词资产长期引用。候选歌词草稿链路是“音频 → 未对齐文本 → 人工校对 → 确认为可信歌词”；草稿确认后，音库会把人工确认文本写入 `MUSIC_VAULT_ALIGNMENT_ASSETS_DIR` 并创建 `DRAFT_CONFIRMED` 可信歌词，但不会自动替换当前 LRC / SWLRC，也不会自动创建逐字对齐任务。逐字对齐链路是“可信歌词 + 音频 → LRC / SWLRC → 人工审核 → 导入”；对齐结果确认导入后，音库会把 Worker 生成的 LRC / SWLRC 复制到同一受控资产目录，再创建 `ALIGNMENT` 歌词记录。
+`alignment-jobs` 是中间产物目录，不应作为正式歌词资产长期引用。候选歌词草稿链路是“音频 → 未对齐文本 → 人工校对 → 确认为可信歌词”；草稿确认后，音库会把人工确认文本写入 `MUSIC_VAULT_ALIGNMENT_ASSETS_DIR` 并创建 `DRAFT_CONFIRMED` 可信歌词，但不会自动替换当前 LRC / SWLRC，也不会自动创建逐字对齐任务。逐字对齐链路是“可信歌词 + 音频 → LRC / SWLRC → 人工审核 → 导入”；对齐结果确认导入后，音库会把 Worker 生成的 LRC / SWLRC 发布到歌词挂载目录下的受控 alignment 子目录，再创建 `ALIGNMENT` 歌词记录。
 
-当前 v1.3.0 的正式对齐结果已经脱离 Worker jobs 目录，但仍写入 `alignment-assets-dir`。后续版本会进一步收口到 `LYRICS_DIR` / `MUSIC_VAULT_LYRIC_DIRS` 下的受控 alignment 子目录；迁移前需要让扫描器避免把 `ALIGNMENT` 资产重复识别为 `LOCAL_FILE`，并让删除同步避免误解绑或误删。
+v1.3.1 起，新的正式对齐导入要求配置 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT`，且该路径必须等于解析后的某一个 `MUSIC_VAULT_LYRIC_DIRS` 根目录。Compose 示例默认将 `/lyrics` 读写挂载，并设置 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics`，最终文件路径为 `/lyrics/alignment/{songId}/{jobId}/lyrics.lrc` 与 `lyrics.swlrc`。未配置该 root 时服务仍可启动并读取历史 `ALIGNMENT` 资产，但新的审核导入会明确拒绝，不会回退写入 legacy `alignment-assets-dir`。
 
 ## 复制配置
 
@@ -77,6 +77,7 @@ MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public
 DATA_DIR=./data
 MUSIC_DIR=./music
 LYRICS_DIR=./lyrics
+MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics
 ARTWORK_DIR=./artwork
 ALIGNMENT_JOBS_DIR=./alignment-jobs
 ALIGNMENT_MODELS_DIR=./alignment-models

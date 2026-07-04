@@ -63,6 +63,9 @@ public class LyricService {
     LyricRepository lyricRepository;
 
     @Inject
+    ManagedLyricAssetPathService managedLyricAssetPathService;
+
+    @Inject
     SongLyricRepository songLyricRepository;
 
     @Inject
@@ -76,6 +79,7 @@ public class LyricService {
         Set<Path> existingLyricFiles = new HashSet<>();
         try (Stream<Path> paths = Files.walk(root)) {
             List<Path> lrcFiles = paths.filter(Files::isRegularFile)
+                    .filter(path -> !managedLyricAssetPathService.isManagedAlignmentPath(path))
                     .filter(this::isLrcFile)
                     .toList();
             existingLyricFiles.addAll(lrcFiles.stream().map(this::realOrNormalizedPath).collect(Collectors.toSet()));
@@ -485,7 +489,7 @@ public class LyricService {
             deleteUnboundContentHashDuplicate(lyric, contentHash);
             refreshLyricSource(lyric, normalizedSourcePath, content, contentHash, metadata);
             removeUnboundDuplicatesForSourcePath(lyric, normalizedSourcePath);
-        } else if ((lyric = lyricRepository.findByContentHash(contentHash)) != null) {
+        } else if ((lyric = lyricRepository.findLocalByContentHash(contentHash)) != null) {
             refreshLyricSource(lyric, normalizedSourcePath, content, contentHash, metadata);
             counters.duplicateFiles++;
         } else {
@@ -528,7 +532,7 @@ public class LyricService {
     }
 
     private void deleteUnboundContentHashDuplicate(Lyric retainedLyric, String contentHash) {
-        Lyric duplicate = lyricRepository.findByContentHash(contentHash);
+        Lyric duplicate = lyricRepository.findLocalByContentHash(contentHash);
         if (duplicate == null || Objects.equals(duplicate.id, retainedLyric.id)) {
             return;
         }

@@ -21,7 +21,10 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
@@ -81,7 +84,7 @@ class OpenApiResourceTest {
                 .get("/api/open/v1/server/info")
                 .then()
                 .statusCode(200)
-                .body("serviceVersion", equalTo("1.3.0"))
+                .body("serviceVersion", equalTo("1.3.1"))
                 .body("apiVersion", equalTo("v1"))
                 .body("readOnly", equalTo(true))
                 .body("features.tracks", equalTo(true))
@@ -564,6 +567,50 @@ class OpenApiResourceTest {
     }
 
     @Test
+    void missingAlignmentSwlrcKeepsLrcAvailableAndHidesWordLyrics() throws IOException {
+        Long trackId = createTrack("对齐歌词.flac", "对齐歌词", "星语", "Demo", 2026, "Pop", 180_000L);
+        String lrcContent = "[ti:对齐歌词]\n[00:01.00]line\n";
+        Path swlrcPath = bindAlignmentLyric(trackId, "对齐歌词", lrcContent, "{\"words\":[]}\n");
+
+        String etag = openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("wordLyricsAvailable", equalTo(true))
+                .extract()
+                .path("etag");
+
+        Files.delete(swlrcPath);
+
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics", trackId)
+                .then()
+                .statusCode(200)
+                .header("ETag", equalTo(etag))
+                .body("content", equalTo(lrcContent));
+
+        openApi.get("/api/open/v1/tracks/" + trackId + "/lyrics/meta")
+                .when()
+                .get("/api/open/v1/tracks/{id}/lyrics/meta", trackId)
+                .then()
+                .statusCode(200)
+                .body("available", equalTo(true))
+                .body("etag", equalTo(etag))
+                .body("wordLyricsAvailable", equalTo(false))
+                .body("wordLyricsUrl", nullValue());
+
+        openApi.get("/api/open/v1/tracks/" + trackId + "/word-lyrics")
+                .when()
+                .get("/api/open/v1/tracks/{id}/word-lyrics", trackId)
+                .then()
+                .statusCode(404)
+                .body("code", equalTo("OPENAPI_WORD_LYRICS_NOT_FOUND"));
+    }
+
+    @Test
     void artworkHashAndEtagSupportConditionalRequests() throws IOException {
         Long trackId = createTrack("封面.flac", "封面", "星语", "Demo", 2026, "Pop", 180_000L);
         Path imagePath = bindArtwork(trackId, "cover.png");
@@ -879,6 +926,42 @@ class OpenApiResourceTest {
         });
     }
 
+    private Path bindAlignmentLyric(Long trackId, String title, String lrcContent, String swlrcContent) throws IOException {
+        Path legacyDir = workDir.resolve("legacy-alignment-assets").resolve(String.valueOf(trackId)).resolve("job-openapi");
+        Files.createDirectories(legacyDir);
+        Path lrcPath = legacyDir.resolve("lyrics.lrc");
+        Path swlrcPath = legacyDir.resolve("lyrics.swlrc");
+        Files.writeString(lrcPath, lrcContent);
+        Files.writeString(swlrcPath, swlrcContent);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Lyric lyric = new Lyric();
+            lyric.title = title;
+            lyric.artist = "星语";
+            lyric.album = "Demo";
+            lyric.sourceType = "ALIGNMENT";
+            lyric.sourceTaskId = "job-openapi-" + trackId;
+            lyric.sourcePath = lrcPath.toAbsolutePath().normalize().toString();
+            lyric.swlrcPath = swlrcPath.toAbsolutePath().normalize().toString();
+            lyric.format = "LRC";
+            lyric.content = lrcContent;
+            lyric.contentHash = sha256(lrcContent);
+            lyric.swlrcHash = sha256(swlrcContent);
+            lyric.parseStatus = "PARSED";
+            lyric.confirmedAt = LocalDateTime.now();
+            lyric.confirmedBy = "test";
+            lyric.persist();
+
+            SongLyric binding = new SongLyric();
+            binding.songId = trackId;
+            binding.lyricId = lyric.id;
+            binding.matchType = "TITLE_ARTIST";
+            binding.matchScore = 100;
+            binding.isPrimary = true;
+            binding.persist();
+        });
+        return swlrcPath;
+    }
+
     private Path bindArtwork(Long trackId, String fileName) throws IOException {
         Path imagePath = workDir.resolve(fileName);
         writePng(imagePath, 3, 2);
@@ -961,6 +1044,15 @@ class OpenApiResourceTest {
         try {
             return Files.size(path);
         } catch (IOException exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    private String sha256(String content) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException(exception);
         }
     }

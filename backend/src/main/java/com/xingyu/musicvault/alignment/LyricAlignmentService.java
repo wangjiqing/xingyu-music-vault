@@ -28,6 +28,7 @@ import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
 import com.xingyu.musicvault.lyrics.Lyric;
 import com.xingyu.musicvault.lyrics.LyricRepository;
+import com.xingyu.musicvault.lyrics.ManagedLyricAssetPathService;
 import com.xingyu.musicvault.lyrics.SongLyric;
 import com.xingyu.musicvault.lyrics.SongLyricRepository;
 import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
@@ -76,6 +77,7 @@ public class LyricAlignmentService {
     private static final String TASK_DRAFT = "LYRIC_DRAFT_EXTRACTION";
     private static final String SOURCE_ALIGNMENT = "ALIGNMENT";
     private static final String SOURCE_DRAFT_CONFIRMED = "DRAFT_CONFIRMED";
+    private static final String MATCH_TITLE_ARTIST = "TITLE_ARTIST";
     private static final String DRAFT_PENDING_REVIEW = "PENDING_REVIEW";
     private static final String DRAFT_EDITING = "EDITING";
     private static final String DRAFT_CONFIRMED = "CONFIRMED";
@@ -89,6 +91,9 @@ public class LyricAlignmentService {
 
     @Inject
     LyricRepository lyricRepository;
+
+    @Inject
+    ManagedLyricAssetPathService managedLyricAssetPathService;
 
     @Inject
     SongLyricRepository songLyricRepository;
@@ -481,7 +486,11 @@ public class LyricAlignmentService {
 
         ImportedFiles importedFiles;
         try {
-            importedFiles = copyResultFilesToAssets(job, importSource);
+            importedFiles = copyResultFilesToManagedLyrics(job, importSource);
+        } catch (ConflictException exception) {
+            LOG.warnf(exception, "Failed to publish alignment result assets because target conflicts: jobId=%s", id);
+            markImportFailed(id, operator, exception.getMessage());
+            throw exception;
         } catch (IOException | RuntimeException exception) {
             LOG.warnf(exception, "Failed to copy alignment result assets: jobId=%s", id);
             markImportFailed(id, operator, exception.getMessage());
@@ -508,6 +517,7 @@ public class LyricAlignmentService {
                 lyric.sourceType = SOURCE_ALIGNMENT;
                 lyric.sourcePath = importedFiles.lrcPath().toString();
                 lyric.content = importedFiles.lrcContent();
+                assertImportedLrcContentHash(lyric.content, importedFiles.lrcRawHash(), importJob.lrcHash);
                 lyric.contentHash = importJob.lrcHash;
                 lyric.format = "LRC";
                 lyric.parseStatus = "PARSED";
@@ -743,44 +753,111 @@ public class LyricAlignmentService {
         }
     }
 
-    private ImportedFiles copyResultFilesToAssets(LyricAlignmentJob job, ImportSource source) throws IOException {
-        Path root = resolveWritableAlignmentAssetsRoot();
-        Path targetDir = root.resolve(String.valueOf(job.songId)).resolve(job.id).normalize();
-        if (!targetDir.startsWith(root) || targetDir.equals(root)) {
-            throw new BadRequestException("Alignment asset directory is invalid");
+    private ImportedFiles copyResultFilesToManagedLyrics(LyricAlignmentJob job, ImportSource source) throws IOException {
+        ManagedLyricAssetPathService.AlignmentAssetPaths target = managedLyricAssetPathService.alignmentAssetPaths(job.songId, job.id);
+        Path finalDir = target.finalDir();
+        Path parentDir = finalDir.getParent();
+        if (parentDir == null || !parentDir.startsWith(target.managedRoot())) {
+            throw new BadRequestException("Alignment lyric asset directory is invalid");
         }
-        Files.createDirectories(targetDir);
-        if (!Files.isWritable(targetDir)) {
-            throw new BadRequestException("Alignment asset directory is not writable");
+        Files.createDirectories(parentDir);
+        if (!Files.isWritable(parentDir)) {
+            throw new BadRequestException("Alignment lyric asset directory is not writable");
         }
 
-        Path targetLrc = targetDir.resolve(LyricAlignmentResultReader.LYRICS_LRC).normalize();
-        Path targetSwlrc = targetDir.resolve(LyricAlignmentResultReader.LYRICS_SWLRC).normalize();
-        copyVerifiedAsset(source.lrcPath(), targetLrc, job.lrcHash);
-        copyVerifiedAsset(source.swlrcPath(), targetSwlrc, job.swlrcHash);
-        String lrcContent = Files.readString(targetLrc, StandardCharsets.UTF_8);
-        return new ImportedFiles(targetLrc, targetSwlrc, lrcContent);
+        Path stagingDir = finalDir.resolveSibling("." + finalDir.getFileName() + ".staging-" + UUID.randomUUID()).normalize();
+        if (!stagingDir.startsWith(parentDir) || stagingDir.equals(parentDir)) {
+            throw new BadRequestException("Alignment lyric staging directory is invalid");
+        }
+
+        boolean published = false;
+        try {
+            Files.createDirectories(stagingDir);
+            Path stagingLrc = stagingDir.resolve(LyricAlignmentResultReader.LYRICS_LRC).normalize();
+            Path stagingSwlrc = stagingDir.resolve(LyricAlignmentResultReader.LYRICS_SWLRC).normalize();
+            copyAndVerifyStagingAsset(source.lrcPath(), stagingLrc);
+            copyAndVerifyStagingAsset(source.swlrcPath(), stagingSwlrc);
+            verifyHash("Staged alignment LRC asset", job.lrcHash, stagingLrc);
+            verifyHash("Staged alignment SWLRC asset", job.swlrcHash, stagingSwlrc);
+
+            if (Files.exists(finalDir)) {
+                ImportedFiles existing = existingImportedFiles(finalDir, job);
+                cleanupStagingDirectory(stagingDir, parentDir);
+                return existing;
+            }
+
+            try {
+                Files.move(stagingDir, finalDir, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException exception) {
+                LOG.warnf(exception, "Atomic directory move is not supported for imported alignment assets; falling back to regular move: target=%s", finalDir);
+                Files.move(stagingDir, finalDir);
+            }
+            published = true;
+            String publishedLrcHash = verifyHash("Published alignment LRC asset", job.lrcHash, target.lrcPath());
+            verifyHash("Published alignment SWLRC asset", job.swlrcHash, target.swlrcPath());
+            String lrcContent = Files.readString(target.lrcPath(), StandardCharsets.UTF_8);
+            return new ImportedFiles(target.lrcPath(), target.swlrcPath(), lrcContent, publishedLrcHash);
+        } finally {
+            if (!published) {
+                cleanupStagingDirectory(stagingDir, parentDir);
+            }
+        }
     }
 
-    private void copyVerifiedAsset(Path source, Path target, String expectedHash) throws IOException {
-        if (Files.exists(target) && expectedHash.equals(sha256File(target))) {
+    private void copyAndVerifyStagingAsset(Path source, Path target) throws IOException {
+        Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
+        String sourceHash = sha256File(source);
+        String targetHash = sha256File(target);
+        if (!sourceHash.equals(targetHash)) {
+            throw new BadRequestException("Copied alignment asset hash does not match source hash");
+        }
+    }
+
+    private ImportedFiles existingImportedFiles(Path finalDir, LyricAlignmentJob job) throws IOException {
+        if (!Files.isDirectory(finalDir)) {
+            throw new ConflictException("Alignment lyric asset target already exists and is not a directory");
+        }
+        Path lrcPath = finalDir.resolve(LyricAlignmentResultReader.LYRICS_LRC).normalize();
+        Path swlrcPath = finalDir.resolve(LyricAlignmentResultReader.LYRICS_SWLRC).normalize();
+        if (!Files.isRegularFile(lrcPath) || !Files.isRegularFile(swlrcPath)) {
+            throw new ConflictException("Alignment lyric asset target already exists but is incomplete");
+        }
+        String lrcHash = sha256File(lrcPath);
+        if (!job.lrcHash.equals(lrcHash) || !job.swlrcHash.equals(sha256File(swlrcPath))) {
+            throw new ConflictException("Alignment lyric asset target already exists with different content");
+        }
+        String lrcContent = Files.readString(lrcPath, StandardCharsets.UTF_8);
+        return new ImportedFiles(lrcPath, swlrcPath, lrcContent, lrcHash);
+    }
+
+    private String verifyHash(String label, String expectedHash, Path path) {
+        String actualHash = sha256File(path);
+        if (!expectedHash.equals(actualHash)) {
+            throw new BadRequestException(label + " hash does not match expected hash");
+        }
+        return actualHash;
+    }
+
+    private void assertImportedLrcContentHash(String content, String rawHash, String jobHash) {
+        if (!jobHash.equals(rawHash)) {
+            throw new BadRequestException("Imported alignment LRC raw hash does not match job hash");
+        }
+        String contentHash = sha256(content);
+        if (!jobHash.equals(contentHash)) {
+            throw new BadRequestException("Imported alignment LRC content hash does not match job hash");
+        }
+    }
+
+    private void cleanupStagingDirectory(Path stagingDir, Path parentDir) {
+        if (stagingDir == null || parentDir == null || !stagingDir.startsWith(parentDir) || stagingDir.equals(parentDir) || !Files.exists(stagingDir)) {
             return;
         }
-        if (Files.exists(target)) {
-            throw new BadRequestException("Alignment asset target already exists with different content");
-        }
-        Path temp = target.resolveSibling("." + target.getFileName() + ".tmp-" + UUID.randomUUID());
-        Files.copy(source, temp, StandardCopyOption.REPLACE_EXISTING);
-        String copiedHash = sha256File(temp);
-        if (!expectedHash.equals(copiedHash)) {
-            Files.deleteIfExists(temp);
-            throw new BadRequestException("Copied alignment asset hash does not match expected hash");
-        }
-        try {
-            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+        try (var paths = Files.walk(stagingDir)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
         } catch (IOException exception) {
-            LOG.warnf(exception, "Atomic move is not supported for imported alignment asset; falling back to replace move: target=%s", target);
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            LOG.warnf(exception, "Failed to clean alignment lyric staging directory: stagingDir=%s", stagingDir);
         }
     }
 
@@ -815,14 +892,14 @@ public class LyricAlignmentService {
         entityManager.flush();
         if (existing != null) {
             existing.isPrimary = true;
-            existing.matchType = "ALIGNMENT_APPROVED";
+            existing.matchType = MATCH_TITLE_ARTIST;
             existing.matchScore = 100;
             return;
         }
         SongLyric binding = new SongLyric();
         binding.songId = songId;
         binding.lyricId = lyricId;
-        binding.matchType = "ALIGNMENT_APPROVED";
+        binding.matchType = MATCH_TITLE_ARTIST;
         binding.matchScore = 100;
         binding.isPrimary = true;
         binding.persist();
@@ -1413,7 +1490,7 @@ public class LyricAlignmentService {
     private record ImportSource(Path lrcPath, Path swlrcPath) {
     }
 
-    private record ImportedFiles(Path lrcPath, Path swlrcPath, String lrcContent) {
+    private record ImportedFiles(Path lrcPath, Path swlrcPath, String lrcContent, String lrcRawHash) {
     }
 
     private record TrustedDraftAsset(Path path) {

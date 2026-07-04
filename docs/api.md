@@ -201,7 +201,7 @@ Content-Type: application/json
 }
 ```
 
-导入前校验任务已完成、已审核通过、结果目录存在、`lyrics.lrc` 与 `lyrics.swlrc` 均存在、当前文件 hash 与同步时记录一致、关联歌曲存在、受控歌词资产目录可写。导入会把结果复制到 `music-vault.alignment-assets-dir`，创建或复用 `sourceType=ALIGNMENT` 的 `lyrics` 记录，保存 `sourceTaskId`、`parentLyricsId`、`swlrcPath`、`swlrcHash`、`confirmedAt`、`confirmedBy`，并将新 LRC 绑定为当前歌曲主歌词。该目录已经脱离 Worker jobs 中间产物；后续版本会继续收口到 `LYRICS_DIR` / `MUSIC_VAULT_LYRIC_DIRS` 下的受控 alignment 子目录。
+导入前校验任务已完成、已审核通过、结果目录存在、`lyrics.lrc` 与 `lyrics.swlrc` 均存在、当前文件 hash 与同步时记录一致、关联歌曲存在、`music-vault.alignment-lyrics-root` 已配置且属于歌词扫描根目录。导入会把结果发布到 `{alignmentLyricsRoot}/alignment/{songId}/{jobId}`，创建或复用 `sourceType=ALIGNMENT` 的 `lyrics` 记录，保存 `sourceTaskId`、`parentLyricsId`、`sourcePath`、`swlrcPath`、`contentHash`、`swlrcHash`、`confirmedAt`、`confirmedBy`，并将新 LRC 绑定为当前歌曲主歌词。该目录已经脱离 Worker jobs 中间产物，普通歌词扫描会排除受控 alignment 子目录。
 
 已导入任务再次导入会幂等返回同一个 `importedLyricId`，不会重复生成资产或破坏绑定。导入失败时任务 `importStatus=IMPORT_FAILED` 并记录 `importErrorMessage`；原始可信歌词和既有正式歌词资产保持不变。
 
@@ -1867,7 +1867,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.3.0",
+  "serviceVersion": "1.3.1",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {

@@ -139,9 +139,9 @@ Worker 成功后，音库读取 `result/transcript.cleaned.txt`，保存为 `lyr
 
 Worker 完成后，音库同步任务状态和结果摘要。`SUCCEEDED` 与 `NEEDS_REVIEW` 都映射为任务执行完成，人工审核状态仍为 `PENDING`；`NEEDS_REVIEW` 只是 Worker 执行结论，不代表人工审核已完成。
 
-管理员审核通过后，仍需再次确认导入。导入时音库从任务 `result` 目录读取 `lyrics.lrc` 与 `lyrics.swlrc`，校验当前文件 hash 与同步保存的 hash 一致，再复制到音库受控歌词资产目录。正式歌词记录不会长期引用 `alignment-jobs` 中间目录。
+管理员审核通过后，仍需再次确认导入。导入时音库从任务 `result` 目录读取 `lyrics.lrc` 与 `lyrics.swlrc`，校验当前文件 hash 与同步保存的 hash 一致，再发布到歌词挂载目录下的受控 `alignment/{songId}/{jobId}` 子目录。正式歌词记录不会长期引用 `alignment-jobs` 中间目录。
 
-当前 v1.3.0 的 `ALIGNMENT` LRC / SWLRC 已从 Worker jobs 中间目录复制到 `alignment-assets-dir`。后续版本应将正式对齐资产迁移到 `LYRICS_DIR` / `MUSIC_VAULT_LYRIC_DIRS` 下的受控 alignment 子目录；迁移前需要让歌词扫描器避免把 `ALIGNMENT` 资产重复识别为 `LOCAL_FILE`，并让删除同步避免误解绑或误删音库生成资产。
+v1.3.1 起，新的 `ALIGNMENT` LRC / SWLRC 会从 Worker jobs 中间目录发布到 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` 下的受控 alignment 子目录；普通歌词扫描会排除该目录，删除同步也只处理 `LOCAL_FILE`。旧 `alignment-assets-dir` 中的历史正式对齐资产不自动迁移、不删除，后续需要通过显式迁移方案复制文件、校验 hash 后再更新数据库路径。
 
 导入成功后：
 

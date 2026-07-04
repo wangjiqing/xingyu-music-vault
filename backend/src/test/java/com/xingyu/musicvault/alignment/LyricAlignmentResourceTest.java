@@ -701,13 +701,18 @@ class LyricAlignmentResourceTest {
         assertEquals(originalLyricId, imported.parentLyricsId);
         assertEquals(job.lrcHash, imported.contentHash);
         assertEquals(job.swlrcHash, imported.swlrcHash);
-        assertTrue(imported.sourcePath.startsWith(ASSETS_ROOT.toAbsolutePath().normalize().toString()));
-        assertTrue(imported.swlrcPath.startsWith(ASSETS_ROOT.toAbsolutePath().normalize().toString()));
+        Path expectedFinalDir = managedFinalDir(songId, jobId);
+        assertEquals(expectedFinalDir.resolve("lyrics.lrc").toAbsolutePath().normalize().toString(), imported.sourcePath);
+        assertEquals(expectedFinalDir.resolve("lyrics.swlrc").toAbsolutePath().normalize().toString(), imported.swlrcPath);
         assertEquals("[00:01.00]故事的小黄花\n", Files.readString(Path.of(imported.sourcePath), StandardCharsets.UTF_8));
         assertEquals("{\"lines\":[]}\n", Files.readString(Path.of(imported.swlrcPath), StandardCharsets.UTF_8));
+        assertTrue(Files.isDirectory(expectedFinalDir));
+        assertTrue(Files.isRegularFile(expectedFinalDir.resolve("lyrics.lrc")));
+        assertTrue(Files.isRegularFile(expectedFinalDir.resolve("lyrics.swlrc")));
         assertEquals(TRUSTED_LYRICS, Files.readString(trustedSource, StandardCharsets.UTF_8));
         assertEquals(originalLyricId, QuarkusTransaction.requiringNew().call(() -> Lyric.<Lyric>findById(originalLyricId)).id);
         assertEquals(imported.id, primaryLyricId(songId));
+        assertEquals("TITLE_ARTIST", primaryBinding(songId).matchType);
 
         OpenApiTestClient openApi = QuarkusTransaction.requiringNew()
                 .call(() -> OpenApiTestClient.create(cryptoService, List.of(OpenApiScope.OPENAPI_READ)));
@@ -768,6 +773,7 @@ class LyricAlignmentResourceTest {
 
         assertEquals(1, Lyric.count("sourceType = ?1 and sourceTaskId = ?2", "ALIGNMENT", jobId));
         assertEquals(1, SongLyric.count("songId = ?1 and lyricId = ?2", songId, firstLyricId));
+        assertEquals(0, stagingDirectoryCount(songId, jobId));
     }
 
     @Test
@@ -795,13 +801,13 @@ class LyricAlignmentResourceTest {
     }
 
     @Test
-    void unavailableAssetDirectoryMarksImportFailedAndKeepsBinding() throws IOException {
+    void unavailableManagedLyricDirectoryMarksImportFailedAndKeepsBinding() throws IOException {
         Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("asset-dir-blocked.flac"), TRUSTED_LYRICS);
         Long originalLyricId = primaryLyricId(songId);
         String jobId = completeJob(songId, "SUCCEEDED");
         approve(jobId);
-        deleteRecursively(ASSETS_ROOT);
-        Files.writeString(ASSETS_ROOT, "not a directory", StandardCharsets.UTF_8);
+        Files.createDirectories(MUSIC_ROOT.resolve("alignment"));
+        Files.writeString(MUSIC_ROOT.resolve("alignment").resolve(String.valueOf(songId)), "not a directory", StandardCharsets.UTF_8);
 
         given()
                 .header("Authorization", AUTHORIZATION)
@@ -814,6 +820,69 @@ class LyricAlignmentResourceTest {
 
         assertEquals("IMPORT_FAILED", findJob(jobId).importStatus);
         assertEquals(originalLyricId, primaryLyricId(songId));
+    }
+
+    @Test
+    void existingFinalDirWithDifferentContentRejectsImportAndCleansStaging() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("conflict.flac"), TRUSTED_LYRICS);
+        Long originalLyricId = primaryLyricId(songId);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+        Path finalDir = managedFinalDir(songId, jobId);
+        Files.createDirectories(finalDir);
+        Files.writeString(finalDir.resolve("lyrics.lrc"), "[00:01.00]tampered\n", StandardCharsets.UTF_8);
+        Files.writeString(finalDir.resolve("lyrics.swlrc"), "{\"lines\":[]}\n", StandardCharsets.UTF_8);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(409)
+                .body("error", equalTo("conflict"));
+
+        assertEquals("IMPORT_FAILED", findJob(jobId).importStatus);
+        assertEquals(originalLyricId, primaryLyricId(songId));
+        assertEquals(0, stagingDirectoryCount(songId, jobId));
+        assertEquals("[00:01.00]tampered\n", Files.readString(finalDir.resolve("lyrics.lrc"), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void databaseFailureKeepsPublishedFinalDirForRetryAndPreservesBinding() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("db-failure.flac"), TRUSTED_LYRICS);
+        Long originalLyricId = primaryLyricId(songId);
+        String jobId = completeJob(songId, "SUCCEEDED");
+        approve(jobId);
+        QuarkusTransaction.requiringNew().run(() -> {
+            Lyric conflicting = new Lyric();
+            conflicting.title = "conflict";
+            conflicting.sourceType = "DRAFT_CONFIRMED";
+            conflicting.sourceTaskId = jobId;
+            conflicting.content = "trusted text\n";
+            conflicting.contentHash = sha256("trusted text\n");
+            conflicting.format = "TEXT";
+            conflicting.parseStatus = "PARSED";
+            conflicting.persist();
+        });
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/api/admin/lyric-alignment/jobs/{id}/import", jobId)
+                .then()
+                .statusCode(500);
+
+        Path finalDir = managedFinalDir(songId, jobId);
+        assertTrue(Files.isRegularFile(finalDir.resolve("lyrics.lrc")));
+        assertTrue(Files.isRegularFile(finalDir.resolve("lyrics.swlrc")));
+        assertEquals(0, stagingDirectoryCount(songId, jobId));
+        assertEquals("IMPORT_FAILED", findJob(jobId).importStatus);
+        assertEquals(originalLyricId, primaryLyricId(songId));
+        assertEquals(0, Lyric.count("sourceType = ?1 and sourceTaskId = ?2", "ALIGNMENT", jobId));
     }
 
 
@@ -948,6 +1017,28 @@ class LyricAlignmentResourceTest {
             SongLyric binding = SongLyric.<SongLyric>find("songId = ?1 and isPrimary = true", songId).firstResult();
             return binding == null ? null : binding.lyricId;
         });
+    }
+
+    private SongLyric primaryBinding(Long songId) {
+        return QuarkusTransaction.requiringNew()
+                .call(() -> SongLyric.<SongLyric>find("songId = ?1 and isPrimary = true", songId).firstResult());
+    }
+
+    private Path managedFinalDir(Long songId, String jobId) {
+        return MUSIC_ROOT.resolve("alignment").resolve(String.valueOf(songId)).resolve(jobId).toAbsolutePath().normalize();
+    }
+
+    private long stagingDirectoryCount(Long songId, String jobId) throws IOException {
+        Path parent = MUSIC_ROOT.resolve("alignment").resolve(String.valueOf(songId));
+        if (!Files.isDirectory(parent)) {
+            return 0;
+        }
+        try (var stream = Files.list(parent)) {
+            return stream
+                    .filter(Files::isDirectory)
+                    .filter(path -> path.getFileName().toString().startsWith("." + jobId + ".staging-"))
+                    .count();
+        }
     }
 
     private Long createSong(Path audioPath) throws IOException {

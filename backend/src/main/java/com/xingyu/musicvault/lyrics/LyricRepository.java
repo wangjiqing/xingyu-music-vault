@@ -7,8 +7,8 @@ import java.util.List;
 
 @ApplicationScoped
 public class LyricRepository implements PanacheRepository<Lyric> {
-    public Lyric findByContentHash(String contentHash) {
-        return find("contentHash", contentHash).firstResult();
+    public Lyric findLocalByContentHash(String contentHash) {
+        return find("sourceType = ?1 and contentHash = ?2", "LOCAL_FILE", contentHash).firstResult();
     }
 
     public List<Lyric> findLocalBySourcePath(String sourcePath) {

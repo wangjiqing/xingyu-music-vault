@@ -6,6 +6,25 @@
 
 暂无。
 
+## v1.3.1 — 正式对齐歌词资产目录收口
+
+### 修复 / 补强
+
+- **正式对齐资产目录收口**：审核通过的 `ALIGNMENT` LRC / SWLRC 不再继续写入 legacy `alignment-assets-dir`，而是发布到显式配置的歌词根目录下：`{MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT}/alignment/{songId}/{jobId}/lyrics.lrc` 与 `lyrics.swlrc`。
+- **显式配置边界**：新增 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` 与 `MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR`。未配置 root 时服务仍可启动并兼容读取旧 `ALIGNMENT` 路径，但新的审核导入会明确拒绝，不再退回“第一个可写歌词目录”或 legacy 资产目录。
+- **目录级发布与幂等导入**：导入流程使用 staging 目录成对复制 LRC / SWLRC，校验 raw file hash 后以 finalDir 为整体发布；同一 jobId 已存在且 hash 一致时幂等成功，缺失或 hash 不一致时拒绝覆盖。
+- **扫描器隔离**：普通歌词扫描会排除受控 alignment 子目录，且只复用 / 刷新 `source_type = LOCAL_FILE` 的记录，不会因为 `contentHash` 相同而修改 `ALIGNMENT` 或 `DRAFT_CONFIRMED` 歌词。
+- **删除同步隔离**：普通删除同步继续只处理 `LOCAL_FILE`，`ALIGNMENT` 文件缺失不会自动删除歌词、解绑当前歌词或降级为本地文件。
+- **绑定兼容修复**：对齐导入后的当前歌词绑定继续使用客户端可识别的 `TITLE_ARTIST` 匹配语义，历史误写为 `ALIGNMENT_APPROVED` 的绑定会迁移回 `TITLE_ARTIST`。
+- **部署模板同步**：Docker Compose 示例将 `/lyrics` 挂载为读写，并设置 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics`；Worker 仍只通过 jobs 共享目录协作，不暴露端口、不挂 Docker Socket。
+- **版本展示统一**：健康检查、管理端服务信息、OpenAPI 服务信息、后端构建版本、前端包版本、README、CHANGELOG 与 release 文档同步到 `1.3.1`。
+
+### 兼容性
+
+- 不修改 Worker 协议，不引入 Docker Socket、HTTP 回调、消息队列或数据库队列。
+- 不自动迁移、不删除旧 `alignment-assets-dir`；历史 `ALIGNMENT` 资产继续按数据库原路径读取。
+- OpenAPI 契约不新增公开状态字段；SWLRC 文件缺失时继续保持既有 `wordLyricsAvailable=false` 语义。
+
 ## v1.3.0 — 歌词草稿与逐字对齐任务闭环
 
 ### 新增 / 调整
