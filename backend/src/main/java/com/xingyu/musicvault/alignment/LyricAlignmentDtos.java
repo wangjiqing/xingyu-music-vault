@@ -46,6 +46,7 @@ public final class LyricAlignmentDtos {
             String errorMessage,
             JsonNode resultSummary,
             JsonNode workerStatus,
+            WorkerSignalsResponse workerSignals,
             String alignmentJsonHash,
             String lrcHash,
             String swlrcHash,
@@ -65,7 +66,9 @@ public final class LyricAlignmentDtos {
             String importedBy,
             LocalDateTime importedAt,
             String importErrorMessage,
-            Long importedLyricId
+            Long importedLyricId,
+            String draftStatus,
+            Long confirmedTrustedLyricsId
     ) {
     }
 
@@ -82,6 +85,7 @@ public final class LyricAlignmentDtos {
             String trustedLyricsHash,
             String errorMessage,
             JsonNode resultSummary,
+            WorkerSignalsResponse workerSignals,
             String alignmentJsonHash,
             String lrcHash,
             String swlrcHash,
@@ -100,7 +104,53 @@ public final class LyricAlignmentDtos {
             String importedBy,
             LocalDateTime importedAt,
             String importErrorMessage,
-            Long importedLyricId
+            Long importedLyricId,
+            String draftStatus,
+            Long confirmedTrustedLyricsId
+    ) {
+    }
+
+    public record LyricDraftDefaultOptionsResponse(
+            String language,
+            String asrModel,
+            boolean skipSeparation,
+            boolean vadFilter,
+            boolean conditionOnPreviousText,
+            boolean keepSuspectedMetadata,
+            boolean retainIntermediate
+    ) {
+    }
+
+    public record LyricDraftTrustedAssetResponse(
+            Long id,
+            String sourceType,
+            String contentHash,
+            LocalDateTime confirmedAt,
+            String confirmedBy
+    ) {
+    }
+
+    public record WorkerSignalsResponse(
+            boolean jobDirectoryAvailable,
+            boolean ready,
+            boolean running,
+            boolean succeeded,
+            boolean needsReview,
+            boolean failed,
+            boolean abandoned,
+            boolean statusJsonAvailable,
+            boolean resultDirectoryAvailable,
+            boolean stderrLogAvailable,
+            String stageMessage
+    ) {
+    }
+
+    public record MusicLyricDraftContextResponse(
+            Long musicId,
+            LyricDraftDefaultOptionsResponse defaultOptions,
+            AlignmentJobResponse latestJob,
+            LyricDraftResponse draft,
+            LyricDraftTrustedAssetResponse trustedLyricsAsset
     ) {
     }
 

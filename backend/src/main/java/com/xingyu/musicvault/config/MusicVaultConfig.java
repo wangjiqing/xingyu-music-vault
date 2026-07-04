@@ -24,6 +24,10 @@ public interface MusicVaultConfig {
 
     String alignmentDraftDefaultAsrModel();
 
+    boolean alignmentDraftDefaultSkipSeparation();
+
+    boolean alignmentDraftDefaultVadFilter();
+
     int alignmentDraftMaxTextBytes();
 
     int alignmentStatusSyncIntervalSeconds();

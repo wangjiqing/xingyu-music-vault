@@ -17,11 +17,25 @@ import {
   alignmentReviewStatusTagType,
   alignmentWorkerOutcomeLabel,
   alignmentWorkerOutcomeTagType,
+  lyricDraftStatusLabel,
+  lyricDraftStatusTagType,
+  lyricTaskTypeLabel,
+  lyricTaskTypeTagType,
   shortAlignmentJobId,
 } from '../constants/lyricAlignmentStatus'
 import LyricAlignmentTaskDetail from '../components/alignment/LyricAlignmentTaskDetail.vue'
 
-type FilterKey = 'all' | 'running' | 'pendingReview' | 'approvedPendingImport' | 'imported' | 'failed'
+type FilterKey =
+  | 'all'
+  | 'running'
+  | 'pendingReview'
+  | 'approvedPendingImport'
+  | 'imported'
+  | 'failed'
+  | 'draftRunning'
+  | 'draftPending'
+  | 'draftConfirmed'
+  | 'draftRejected'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,13 +86,18 @@ function errorText(error: any, fallback: string): string {
 
 function matchesFilter(job: LyricAlignmentJobListItem, value: FilterKey): boolean {
   if (value === 'all') return true
-  if (value === 'running') return ['CREATING', 'QUEUED', 'RUNNING'].includes(job.status)
-  if (value === 'pendingReview') return job.status === 'COMPLETED' && job.reviewStatus === 'PENDING'
+  const isDraft = job.taskType === 'LYRIC_DRAFT_EXTRACTION'
+  if (value === 'running') return !isDraft && ['CREATING', 'QUEUED', 'RUNNING'].includes(job.status)
+  if (value === 'pendingReview') return !isDraft && job.status === 'COMPLETED' && job.reviewStatus === 'PENDING'
   if (value === 'approvedPendingImport') {
-    return job.status === 'COMPLETED' && job.reviewStatus === 'APPROVED' && job.importStatus === 'NOT_IMPORTED'
+    return !isDraft && job.status === 'COMPLETED' && job.reviewStatus === 'APPROVED' && job.importStatus === 'NOT_IMPORTED'
   }
-  if (value === 'imported') return job.importStatus === 'IMPORTED'
-  return job.status === 'FAILED' || job.status === 'ABANDONED' || job.importStatus === 'IMPORT_FAILED'
+  if (value === 'imported') return !isDraft && job.importStatus === 'IMPORTED'
+  if (value === 'failed') return job.status === 'FAILED' || job.status === 'ABANDONED' || job.importStatus === 'IMPORT_FAILED'
+  if (value === 'draftRunning') return isDraft && ['CREATING', 'QUEUED', 'RUNNING'].includes(job.status)
+  if (value === 'draftPending') return isDraft && ['PENDING_REVIEW', 'EDITING'].includes(job.draftStatus || '')
+  if (value === 'draftConfirmed') return isDraft && job.draftStatus === 'CONFIRMED'
+  return isDraft && job.draftStatus === 'REJECTED'
 }
 
 async function loadJobs() {
@@ -109,6 +128,10 @@ function openWorkbench(songId: number) {
   router.push({ path: '/music/workbench', query: { id: String(songId) } })
 }
 
+function openDraftWorkbench(songId: number) {
+  router.push({ path: '/music/workbench', query: { id: String(songId), tab: 'draft' } })
+}
+
 function clearSongFilter() {
   router.replace({ path: '/lyric-alignment' })
 }
@@ -120,7 +143,7 @@ function clearSongFilter() {
       <template #header>
         <div class="card-header">
           <div>
-            <span>歌词对齐任务</span>
+            <span>歌词任务</span>
             <el-tag v-if="routeSongId" size="small" type="info">歌曲 #{{ routeSongId }}</el-tag>
           </div>
           <div class="header-actions">
@@ -137,6 +160,10 @@ function clearSongFilter() {
           <el-radio-button value="pendingReview">待审核</el-radio-button>
           <el-radio-button value="approvedPendingImport">已通过待导入</el-radio-button>
           <el-radio-button value="imported">已导入</el-radio-button>
+          <el-radio-button value="draftRunning">草稿提取中</el-radio-button>
+          <el-radio-button value="draftPending">待校对</el-radio-button>
+          <el-radio-button value="draftConfirmed">草稿已确认</el-radio-button>
+          <el-radio-button value="draftRejected">草稿已驳回</el-radio-button>
           <el-radio-button value="failed">失败</el-radio-button>
         </el-radio-group>
       </div>
@@ -144,7 +171,7 @@ function clearSongFilter() {
       <el-table
         v-loading="loading"
         :data="filteredJobs"
-        empty-text="暂无歌词对齐任务"
+        empty-text="暂无歌词任务"
         class="jobs-table"
       >
         <el-table-column label="任务 ID" width="150">
@@ -152,6 +179,13 @@ function clearSongFilter() {
             <el-tooltip :content="row.id" placement="top">
               <span class="mono">{{ shortAlignmentJobId(row.id) }}</span>
             </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column label="任务类型" width="126">
+          <template #default="{ row }">
+            <el-tag :type="lyricTaskTypeTagType(row.taskType)" size="small">
+              {{ lyricTaskTypeLabel(row.taskType) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="歌曲" min-width="190" show-overflow-tooltip>
@@ -176,16 +210,20 @@ function clearSongFilter() {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="审核状态" width="118">
+        <el-table-column label="草稿 / 审核" width="140">
           <template #default="{ row }">
-            <el-tag :type="alignmentReviewStatusTagType(row.reviewStatus)" size="small">
+            <el-tag v-if="row.taskType === 'LYRIC_DRAFT_EXTRACTION'" :type="lyricDraftStatusTagType(row.draftStatus)" size="small">
+              {{ lyricDraftStatusLabel(row.draftStatus) }}
+            </el-tag>
+            <el-tag v-else :type="alignmentReviewStatusTagType(row.reviewStatus)" size="small">
               {{ alignmentReviewStatusLabel(row.reviewStatus) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="导入状态" width="108">
           <template #default="{ row }">
-            <el-tag :type="alignmentImportStatusTagType(row.importStatus)" size="small">
+            <span v-if="row.taskType === 'LYRIC_DRAFT_EXTRACTION'" class="muted">-</span>
+            <el-tag v-else :type="alignmentImportStatusTagType(row.importStatus)" size="small">
               {{ alignmentImportStatusLabel(row.importStatus) }}
             </el-tag>
           </template>
@@ -198,7 +236,16 @@ function clearSongFilter() {
         </el-table-column>
         <el-table-column label="操作" width="96" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" text :icon="View" @click="openDetail(row.id)">详情</el-button>
+            <el-button
+              v-if="row.taskType === 'LYRIC_DRAFT_EXTRACTION'"
+              type="primary"
+              text
+              :icon="View"
+              @click="openDraftWorkbench(row.songId)"
+            >
+              校对
+            </el-button>
+            <el-button v-else type="primary" text :icon="View" @click="openDetail(row.id)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -265,6 +312,9 @@ function clearSongFilter() {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.muted {
+  color: var(--el-text-color-secondary);
 }
 @media (max-width: 900px) {
   .card-header {

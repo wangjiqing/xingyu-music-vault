@@ -17,6 +17,7 @@ import LyricAlignmentTaskDetail from '../alignment/LyricAlignmentTaskDetail.vue'
 
 const props = defineProps<{
   music: MusicItem
+  preselectedSourceLyricsId?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -64,7 +65,7 @@ async function loadJobs() {
   loading.value = true
   try {
     const res = await fetchLyricAlignmentJobs({ page: 0, size: 100 })
-    jobs.value = res.items.filter((item) => item.songId === props.music.id)
+    jobs.value = res.items.filter((item) => item.songId === props.music.id && item.taskType !== 'LYRIC_DRAFT_EXTRACTION')
     if (!selectedJobId.value || !jobs.value.some((item) => item.id === selectedJobId.value)) {
       selectedJobId.value = latestJob.value?.id || ''
     }
@@ -82,6 +83,7 @@ async function handleCreate() {
   try {
     const job = await createLyricAlignmentJob({
       songId: props.music.id,
+      sourceLyricsAssetId: props.preselectedSourceLyricsId || undefined,
       createdBy: user.value?.username || 'admin',
       workerOptions: { device: 'cpu' },
     })
@@ -131,6 +133,15 @@ function openTaskList() {
     </div>
 
     <template v-if="latestJob">
+      <el-alert
+        v-if="preselectedSourceLyricsId"
+        class="source-alert"
+        type="success"
+        show-icon
+        :closable="false"
+        :title="`已预选候选歌词草稿人工确认资产 #${preselectedSourceLyricsId}`"
+      />
+
       <div class="latest-strip">
         <LyricAlignmentStatusTags :job="latestJob" />
         <span>创建：{{ formatTime(latestJob.createdAt) }}</span>
@@ -159,6 +170,14 @@ function openTaskList() {
     </template>
 
     <el-empty v-else description="暂无歌词对齐任务" :image-size="140">
+      <el-alert
+        v-if="preselectedSourceLyricsId"
+        class="source-alert"
+        type="success"
+        show-icon
+        :closable="false"
+        :title="`已预选候选歌词草稿人工确认资产 #${preselectedSourceLyricsId}`"
+      />
       <el-button type="primary" :icon="Plus" :loading="creating" @click="handleCreate">
         创建对齐任务
       </el-button>
@@ -210,6 +229,9 @@ function openTaskList() {
   background: color-mix(in srgb, var(--el-fill-color-lighter) 70%, transparent);
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.source-alert {
+  margin-bottom: 12px;
 }
 .job-switcher {
   display: flex;

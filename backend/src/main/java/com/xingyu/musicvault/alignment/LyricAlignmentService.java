@@ -15,9 +15,13 @@ import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateLyricDraftJobReq
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftDefaultOptionsResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftTrustedAssetResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.MusicLyricDraftContextResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.RejectLyricDraftRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ReviewAlignmentJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.UpdateLyricDraftRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerSignalsResponse;
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
 import com.xingyu.musicvault.library.Track;
@@ -57,8 +61,10 @@ public class LyricAlignmentService {
     private static final Logger LOG = Logger.getLogger(LyricAlignmentService.class);
     private static final String STATUS_CREATING = "CREATING";
     private static final String STATUS_QUEUED = "QUEUED";
+    private static final String STATUS_RUNNING = "RUNNING";
     private static final String STATUS_COMPLETED = "COMPLETED";
     private static final String STATUS_FAILED = "FAILED";
+    private static final String STATUS_ABANDONED = "ABANDONED";
     private static final String REVIEW_NOT_AVAILABLE = "NOT_AVAILABLE";
     private static final String REVIEW_PENDING = "PENDING";
     private static final String REVIEW_APPROVED = "APPROVED";
@@ -227,6 +233,27 @@ public class LyricAlignmentService {
         }
 
         return get(jobId);
+    }
+
+    public MusicLyricDraftContextResponse getMusicDraftContext(Long musicId) {
+        if (musicId == null) {
+            throw new BadRequestException("musicId is required");
+        }
+        if (TrackFile.findById(musicId) == null) {
+            throw new NotFoundException("Song not found");
+        }
+        LyricAlignmentJob latestJob = jobRepository.findLatestDraftJobForSong(musicId);
+        LyricDraft draft = latestJob == null ? null : draftRepository.findByJobId(latestJob.id);
+        Lyric trusted = draft == null || draft.confirmedTrustedLyricsId == null
+                ? null
+                : lyricRepository.findById(draft.confirmedTrustedLyricsId);
+        return new MusicLyricDraftContextResponse(
+                musicId,
+                draftDefaultOptions(),
+                latestJob == null ? null : toResponse(latestJob),
+                draft == null || latestJob == null ? null : toDraftResponse(latestJob, draft),
+                trusted == null ? null : trustedAssetResponse(trusted)
+        );
     }
 
     public PageResponse<AlignmentJobListItemResponse> list(Integer page, Integer size, String status) {
@@ -899,6 +926,12 @@ public class LyricAlignmentService {
             throw new BadRequestException("Alignment job directory is not configured");
         }
         Path root = Path.of(configured).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(root);
+        } catch (IOException exception) {
+            LOG.warnf(exception, "Failed to prepare alignment job directory: root=%s", root);
+            throw new BadRequestException("Alignment job directory is not writable");
+        }
         if (!Files.isDirectory(root)) {
             throw new BadRequestException("Alignment job directory does not exist");
         }
@@ -1001,8 +1034,12 @@ public class LyricAlignmentService {
                 request == null ? null : request.asrModel(),
                 nonBlankOrDefault(config.alignmentDraftDefaultAsrModel(), "medium")
         ));
-        node.put("skipSeparation", request != null && Boolean.TRUE.equals(request.skipSeparation()));
-        node.put("vadFilter", request == null || request.vadFilter() == null || Boolean.TRUE.equals(request.vadFilter()));
+        node.put("skipSeparation", request == null || request.skipSeparation() == null
+                ? config.alignmentDraftDefaultSkipSeparation()
+                : Boolean.TRUE.equals(request.skipSeparation()));
+        node.put("vadFilter", request == null || request.vadFilter() == null
+                ? config.alignmentDraftDefaultVadFilter()
+                : Boolean.TRUE.equals(request.vadFilter()));
         node.put("conditionOnPreviousText", request != null && Boolean.TRUE.equals(request.conditionOnPreviousText()));
         node.put("keepSuspectedMetadata", request != null && Boolean.TRUE.equals(request.keepSuspectedMetadata()));
         node.put("retainIntermediate", request != null && Boolean.TRUE.equals(request.retainIntermediate()));
@@ -1051,6 +1088,7 @@ public class LyricAlignmentService {
                 job.errorMessage,
                 readJson(job.resultSummaryJson),
                 readJson(job.workerStatusJson),
+                workerSignals(job),
                 job.alignmentJsonHash,
                 job.lrcHash,
                 job.swlrcHash,
@@ -1070,7 +1108,9 @@ public class LyricAlignmentService {
                 job.importedBy,
                 job.importedAt,
                 job.importErrorMessage,
-                job.importedLyricId
+                job.importedLyricId,
+                draftStatus(job),
+                confirmedTrustedLyricsId(job)
         );
     }
 
@@ -1088,6 +1128,7 @@ public class LyricAlignmentService {
                 job.trustedLyricsHash,
                 job.errorMessage,
                 readJson(job.resultSummaryJson),
+                workerSignals(job),
                 job.alignmentJsonHash,
                 job.lrcHash,
                 job.swlrcHash,
@@ -1106,8 +1147,111 @@ public class LyricAlignmentService {
                 job.importedBy,
                 job.importedAt,
                 job.importErrorMessage,
-                job.importedLyricId
+                job.importedLyricId,
+                draftStatus(job),
+                confirmedTrustedLyricsId(job)
         );
+    }
+
+    private LyricDraftDefaultOptionsResponse draftDefaultOptions() {
+        return new LyricDraftDefaultOptionsResponse(
+                "zh",
+                nonBlankOrDefault(config.alignmentDraftDefaultAsrModel(), "medium"),
+                config.alignmentDraftDefaultSkipSeparation(),
+                config.alignmentDraftDefaultVadFilter(),
+                false,
+                false,
+                false
+        );
+    }
+
+    private WorkerSignalsResponse workerSignals(LyricAlignmentJob job) {
+        if (job == null || job.jobDir == null || job.jobDir.isBlank()) {
+            return new WorkerSignalsResponse(false, false, false, false, false, false, false, false, false, false, "任务目录尚未创建");
+        }
+        Path jobDir = Path.of(job.jobDir).toAbsolutePath().normalize();
+        boolean jobDirectoryAvailable = Files.isDirectory(jobDir);
+        boolean ready = jobDirectoryAvailable && Files.exists(jobDir.resolve("READY"));
+        boolean running = jobDirectoryAvailable && Files.exists(jobDir.resolve("RUNNING"));
+        boolean succeeded = jobDirectoryAvailable && Files.exists(jobDir.resolve("SUCCEEDED"));
+        boolean needsReview = jobDirectoryAvailable && Files.exists(jobDir.resolve("NEEDS_REVIEW"));
+        boolean failed = jobDirectoryAvailable && Files.exists(jobDir.resolve("FAILED"));
+        boolean abandoned = jobDirectoryAvailable && Files.exists(jobDir.resolve("ABANDONED"));
+        boolean statusJsonAvailable = jobDirectoryAvailable && Files.isRegularFile(jobDir.resolve("status.json"));
+        boolean resultDirectoryAvailable = jobDirectoryAvailable && Files.isDirectory(jobDir.resolve("result"));
+        boolean stderrLogAvailable = jobDirectoryAvailable && Files.isRegularFile(jobDir.resolve("stderr.log"));
+        return new WorkerSignalsResponse(
+                jobDirectoryAvailable,
+                ready,
+                running,
+                succeeded,
+                needsReview,
+                failed,
+                abandoned,
+                statusJsonAvailable,
+                resultDirectoryAvailable,
+                stderrLogAvailable,
+                workerStageMessage(job, jobDirectoryAvailable, ready, running, succeeded, needsReview, failed, abandoned, statusJsonAvailable, resultDirectoryAvailable)
+        );
+    }
+
+    private String workerStageMessage(
+            LyricAlignmentJob job,
+            boolean jobDirectoryAvailable,
+            boolean ready,
+            boolean running,
+            boolean succeeded,
+            boolean needsReview,
+            boolean failed,
+            boolean abandoned,
+            boolean statusJsonAvailable,
+            boolean resultDirectoryAvailable
+    ) {
+        if (!jobDirectoryAvailable) {
+            return "任务目录不可用，音库无法继续同步 Worker 状态";
+        }
+        if (failed || STATUS_FAILED.equals(job.status)) {
+            return "Worker 已标记失败或音库已记录失败";
+        }
+        if (abandoned || STATUS_ABANDONED.equals(job.status)) {
+            return "Worker 已放弃任务";
+        }
+        if (succeeded || needsReview || STATUS_COMPLETED.equals(job.status)) {
+            return resultDirectoryAvailable ? "Worker 已产生结果，音库可读取结果" : "Worker 已写入终态标记，结果目录暂未就绪";
+        }
+        if (running || STATUS_RUNNING.equals(job.status)) {
+            return statusJsonAvailable ? "Worker 正在执行并写入状态" : "Worker 已领取任务，等待 status.json";
+        }
+        if (ready || STATUS_QUEUED.equals(job.status)) {
+            return "READY 已写入，正在等待 Worker 领取任务";
+        }
+        return "音库正在准备任务输入文件";
+    }
+
+    private LyricDraftTrustedAssetResponse trustedAssetResponse(Lyric lyric) {
+        return new LyricDraftTrustedAssetResponse(
+                lyric.id,
+                lyric.sourceType,
+                lyric.contentHash,
+                lyric.confirmedAt,
+                lyric.confirmedBy
+        );
+    }
+
+    private String draftStatus(LyricAlignmentJob job) {
+        if (!TASK_DRAFT.equals(taskType(job))) {
+            return null;
+        }
+        LyricDraft draft = draftRepository.findByJobId(job.id);
+        return draft == null ? null : draft.draftStatus;
+    }
+
+    private Long confirmedTrustedLyricsId(LyricAlignmentJob job) {
+        if (!TASK_DRAFT.equals(taskType(job))) {
+            return null;
+        }
+        LyricDraft draft = draftRepository.findByJobId(job.id);
+        return draft == null ? null : draft.confirmedTrustedLyricsId;
     }
 
     private JsonNode readJson(String json) {
