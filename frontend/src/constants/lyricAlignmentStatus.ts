@@ -30,6 +30,7 @@ export const ALIGNMENT_WORKER_OUTCOME: Record<string, string> = {
 export const LYRIC_TASK_TYPE: Record<string, string> = {
   LYRICS_ALIGNMENT: '逐字歌词对齐',
   LYRIC_DRAFT_EXTRACTION: '歌词草稿提取',
+  LYRIC_DRAFT_MANUAL: '手工歌词草稿',
 }
 
 export const LYRIC_DRAFT_STATUS: Record<string, string> = {

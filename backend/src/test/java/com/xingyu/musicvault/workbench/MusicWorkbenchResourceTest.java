@@ -100,6 +100,37 @@ class MusicWorkbenchResourceTest {
     }
 
     @Test
+    void workbenchFallsBackToLineLyricsWhenWordLyricsFileIsMissingOrTooLarge() throws IOException {
+        Long missingSwlrcMusicId = createMusicWithFile("missing-swlrc.flac", "Missing Word", "Tester", "audio");
+        bindLyricWithSwlrcPath(missingSwlrcMusicId, "[00:01.00]第一句\n", musicDir.resolve("missing.swlrc"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{id}/workbench", missingSwlrcMusicId)
+                .then()
+                .statusCode(200)
+                .body("lyrics.available", equalTo(true))
+                .body("lyrics.content", containsString("第一句"))
+                .body("wordLyrics.available", equalTo(false));
+
+        Long largeSwlrcMusicId = createMusicWithFile("large-swlrc.flac", "Large Word", "Tester", "audio");
+        Path largeSwlrc = musicDir.resolve("large.swlrc");
+        Files.writeString(largeSwlrc, "x".repeat(132_000));
+        bindLyricWithSwlrcPath(largeSwlrcMusicId, "[00:01.00]第二句\n", largeSwlrc);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{id}/workbench", largeSwlrcMusicId)
+                .then()
+                .statusCode(200)
+                .body("lyrics.available", equalTo(true))
+                .body("lyrics.content", containsString("第二句"))
+                .body("wordLyrics.available", equalTo(false));
+    }
+
+    @Test
     void audioStreamsOnlyRegisteredMusicFileAndSupportsRange() throws IOException {
         Long musicId = createMusicWithFile("stream.mp3", "Stream", "Tester", "0123456789");
 
@@ -209,6 +240,10 @@ class MusicWorkbenchResourceTest {
     }
 
     private Long bindLyric(Long musicId, String content) {
+        return bindLyricWithSwlrcPath(musicId, content, null);
+    }
+
+    private Long bindLyricWithSwlrcPath(Long musicId, String content, Path swlrcPath) {
         return QuarkusTransaction.requiringNew().call(() -> {
             Lyric lyric = new Lyric();
             lyric.title = "Preview";
@@ -218,6 +253,8 @@ class MusicWorkbenchResourceTest {
             lyric.contentHash = "lyrics-hash";
             lyric.format = "lrc";
             lyric.parseStatus = "parsed";
+            lyric.swlrcPath = swlrcPath == null ? null : swlrcPath.toAbsolutePath().normalize().toString();
+            lyric.swlrcHash = swlrcPath == null ? null : "swlrc-hash";
             lyric.persist();
 
             SongLyric binding = new SongLyric();

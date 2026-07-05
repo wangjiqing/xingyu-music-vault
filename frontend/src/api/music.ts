@@ -197,6 +197,14 @@ export interface WorkbenchLyric {
   updatedAt: string | null
 }
 
+export interface WorkbenchWordLyric {
+  available: boolean
+  format: string | null
+  content: string | null
+  contentHash: string | null
+  updatedAt: string | null
+}
+
 export interface WorkbenchArtwork {
   available: boolean
   artworkId: number | null
@@ -219,6 +227,7 @@ export interface OpenApiPreview {
 export interface MusicWorkbench {
   music: MusicItem
   lyrics: WorkbenchLyric
+  wordLyrics: WorkbenchWordLyric
   artwork: WorkbenchArtwork
   openApiPreview: OpenApiPreview
 }

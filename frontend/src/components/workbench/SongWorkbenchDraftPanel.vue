@@ -6,20 +6,30 @@ import {
   Close,
   DocumentAdd,
   EditPen,
+  Link,
   RefreshLeft,
   RefreshRight,
+  Search,
   Tickets,
 } from '@element-plus/icons-vue'
 import type { MusicItem } from '../../api/music'
 import {
   confirmLyricDraft,
+  createManualLyricDraft,
   createLyricDraftJob,
   fetchMusicLyricDraftContext,
+  addLyricDraftSource,
   rejectLyricDraft,
   updateLyricDraft,
   type CreateLyricDraftJobRequest,
   type MusicLyricDraftContext,
 } from '../../api/lyricAlignment'
+import {
+  fetchBraveSearchStatus,
+  searchBrave,
+  type BraveSearchResult,
+  type BraveSearchStatus,
+} from '../../api/braveSearch'
 import { useAuth } from '../../composables/useAuth'
 import {
   alignmentExecutionStatusTagType,
@@ -43,10 +53,17 @@ const { user } = useAuth()
 const loading = ref(false)
 const actionLoading = ref(false)
 const createDialogVisible = ref(false)
+const manualDialogVisible = ref(false)
+const braveDialogVisible = ref(false)
 const textMode = ref<'editable' | 'original'>('editable')
 const editorText = ref('')
+const manualText = ref('')
+const braveQuery = ref('')
 const context = ref<MusicLyricDraftContext | null>(null)
 const pollTimer = ref<number | null>(null)
+const braveStatus = ref<BraveSearchStatus | null>(null)
+const braveResults = ref<BraveSearchResult[]>([])
+const braveLoading = ref(false)
 
 const createForm = reactive<CreateLyricDraftJobRequest>({
   language: '',
@@ -77,6 +94,18 @@ const sourceStateLabel = computed(() => {
   return props.currentLyricAvailable ? '已有可信歌词' : '尚无可信歌词'
 })
 const reportEntries = computed(() => objectEntries(draft.value?.reportSummary))
+const sourceEntries = computed(() => draft.value?.sources || [])
+const sourceTypeLabel = computed(() => {
+  const value = draft.value?.sourceType
+  if (value === 'MANUAL_PASTE') return '手工粘贴'
+  if (value === 'BRAVE_ASSISTED') return 'Brave 辅助来源'
+  if (value === 'WORKER_EXTRACTION') return 'Worker 草稿提取'
+  return value || '-'
+})
+const braveSearchDisabledReason = computed(() => {
+  if (!braveStatus.value) return '正在读取 Brave 配置状态'
+  return braveStatus.value.searchable ? '' : braveStatus.value.message
+})
 const signalItems = computed(() => {
   const signals = latestJob.value?.workerSignals
   if (!signals) return []
@@ -106,7 +135,10 @@ watch(
   () => updatePolling(),
 )
 
-onMounted(() => loadContext())
+onMounted(() => {
+  loadContext()
+  loadBraveStatus()
+})
 onBeforeUnmount(() => stopPolling())
 
 function operator(): string {
@@ -160,6 +192,24 @@ async function loadContext(showError = true) {
   }
 }
 
+async function loadBraveStatus() {
+  try {
+    braveStatus.value = await fetchBraveSearchStatus()
+  } catch {
+    braveStatus.value = {
+      configured: false,
+      enabled: false,
+      searchable: false,
+      mode: 'ERROR',
+      message: 'Brave 搜索配置状态读取失败',
+      encryptionAvailable: false,
+      updatedAt: null,
+      lastCheckedAt: null,
+      lastError: null,
+    }
+  }
+}
+
 function updatePolling() {
   if (activeJob.value) {
     if (pollTimer.value == null) {
@@ -184,6 +234,83 @@ function openCreateDialog() {
   createForm.skipSeparation = defaultOptions.value.skipSeparation
   createForm.vadFilter = defaultOptions.value.vadFilter
   createDialogVisible.value = true
+}
+
+function openManualDialog() {
+  manualText.value = ''
+  manualDialogVisible.value = true
+}
+
+async function handleCreateManualDraft() {
+  if (!canCreate.value) return
+  actionLoading.value = true
+  try {
+    const updated = await createManualLyricDraft(props.music.id, {
+      text: manualText.value,
+      createdBy: operator(),
+    })
+    manualDialogVisible.value = false
+    context.value = context.value ? { ...context.value, draft: updated } : context.value
+    editorText.value = updated.editableText
+    ElMessage.success('手工草稿已创建')
+    await loadContext()
+  } catch (error: any) {
+    ElMessage.error(errorText(error, '创建手工草稿失败'))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+function defaultBraveQuery() {
+  return `${props.music.artist || ''} ${props.music.title || props.music.fileName || ''} 歌词`.trim()
+}
+
+async function openBraveDialog() {
+  await loadBraveStatus()
+  braveQuery.value = defaultBraveQuery()
+  braveResults.value = []
+  braveDialogVisible.value = true
+  if (braveStatus.value?.searchable) {
+    await handleBraveSearch()
+  }
+}
+
+async function handleBraveSearch() {
+  if (!braveStatus.value?.searchable) return
+  braveLoading.value = true
+  try {
+    const response = await searchBrave({ query: braveQuery.value, count: 8 })
+    braveResults.value = response.results
+  } catch (error: any) {
+    ElMessage.error(errorText(error, 'Brave 搜索失败'))
+  } finally {
+    braveLoading.value = false
+  }
+}
+
+function openExternal(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+async function handleLinkSource(result: BraveSearchResult) {
+  if (!draft.value) return
+  actionLoading.value = true
+  try {
+    await addLyricDraftSource(draft.value.jobId, {
+      provider: 'BRAVE',
+      query: braveQuery.value,
+      title: result.title,
+      url: result.url,
+      domain: result.domain,
+      selectedBy: operator(),
+    })
+    ElMessage.success('已关联为当前草稿来源')
+    await loadContext()
+  } catch (error: any) {
+    ElMessage.error(errorText(error, '关联来源失败'))
+  } finally {
+    actionLoading.value = false
+  }
 }
 
 async function handleCreateDraftJob() {
@@ -325,6 +452,12 @@ function handleCreateAlignmentFromDraft() {
       </div>
       <div class="toolbar-actions">
         <el-button :icon="RefreshRight" @click="loadContext()">刷新</el-button>
+        <el-button :icon="Search" @click="openBraveDialog">
+          Brave 搜索
+        </el-button>
+        <el-button :icon="DocumentAdd" :disabled="!canCreate" @click="openManualDialog">
+          手工创建草稿
+        </el-button>
         <el-button
           type="primary"
           :icon="DocumentAdd"
@@ -357,7 +490,7 @@ function handleCreateAlignmentFromDraft() {
       <section class="status-panel">
         <span class="status-label">Worker 结果</span>
         <el-tag :type="alignmentWorkerOutcomeTagType(latestJob?.workerOutcome)" size="small">
-          {{ alignmentWorkerOutcomeLabel(latestJob?.workerOutcome) }}
+          {{ latestJob?.taskType === 'LYRIC_DRAFT_MANUAL' ? '未使用 Worker' : alignmentWorkerOutcomeLabel(latestJob?.workerOutcome) }}
         </el-tag>
       </section>
     </div>
@@ -382,6 +515,7 @@ function handleCreateAlignmentFromDraft() {
     <template v-if="latestJob">
       <div class="task-strip">
         <span>任务：{{ shortAlignmentJobId(latestJob.id) }}</span>
+        <span>类型：{{ latestJob.taskType === 'LYRIC_DRAFT_MANUAL' ? '手工草稿' : 'Worker 草稿提取' }}</span>
         <span>创建：{{ formatTime(latestJob.createdAt) }}</span>
         <span>完成：{{ formatTime(latestJob.completedAt) }}</span>
       </div>
@@ -403,6 +537,10 @@ function handleCreateAlignmentFromDraft() {
           <div class="info-block">
             <h3>草稿记录</h3>
             <dl>
+              <div>
+                <dt>来源语义</dt>
+                <dd>{{ sourceTypeLabel }}</dd>
+              </div>
               <div>
                 <dt>最后保存</dt>
                 <dd>{{ formatTime(draft.editedAt || draft.updatedAt) }}</dd>
@@ -426,6 +564,7 @@ function handleCreateAlignmentFromDraft() {
 
           <div class="info-block">
             <h3>质量摘要</h3>
+            <p class="hint-text">用于提示草稿可靠性。手工粘贴草稿没有 Worker 质量报告时，此处会保持为空。</p>
             <dl v-if="reportEntries.length">
               <div v-for="[key, value] in reportEntries" :key="key">
                 <dt>{{ key }}</dt>
@@ -433,6 +572,20 @@ function handleCreateAlignmentFromDraft() {
               </div>
             </dl>
             <el-empty v-else description="暂无质量摘要" :image-size="88" />
+          </div>
+
+          <div class="info-block">
+            <h3>来源记录</h3>
+            <p class="hint-text">这里只保存候选网页元信息，不保存第三方网页歌词正文。</p>
+            <dl v-if="sourceEntries.length">
+              <div v-for="source in sourceEntries" :key="source.id">
+                <dt>{{ source.provider }} · {{ source.domain }}</dt>
+                <dd>
+                  <a :href="source.url" target="_blank" rel="noopener noreferrer">{{ source.title }}</a>
+                </dd>
+              </div>
+            </dl>
+            <el-empty v-else description="暂无关联来源" :image-size="88" />
           </div>
 
           <div v-if="trustedAsset" class="info-block">
@@ -469,19 +622,7 @@ function handleCreateAlignmentFromDraft() {
             </div>
           </div>
 
-          <el-input
-            v-if="textMode === 'editable'"
-            v-model="editorText"
-            type="textarea"
-            class="draft-textarea"
-            :readonly="!canEditDraft"
-            resize="none"
-            spellcheck="false"
-            placeholder="未对齐歌词草稿"
-          />
-          <pre v-else class="original-preview">{{ draft.originalText }}</pre>
-
-          <div class="draft-actions">
+          <div v-if="canEditDraft" class="draft-actions top-actions">
             <el-button
               :icon="RefreshLeft"
               :disabled="!canEditDraft || actionLoading"
@@ -517,11 +658,27 @@ function handleCreateAlignmentFromDraft() {
               驳回草稿
             </el-button>
           </div>
+
+          <el-input
+            v-if="textMode === 'editable'"
+            v-model="editorText"
+            type="textarea"
+            class="draft-textarea"
+            :readonly="!canEditDraft"
+            resize="none"
+            spellcheck="false"
+            placeholder="未对齐歌词草稿"
+          />
+          <pre v-else class="original-preview">{{ draft.originalText }}</pre>
+
         </section>
       </div>
     </template>
 
     <el-empty v-else-if="!activeJob" description="当前歌曲暂无可校对歌词草稿" :image-size="140">
+      <el-button :icon="DocumentAdd" :disabled="!canCreate" @click="openManualDialog">
+        手工创建草稿
+      </el-button>
       <el-button type="primary" :icon="DocumentAdd" :disabled="!canCreate" @click="openCreateDialog">
         生成歌词草稿
       </el-button>
@@ -555,6 +712,75 @@ function handleCreateAlignmentFromDraft() {
           创建任务
         </el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog v-model="manualDialogVisible" title="手工创建草稿" width="680px">
+      <el-alert
+        type="info"
+        show-icon
+        :closable="false"
+        title="粘贴的文本会作为可编辑歌词草稿保存；不会创建 Worker 任务，也不会自动改写歌词内容。"
+        class="dialog-alert"
+      />
+      <el-input
+        v-model="manualText"
+        type="textarea"
+        class="manual-textarea"
+        resize="none"
+        spellcheck="false"
+        placeholder="在这里粘贴歌词文本"
+      />
+      <template #footer>
+        <el-button @click="manualDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading" @click="handleCreateManualDraft">
+          保存草稿
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="braveDialogVisible" title="Brave 搜索歌词来源" width="760px">
+      <el-alert
+        v-if="braveSearchDisabledReason"
+        type="warning"
+        show-icon
+        :closable="false"
+        :title="braveSearchDisabledReason"
+        class="dialog-alert"
+      />
+      <el-alert
+        v-else-if="!draft"
+        type="info"
+        show-icon
+        :closable="false"
+        title="当前歌曲还没有草稿。可以先搜索并打开来源网页；创建草稿后再关联来源记录。"
+        class="dialog-alert"
+      />
+      <div class="brave-search-bar">
+        <el-input v-model="braveQuery" maxlength="160" show-word-limit />
+        <el-button
+          type="primary"
+          :icon="Search"
+          :disabled="Boolean(braveSearchDisabledReason)"
+          :loading="braveLoading"
+          @click="handleBraveSearch"
+        >
+          搜索
+        </el-button>
+      </div>
+      <div v-loading="braveLoading" class="brave-results">
+        <div v-for="result in braveResults" :key="result.url" class="brave-result">
+          <div class="brave-result-title">{{ result.title }}</div>
+          <div class="brave-result-domain">{{ result.domain }}</div>
+          <p>{{ result.description }}</p>
+          <div class="brave-result-actions">
+            <el-button :icon="Link" @click="openExternal(result.url)">新标签页打开</el-button>
+            <el-button type="primary" :disabled="!draft" @click="handleLinkSource(result)">
+              关联为当前草稿来源
+            </el-button>
+          </div>
+        </div>
+        <el-empty v-if="!braveLoading && braveResults.length === 0" description="暂无搜索结果" :image-size="88" />
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -680,13 +906,18 @@ function handleCreateAlignmentFromDraft() {
   white-space: pre-wrap;
 }
 .note-text,
-.error-text {
+.error-text,
+.hint-text {
   margin: 10px 0 0;
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
 }
 .note-text {
+  color: var(--el-text-color-secondary);
+}
+.hint-text {
+  margin: 0 0 10px;
   color: var(--el-text-color-secondary);
 }
 .error-text {
@@ -700,6 +931,10 @@ function handleCreateAlignmentFromDraft() {
 }
 .editor-toolbar {
   justify-content: space-between;
+  margin-bottom: 10px;
+}
+.top-actions {
+  justify-content: flex-start;
   margin-bottom: 10px;
 }
 .draft-textarea {
@@ -733,6 +968,40 @@ function handleCreateAlignmentFromDraft() {
 }
 .draft-create-form {
   margin-top: 12px;
+}
+.manual-textarea :deep(.el-textarea__inner) {
+  min-height: 360px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.65;
+}
+.brave-search-bar,
+.brave-result-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.brave-results {
+  min-height: 160px;
+  margin-top: 14px;
+}
+.brave-result {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.brave-result-title {
+  color: var(--el-text-color-primary);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.brave-result-domain {
+  margin-top: 4px;
+  color: var(--el-color-primary);
+  font-size: 12px;
+}
+.brave-result p {
+  margin: 8px 0 10px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
 }
 @media (max-width: 1100px) {
   .draft-status-grid {

@@ -11,6 +11,7 @@ import com.xingyu.musicvault.openapi.OpenApiPreviewService;
 import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.MusicWorkbenchResponse;
 import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.WorkbenchArtworkResponse;
 import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.WorkbenchLyricResponse;
+import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.WorkbenchWordLyricResponse;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
@@ -67,6 +68,7 @@ public class MusicWorkbenchResource {
                         availableArtwork != null
                 ),
                 lyricResponse(lyric),
+                wordLyricResponse(lyric),
                 artworkResponse(availableArtwork),
                 openApiPreviewService.preview(trackFile, track)
         );
@@ -120,6 +122,31 @@ public class MusicWorkbenchResource {
             return new WorkbenchLyricResponse(false, null, null, null, null);
         }
         return new WorkbenchLyricResponse(true, lyric.id, lyric.format, lyric.content, lyric.updatedAt);
+    }
+
+    private WorkbenchWordLyricResponse wordLyricResponse(Lyric lyric) {
+        if (lyric == null || !hasText(lyric.swlrcPath)) {
+            return new WorkbenchWordLyricResponse(false, null, null, null, lyric == null ? null : lyric.updatedAt);
+        }
+        java.nio.file.Path path = java.nio.file.Path.of(lyric.swlrcPath).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
+            return new WorkbenchWordLyricResponse(false, null, null, null, lyric.updatedAt);
+        }
+        try {
+            int maxBytes = Math.max(1024, config.alignmentDraftMaxTextBytes());
+            if (Files.size(path) > maxBytes) {
+                return new WorkbenchWordLyricResponse(false, null, null, null, lyric.updatedAt);
+            }
+            return new WorkbenchWordLyricResponse(
+                    true,
+                    "SWLRC",
+                    Files.readString(path),
+                    lyric.swlrcHash,
+                    lyric.updatedAt
+            );
+        } catch (IOException exception) {
+            return new WorkbenchWordLyricResponse(false, null, null, null, lyric.updatedAt);
+        }
     }
 
     private WorkbenchArtworkResponse artworkResponse(Artwork artwork) {

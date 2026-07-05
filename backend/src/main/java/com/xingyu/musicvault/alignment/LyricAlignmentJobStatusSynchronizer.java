@@ -197,6 +197,7 @@ public class LyricAlignmentJobStatusSynchronizer {
             draft.transcriptRawHash = resultSnapshot.transcriptRawHash();
             draft.transcriptSegmentsHash = resultSnapshot.transcriptSegmentsHash();
             draft.reportHash = resultSnapshot.reportHash();
+            draft.sourceType = "WORKER_EXTRACTION";
             draft.persist();
             return;
         }

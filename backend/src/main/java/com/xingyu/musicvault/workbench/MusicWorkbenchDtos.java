@@ -12,6 +12,7 @@ public final class MusicWorkbenchDtos {
     public record MusicWorkbenchResponse(
             MusicResponse music,
             WorkbenchLyricResponse lyrics,
+            WorkbenchWordLyricResponse wordLyrics,
             WorkbenchArtworkResponse artwork,
             OpenApiPreview openApiPreview
     ) {
@@ -22,6 +23,15 @@ public final class MusicWorkbenchDtos {
             Long lyricId,
             String format,
             String content,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    public record WorkbenchWordLyricResponse(
+            boolean available,
+            String format,
+            String content,
+            String contentHash,
             LocalDateTime updatedAt
     ) {
     }
