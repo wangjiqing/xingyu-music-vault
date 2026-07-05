@@ -16,7 +16,7 @@
 
 ## 项目定位
 
-Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.3.1 在 v1.3.0 歌词草稿提取、逐字歌词对齐、人工审核与 LRC / SWLRC 确认导入闭环基础上，将正式对齐歌词资产收口到歌词目录下的受控 `alignment` 子目录；对齐和草稿提取由独立 `xingyu-lyrics-aligner:0.4.0` Worker 通过共享目录完成，音库容器不内置 Python、WhisperX 或 PyTorch。
+Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.3.2 在 v1.3.0 / v1.3.1 歌词草稿、逐字对齐、审核导入与正式资产目录收口基础上，补齐手工粘贴草稿、Brave Search 候选来源辅助、管理端 SWLRC 逐字试听和歌词工作台布局优化；对齐和 Worker 草稿提取仍由独立 `xingyu-lyrics-aligner:0.4.0` Worker 通过共享目录完成，音库容器不内置 Python、WhisperX 或 PyTorch。
 
 核心边界：
 
@@ -41,10 +41,12 @@ v1.1.3 已补充 OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证。管理
 - 歌曲、歌手、专辑维度的浏览与管理
 - 本地 LRC 歌词导入、绑定、删除同步与查询
 - 歌词草稿提取任务：本地音频经独立 Worker 生成未对齐候选文本，管理员人工校对确认后生成可信歌词资产
+- 手工歌词草稿：管理员可跳过 Worker 草稿提取，直接粘贴歌词文本创建草稿，并继续确认可信歌词与创建逐字对齐任务
+- Brave Search 候选来源辅助：仅搜索并记录候选来源标题、URL、域名和查询词，不抓取、不下载、不缓存第三方歌词网页全文
 - 歌词对齐任务创建、Worker 共享目录联调、人工审核与确认导入；导入后的 LRC 兼容现有播放，SWLRC 作为可选逐字歌词附加资产，并正式发布到歌词目录受控 `alignment/{songId}/{jobId}` 子目录
 - 本地封面扫描、导入、绑定与文件访问
 - 音乐元数据编辑、批量整理、音频 Tag 差异比较与受控写回
-- 管理端歌曲工作台：边播放边查看元数据、歌词、封面与 OpenAPI 输出预览（只读）
+- 管理端歌曲工作台：边播放边查看元数据、歌词、封面与 OpenAPI 输出预览；有 SWLRC 时支持逐字歌词试听，无 SWLRC 或解析异常时回退 LRC 行级歌词
 - 文件信息、安全删除、回收站与恢复
 - 单管理员初始化、登录 / 登出与管理端 Session 保护
 - 只读 OpenAPI：服务信息、同步状态、增量变更、曲目、歌词、封面、歌手、专辑与本地匹配
@@ -52,7 +54,7 @@ v1.1.3 已补充 OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证。管理
 
 ## 镜像部署
 
-v1.3.1 推荐使用精确版本 tag 部署。`latest` 适合快速体验，不建议作为长期生产固定版本。
+v1.3.2 推荐使用精确版本 tag 部署。`latest` 适合快速体验，不建议作为长期生产固定版本。
 
 镜像地址：
 
@@ -93,7 +95,7 @@ docker compose up -d --build
 - [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
 - [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)
 - [冬夜雪境主题资源接入](docs/themes/winter-moonlight.md)
-- [Release Notes](docs/release/v1.3.1-release-notes.md)
+- [Release Notes](docs/release/v1.3.2-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -111,6 +113,7 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
+v1.3.2 [x] 歌词工作台体验优化：手工草稿、Brave 候选来源、SWLRC 逐字试听与布局优化
 v1.3.1 [x] 正式对齐歌词资产目录收口到歌词目录受控 alignment 子目录
 v1.3.0 [x] 歌词草稿提取、边听边校对、可信歌词确认、逐字对齐审核与 LRC / SWLRC 导入
 v1.2.4 [x] 歌词 source_path 幂等恢复与未绑定记录清理

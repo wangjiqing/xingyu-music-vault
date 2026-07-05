@@ -97,17 +97,21 @@ POST /api/admin/auth/logout
 }
 ```
 
-### 歌词草稿提取任务（v1.3.0）
+### 歌词草稿提取与手工草稿（v1.3.0 / v1.3.2）
 
 歌词草稿提取任务用于“音频 → 未对齐候选歌词文本 → 人工校对 → 确认为可信歌词资产”。它不会自动把 ASR 草稿当作可信歌词，不会自动创建逐字对齐任务，也不会替换当前生效 LRC / SWLRC。
+
+v1.3.2 起，管理员也可以跳过 Worker 草稿提取，直接粘贴歌词文本创建手工草稿。手工草稿使用 `LYRIC_DRAFT_MANUAL` 任务类型和 `MANUAL_PASTE` 来源语义，不会伪装为 Worker 提取结果；确认后仍生成 `DRAFT_CONFIRMED` 来源可信歌词资产，并继续复用既有逐字对齐任务链路。
 
 | Method | Path | 说明 |
 |--------|------|------|
 | POST | `/api/admin/music/{musicId}/lyric-draft-jobs` | 创建 `LYRIC_DRAFT_EXTRACTION` 草稿提取任务，写入 v2 `request.json` 并最后创建 `READY` |
+| POST | `/api/admin/music/{musicId}/lyric-drafts/manual` | 创建 `LYRIC_DRAFT_MANUAL` 手工草稿，不创建 Worker READY 信号 |
 | GET | `/api/admin/lyric-draft-jobs/{jobId}/draft` | 获取草稿原始文本快照、可编辑文本、状态和报告摘要 |
 | PUT | `/api/admin/lyric-draft-jobs/{jobId}/draft` | 保存人工校对后的草稿文本 |
 | POST | `/api/admin/lyric-draft-jobs/{jobId}/confirm` | 确认草稿，生成 `DRAFT_CONFIRMED` 来源可信歌词资产 |
 | POST | `/api/admin/lyric-draft-jobs/{jobId}/reject` | 驳回草稿，必须填写原因 |
+| POST | `/api/admin/lyric-draft-jobs/{jobId}/sources` | 关联候选来源元信息到当前草稿 |
 | GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/cleaned` | 读取 Worker 输出的 `transcript.cleaned.txt` |
 | GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/raw` | 读取 Worker 输出的 `transcript.raw.txt` |
 | GET | `/api/admin/lyric-draft-jobs/{jobId}/artifacts/segments` | 读取 Worker 输出的 `transcript.segments.json` |
@@ -150,6 +154,194 @@ POST /api/admin/auth/logout
 ```
 
 Worker 成功后音库读取 `result/transcript.cleaned.txt` 并保存为 `lyric_drafts.originalText` 原始快照，同时初始化 `editableText`。草稿状态为 `PENDING_REVIEW`、`EDITING`、`CONFIRMED`、`REJECTED`。确认后创建 `lyrics.sourceType=DRAFT_CONFIRMED` 的可信歌词资产，保存 `sourceTaskId`、`sourceDraftId`、`sourceTextHash`、`confirmedAt`、`confirmedBy`；不会绑定为当前主歌词。之后创建逐字对齐任务时，可通过 `sourceLyricsAssetId` 明确选择这份可信歌词资产。
+
+#### 手工创建草稿
+
+```http
+POST /api/admin/music/1/lyric-drafts/manual
+Content-Type: application/json
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "text": "[00:01.00]第一句歌词\n[00:05.00]第二句歌词",
+  "createdBy": "admin"
+}
+```
+
+响应为 `LyricDraftResponse`，核心字段示例：
+
+```json
+{
+  "jobId": "uuid",
+  "musicId": 1,
+  "executionStatus": "COMPLETED",
+  "draftStatus": "EDITING",
+  "originalText": "[00:01.00]第一句歌词\n[00:05.00]第二句歌词",
+  "editableText": "[00:01.00]第一句歌词\n[00:05.00]第二句歌词",
+  "sourceType": "MANUAL_PASTE",
+  "sourceMetadata": {
+    "sourceType": "MANUAL_PASTE"
+  },
+  "sources": []
+}
+```
+
+服务端会清理 UTF-8 BOM、统一换行并去除首尾空白；不会改写、翻译、补全或自动修复歌词内容。空文本、超过 `ALIGNMENT_DRAFT_MAX_TEXT_BYTES` 的文本或非法状态会返回 `400 bad_request`。手工草稿不生成 Worker `READY` 文件，也不会被状态同步器当作 Worker 提取任务处理。
+
+#### 关联草稿来源
+
+```http
+POST /api/admin/lyric-draft-jobs/{jobId}/sources
+Content-Type: application/json
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "provider": "BRAVE_SEARCH",
+  "query": "歌手 歌名 歌词",
+  "title": "候选来源标题",
+  "url": "<candidate-source-url>",
+  "domain": "<candidate-source-domain>",
+  "selectedBy": "admin"
+}
+```
+
+响应：
+
+```json
+{
+  "id": 1,
+  "provider": "BRAVE_SEARCH",
+  "query": "歌手 歌名 歌词",
+  "title": "候选来源标题",
+  "url": "<candidate-source-url>",
+  "domain": "<candidate-source-domain>",
+  "selectedBy": "admin",
+  "selectedAt": "2026-07-05T14:00:00"
+}
+```
+
+来源关联只保存候选来源元信息，不写入歌词正文。同一草稿和 URL 重复关联时返回既有记录，避免重复来源行。关联 Brave 来源后草稿 `sourceType` 可变为 `BRAVE_ASSISTED`，表示该草稿整理过程参考过候选来源；这仍不代表系统抓取了来源网页正文。
+
+### Brave Search 管理接口（v1.3.2）
+
+Brave Search 接口仅供管理员使用，统一位于 `/api/admin/brave-search`，需要管理端 Session Cookie。API Key 不会在任何响应中返回；错误响应也不应包含完整 Key、密文或内部加密材料。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/admin/brave-search/status` | 查询 Brave Search 当前配置状态 |
+| POST | `/api/admin/brave-search/key` | 保存或替换控制台托管 Brave API Key |
+| PATCH | `/api/admin/brave-search/enabled` | 启用或暂停控制台托管 Brave Search |
+| POST | `/api/admin/brave-search/test` | 使用当前有效配置测试连接 |
+| POST | `/api/admin/brave-search/search` | 后端代理调用 Brave Search，返回候选来源结果 |
+
+配置优先级：
+
+1. `MUSIC_VAULT_BRAVE_SEARCH_API_KEY` 环境变量存在时为 `ENV` 模式，实际搜索使用环境变量 Key。
+2. 未配置环境变量时，可使用控制台托管 Key；托管 Key 需要 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 支持服务端加密保存。
+3. 两种方式同时存在时，环境变量优先；控制台保存、启用或暂停不会改变 ENV 模式的实际搜索行为。
+
+#### 查询状态
+
+```http
+GET /api/admin/brave-search/status
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "configured": true,
+  "enabled": true,
+  "searchable": true,
+  "mode": "ENV",
+  "message": "Brave Search is configured by environment variable",
+  "encryptionAvailable": true,
+  "updatedAt": null,
+  "lastCheckedAt": null,
+  "lastError": null
+}
+```
+
+`mode` 可能为 `ENV`、`MANAGED`、`NONE` 等服务端状态语义。前端应以 `searchable` 判断搜索按钮是否可用，以 `message` / `lastError` 展示可读提示；不要依赖或展示任何 Key 内容。
+
+#### 保存或替换控制台托管 Key
+
+```http
+POST /api/admin/brave-search/key
+Content-Type: application/json
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "apiKey": "不要在文档、Compose 或 Git 中写真实 Key",
+  "updatedBy": "admin"
+}
+```
+
+响应为状态对象，不返回 `apiKey`。未配置 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 时返回 `400 bad_request`，因为控制台托管 Key 不能明文保存。ENV 模式下保存请求会被拒绝，提示环境变量配置已接管。
+
+#### 启用 / 暂停
+
+```http
+PATCH /api/admin/brave-search/enabled
+Content-Type: application/json
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "enabled": false,
+  "updatedBy": "admin"
+}
+```
+
+该接口只作用于控制台托管配置。ENV 模式下启用 / 暂停请求会被拒绝，避免制造“暂停已生效但实际仍使用环境变量 Key”的误解。
+
+#### 测试连接
+
+```http
+POST /api/admin/brave-search/test
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+服务端使用当前有效 Key 发起测试查询，并更新状态中的 `lastCheckedAt` / `lastError`。鉴权失败、限流、超时和上游错误会映射为受控错误，不泄露 Key。
+
+#### 搜索候选来源
+
+```http
+POST /api/admin/brave-search/search
+Content-Type: application/json
+Cookie: XINGYU_MUSIC_VAULT_SESSION=...
+```
+
+```json
+{
+  "query": "歌手 歌名 歌词",
+  "count": 5
+}
+```
+
+响应：
+
+```json
+{
+  "query": "歌手 歌名 歌词",
+  "results": [
+    {
+      "title": "候选来源标题",
+      "url": "<candidate-source-url>",
+      "domain": "<candidate-source-domain>",
+      "description": "搜索结果摘要"
+    }
+  ]
+}
+```
+
+搜索接口只返回 Brave Search API 的候选结果摘要，不抓取结果页面，不返回第三方网页全文，不缓存第三方歌词正文，也不会把 `description` 写入草稿正文。查询长度、结果数量、超时、401/403 鉴权失败、429 限流和 5xx 上游异常均由服务端限制和映射。
 
 ### 歌词对齐任务（v1.3.0）
 
@@ -260,6 +452,13 @@ Cookie: XINGYU_MUSIC_VAULT_SESSION=...
     "content": "[00:00.00]...",
     "updatedAt": "2026-06-14T20:00:00"
   },
+  "wordLyrics": {
+    "available": true,
+    "format": "swlrc",
+    "content": "[swlrc:1]\n[00:03.300,00:04.100]\n<00:03.300,00:03.520>你",
+    "contentHash": "sha256...",
+    "updatedAt": "2026-07-05T14:00:00"
+  },
   "artwork": {
     "available": true,
     "artworkId": 20,
@@ -281,7 +480,7 @@ Cookie: XINGYU_MUSIC_VAULT_SESSION=...
 }
 ```
 
-无歌词或无封面时，`available` 为 `false`，正文或预览 URL 为空。
+无歌词或无封面时，`available` 为 `false`，正文或预览 URL 为空。`wordLyrics` 为管理端工作台逐字试听字段：当当前歌词记录有可读 SWLRC 时返回 `available=true` 和 SWLRC 内容；文件缺失、超出大小限制、读取失败或不可用时返回 `available=false`。前端会在 SWLRC 解析失败时回退使用 `lyrics` 中的 LRC 行级歌词。
 
 #### OpenAPI 输出预览
 

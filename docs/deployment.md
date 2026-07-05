@@ -2,7 +2,7 @@
 
 ## 部署方式
 
-v1.3.1 提供两种主部署模式：
+v1.3.2 提供两种主部署模式：
 
 - 源码构建部署：使用根目录 `Dockerfile`、`docker-compose.example.yml` 与 `.env.example` 本地构建镜像，见 [Docker 一键部署](deployment/docker.md)
 - 镜像拉取部署：直接拉取 GHCR / Docker Hub 已发布镜像，见 [镜像拉取部署](deployment/image-deploy.md)
@@ -11,7 +11,7 @@ v1.3.1 提供两种主部署模式：
 
 v0.9.3 已确认后端 Maven 打包、独立 Jar 启动方式，并完成 Docker 镜像构建与容器基础启动验证。当前部署方式面向本机、NAS、家庭服务器和自托管环境，以 Docker Compose 为主。
 
-v1.3.1 继续沿用家庭网络反向代理、HTTPS 与非标准公网端口部署建议，并新增音库 + 歌词 Worker 双容器部署。正式对齐 LRC / SWLRC 会发布到显式配置的歌词目录受控 `alignment` 子目录。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
+v1.3.2 继续沿用家庭网络反向代理、HTTPS 与非标准公网端口部署建议，并保留音库 + 歌词 Worker 双容器部署。正式对齐 LRC / SWLRC 会发布到显式配置的歌词目录受控 `alignment` 子目录。新增 Brave Search 候选来源辅助配置，详见下方服务配置说明。GHCR 与 Docker Hub 镜像发布说明见 [镜像发布说明](release/image-publish.md)。
 
 ## 部署安全边界
 
@@ -118,7 +118,7 @@ curl -i http://localhost:8080/api/open/v1/tracks/1/artwork/meta
 根目录 `Dockerfile` 是推荐镜像构建入口，会构建前端 Vue 产物并复制到 Quarkus 静态资源目录，再打包后端：
 
 ```bash
-docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.1} .
+docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.2} .
 ```
 
 运行时镜像只包含 Quarkus 运行产物、前端静态资源、JRE 21、`ffmpeg` / `ffprobe` 和 `curl`，不包含源码目录、本地音乐文件、SQLite 运行数据或本机缓存。
@@ -128,14 +128,14 @@ docker build -t xingyu-music-vault:${IMAGE_TAG:-v1.3.1} .
 ```bash
 cd backend
 mvn package
-docker build -t xingyu-music-vault:v1.3.1 .
+docker build -t xingyu-music-vault:v1.3.2 .
 ```
 
 镜像使用 JRE 21 运行环境，包含 `ffmpeg` / `ffprobe`，不内置本地音乐文件，不内置 SQLite 运行数据。运行数据通过 `/app/data` 挂载，音乐目录通过 `/music:ro` 只读挂载。
 
 ## Docker Compose
 
-v1.3.1 推荐从仓库根目录复制模板启动：
+v1.3.2 推荐从仓库根目录复制模板启动：
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml
@@ -150,6 +150,18 @@ http://localhost:18081
 ```
 
 并通过 `.env` 配置 `APP_PORT`、`DATA_DIR`、`MUSIC_DIR`、`LYRICS_DIR`、`ARTWORK_DIR`、`ALIGNMENT_JOBS_DIR`、`ALIGNMENT_MODELS_DIR`、`ALIGNMENT_WORKER_IMAGE` 和 OpenAPI 安全配置。歌词 Worker 固定使用 `wangjiqing/xingyu-lyrics-aligner:0.4.0`，命令为 `xingyu-align worker run --jobs-dir /jobs --music-dir /music --device cpu`，Worker 不暴露端口、不挂 Docker Socket，并以 `/music:ro` 只读方式访问音乐目录。
+
+Brave Search 候选来源辅助有两种配置模式：
+
+- **环境变量模式**：设置 `MUSIC_VAULT_BRAVE_SEARCH_API_KEY`。该模式优先级最高，实际搜索始终使用环境变量 Key；控制台不会显示完整 Key，也不能通过控制台暂停或替换该 Key。
+- **控制台托管模式**：不设置 `MUSIC_VAULT_BRAVE_SEARCH_API_KEY`，在管理端「设置」里保存 Brave API Key。必须同时配置 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY`，否则服务端会拒绝保存 Key，避免 SQLite 明文存储。
+
+安全要求：
+
+- 不要把真实 Brave API Key 写入 `.env.example`、Compose 模板、README、日志或提交历史。
+- 本地真实 `.env` 应保持在 Git 忽略范围内，确认不会提交到仓库。
+- `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 应使用部署环境独有的强随机值；示例中的 `change-me-*` 只能用于本地临时验证。
+- Brave Search 只用于返回候选来源，不抓取、不下载、不缓存第三方歌词网页全文。
 
 兼容示例文件位于 `deploy/docker-compose.yml`：
 

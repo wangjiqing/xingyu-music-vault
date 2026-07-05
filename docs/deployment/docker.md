@@ -1,6 +1,6 @@
 # Docker 一键部署
 
-本文档面向 v1.3.1 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
+本文档面向 v1.3.2 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐；v1.3.2 新增手工草稿和 Brave Search 候选来源辅助，不改变 Worker 主任务协议。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
 
 ## 部署安全边界
 
@@ -61,6 +61,8 @@ mkdir -p data config logs music lyrics alignment-jobs alignment-models artwork
 
 v1.3.1 起，新的正式对齐导入要求配置 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT`，且该路径必须等于解析后的某一个 `MUSIC_VAULT_LYRIC_DIRS` 根目录。Compose 示例默认将 `/lyrics` 读写挂载，并设置 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics`，最终文件路径为 `/lyrics/alignment/{songId}/{jobId}/lyrics.lrc` 与 `lyrics.swlrc`。未配置该 root 时服务仍可启动并读取历史 `ALIGNMENT` 资产，但新的审核导入会明确拒绝，不会回退写入 legacy `alignment-assets-dir`。
 
+v1.3.2 起，Brave Search 候选来源辅助支持环境变量模式和控制台托管模式。它只返回候选来源，不抓取、不下载、不缓存第三方歌词网页全文。
+
 ## 复制配置
 
 ```bash
@@ -85,7 +87,20 @@ ALIGNMENT_WORKER_IMAGE=wangjiqing/xingyu-lyrics-aligner:0.4.0
 ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=5
 ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL=medium
 ALIGNMENT_DRAFT_MAX_TEXT_BYTES=131072
+
+# 可选：Brave Search 环境变量模式，优先级最高；不要把真实 Key 提交到 Git
+MUSIC_VAULT_BRAVE_SEARCH_API_KEY=
+
+# 可选：控制台托管 Brave Key 的服务端加密 Key；请替换为部署环境独有的强随机值
+MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY=change-me-settings-encryption-key
 ```
+
+Brave Search 配置说明：
+
+- 设置 `MUSIC_VAULT_BRAVE_SEARCH_API_KEY` 时，实际搜索使用环境变量 Key，控制台不会回显完整 Key，也不能通过控制台暂停该环境变量 Key。
+- 不设置环境变量时，可在管理端「设置」保存控制台托管 Key。
+- 控制台托管 Key 必须有 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 才能加密保存；未配置时保存会被拒绝。
+- 不要在 Docker Compose 示例、README 示例、日志或提交历史中写入真实 Brave API Key。
 
 Dockerfile 默认使用 `registry.npmmirror.com` 作为 npm 构建源、`maven.aliyun.com/repository/public` 作为 Maven 构建镜像源，并使用 BuildKit cache 缓存 `/root/.npm` 与 `/root/.m2/repository`。如果网络环境更适合官方源，可在 `.env` 中改为：
 
