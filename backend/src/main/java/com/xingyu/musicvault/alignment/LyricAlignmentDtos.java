@@ -29,6 +29,12 @@ public final class LyricAlignmentDtos {
     ) {
     }
 
+    public record CreateManualLyricDraftRequest(
+            String text,
+            String createdBy
+    ) {
+    }
+
     public record AlignmentJobResponse(
             String id,
             String taskType,
@@ -205,7 +211,32 @@ public final class LyricAlignmentDtos {
             String rejectedBy,
             LocalDateTime rejectedAt,
             String rejectNote,
-            String errorMessage
+            String errorMessage,
+            String sourceType,
+            JsonNode sourceMetadata,
+            java.util.List<LyricDraftSourceResponse> sources
+    ) {
+    }
+
+    public record LyricDraftSourceRequest(
+            String provider,
+            String query,
+            String title,
+            String url,
+            String domain,
+            String selectedBy
+    ) {
+    }
+
+    public record LyricDraftSourceResponse(
+            Long id,
+            String provider,
+            String query,
+            String title,
+            String url,
+            String domain,
+            String selectedBy,
+            LocalDateTime selectedAt
     ) {
     }
 

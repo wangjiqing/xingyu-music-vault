@@ -17,7 +17,12 @@
 | `track_files` | 物理音频文件记录（一曲多文件） | 已实现 |
 | `lyrics` | 歌词主记录 | 已实现 |
 | `song_lyrics` | 音乐文件与歌词绑定关系 | 已实现 |
+| `lyric_drafts` | 歌词草稿记录 | 已实现（v1.3.0，v1.3.2 增加来源字段） |
+| `lyric_draft_sources` | 歌词草稿候选来源记录 | 已实现（v1.3.2） |
+| `lyric_alignment_jobs` | 歌词草稿提取 / 逐字对齐任务 | 已实现（v1.3.0） |
+| `lyric_alignment_job_events` | 歌词对齐审核 / 导入事件 | 已实现（v1.3.0） |
 | `lyric_versions` | 歌词多版本管理 | 规划中 |
+| `app_settings` | 加密系统设置 | 已实现（v1.3.2，当前用于 Brave Search 托管 Key） |
 | `artworks` | 封面图片记录 | 已实现 |
 | `music_artwork_bindings` | 音乐文件与封面绑定关系 | 已实现 |
 | `metadata_versions` | 元数据版本历史（审计） | 规划中 |
@@ -159,6 +164,51 @@
 | `created_at` | timestamp not null | 创建时间 |
 | `updated_at` | timestamp not null | 更新时间 |
 
+### lyric_drafts
+
+记录歌词草稿文本、状态和来源。v1.3.0 用于 Worker 草稿提取，v1.3.2 增加手工草稿来源语义。
+
+V20 新增字段：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `source_type` | varchar(32) not null default `WORKER_EXTRACTION` | 草稿来源：`WORKER_EXTRACTION`、`MANUAL_PASTE`、`BRAVE_ASSISTED` |
+| `source_metadata_json` | text | 来源元数据快照；不保存第三方网页正文 |
+
+`MANUAL_PASTE` 手工草稿不会被标记为 Worker 提取结果。`BRAVE_ASSISTED` 只表示草稿关联过候选来源，不表示音库抓取了来源网页正文。
+
+### lyric_draft_sources
+
+记录草稿关联的候选来源元信息。该表只保存来源标题、URL、域名、查询词等追溯信息，不保存第三方歌词网页全文。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `draft_id` | bigint not null | 关联 `lyric_drafts.id`，删除草稿时级联删除来源记录 |
+| `provider` | varchar(32) not null | 来源提供方，例如 `BRAVE_SEARCH` |
+| `query` | text not null | 搜索词 |
+| `title` | text not null | 搜索结果标题 |
+| `url` | text not null | 来源 URL |
+| `domain` | text not null | 来源域名 |
+| `selected_by` | text not null | 关联来源的管理员 |
+| `selected_at` | datetime not null | 关联时间 |
+
+### app_settings
+
+记录需要服务端托管的加密设置。v1.3.2 当前用于 Brave Search 控制台托管 API Key。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `setting_key` | varchar(128) primary key | 设置键 |
+| `setting_value_encrypted` | text | 使用 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 加密后的设置值 |
+| `enabled` | boolean not null default true | 是否启用 |
+| `updated_by` | text | 最近更新人 |
+| `updated_at` | datetime not null | 最近更新时间 |
+| `last_error` | text | 最近一次测试或调用错误摘要，不包含完整 Key |
+| `last_checked_at` | datetime | 最近一次测试时间 |
+
+控制台托管 Brave Key 不允许 SQLite 明文保存；未配置 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 时，保存接口会拒绝请求。环境变量 `MUSIC_VAULT_BRAVE_SEARCH_API_KEY` 优先于该表中的托管配置。
+
 ### artworks
 
 记录本地封面图片资产。v0.6 仅支持扫描配置目录中的本地 `jpg/jpeg/png/webp` 文件，不做在线刮削、AI 生成或复杂审核流。文件访问接口只按已入库 `artworks.id` 读取，并要求真实路径仍在 `app.artwork.scan-dir` 配置根目录内。
@@ -204,6 +254,7 @@ artists 1───< albums
 albums 1───< tracks
 tracks 1───< track_files
 track_files 1───< song_lyrics >───1 lyrics
+track_files 1───< lyric_alignment_jobs 1───< lyric_drafts 1───< lyric_draft_sources
 track_files 1───< music_artwork_bindings >───1 artworks
 lyrics 1───< lyric_versions
 tracks 1───< metadata_versions
@@ -229,6 +280,8 @@ tracks 1───< music_metadata_sync_audit
 - `idx_song_lyrics_lyric_id` — song_lyrics 按歌词查询
 - `idx_song_lyrics_song_lyric` — song_id + lyric_id 唯一绑定
 - `idx_song_lyrics_primary_song` — 每首歌最多一个主歌词
+- `idx_lyric_drafts_source_type` — lyric_drafts 按来源类型查询
+- `idx_lyric_draft_sources_draft_id` — lyric_draft_sources 按草稿查询
 - `idx_artworks_file_path` — artworks 文件路径唯一去重
 - `idx_artworks_hash` — artworks 文件内容哈希唯一去重
 - `idx_artworks_source_type` — artworks 来源类型过滤

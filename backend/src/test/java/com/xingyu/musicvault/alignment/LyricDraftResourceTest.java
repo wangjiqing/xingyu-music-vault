@@ -9,6 +9,7 @@ import com.xingyu.musicvault.lyrics.Lyric;
 import com.xingyu.musicvault.lyrics.SongLyric;
 import com.xingyu.musicvault.openapi.OpenApiCredential;
 import com.xingyu.musicvault.openapi.OpenApiRequestNonce;
+import com.xingyu.musicvault.settings.AppSetting;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
@@ -65,8 +66,10 @@ class LyricDraftResourceTest {
         Files.createDirectories(ASSETS_ROOT);
         Files.createDirectories(MUSIC_ROOT);
         LyricAlignmentJobEvent.deleteAll();
+        LyricDraftSource.deleteAll();
         LyricDraft.deleteAll();
         LyricAlignmentJob.deleteAll();
+        AppSetting.deleteAll();
         OpenApiRequestNonce.deleteAll();
         OpenApiCredential.deleteAll();
         SongLyric.deleteAll();
@@ -327,6 +330,129 @@ class LyricDraftResourceTest {
                 .then()
                 .statusCode(200)
                 .body("lyricId", equalTo(trustedLyricsId.intValue()))
+                .body("trustedLyricsHash", equalTo(sha256(edited)))
+                .extract()
+                .path("id");
+        assertEquals(edited, Files.readString(JOBS_ROOT.resolve(alignmentJobId).resolve("trusted-lyrics.txt"), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void manualDraftCanBeCreatedEditedConfirmedAndLinkedToSourceWithoutWorkerOutcome() throws IOException {
+        Long songId = createSong(MUSIC_ROOT.resolve("manual.flac"));
+
+        String manualText = "\uFEFF手工第一句\r\n手工第二句  \r\n";
+        String jobId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"text\":\"%s\", \"createdBy\":\"editor\"}".formatted(manualText.replace("\r", "\\r").replace("\n", "\\n")))
+                .when()
+                .post("/api/admin/music/{musicId}/lyric-drafts/manual", songId)
+                .then()
+                .statusCode(200)
+                .body("executionStatus", equalTo("COMPLETED"))
+                .body("draftStatus", equalTo("EDITING"))
+                .body("sourceType", equalTo("MANUAL_PASTE"))
+                .body("originalText", equalTo("手工第一句\n手工第二句  \n"))
+                .extract()
+                .path("jobId");
+
+        LyricAlignmentJob manualJob = findJob(jobId);
+        assertEquals("LYRIC_DRAFT_MANUAL", manualJob.taskType);
+        assertEquals("COMPLETED", manualJob.status);
+        assertNull(manualJob.workerOutcome);
+        assertFalse(Files.exists(JOBS_ROOT.resolve(jobId).resolve("READY")));
+
+        String edited = "手工校对第一句\n手工校对第二句\n";
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"text\":\"%s\", \"editedBy\":\"editor\"}".formatted(edited.replace("\n", "\\n")))
+                .when()
+                .put("/api/admin/lyric-draft-jobs/{jobId}/draft", jobId)
+                .then()
+                .statusCode(200)
+                .body("sourceType", equalTo("MANUAL_PASTE"))
+                .body("editableText", equalTo(edited));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "provider": "BRAVE",
+                          "query": "歌手 歌名 歌词",
+                          "title": "候选歌词页面",
+                          "url": "https://example.com/lyrics",
+                          "domain": "example.com",
+                          "selectedBy": "editor"
+                        }
+                        """)
+                .when()
+                .post("/api/admin/lyric-draft-jobs/{jobId}/sources", jobId)
+                .then()
+                .statusCode(200)
+                .body("provider", equalTo("BRAVE"))
+                .body("url", equalTo("https://example.com/lyrics"));
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "provider": "BRAVE",
+                          "query": "歌手 歌名 歌词",
+                          "title": "候选歌词页面",
+                          "url": "https://example.com/lyrics",
+                          "domain": "example.com",
+                          "selectedBy": "editor"
+                        }
+                        """)
+                .when()
+                .post("/api/admin/lyric-draft-jobs/{jobId}/sources", jobId)
+                .then()
+                .statusCode(200)
+                .body("url", equalTo("https://example.com/lyrics"));
+        assertEquals(1, LyricDraftSource.count());
+
+        statusSynchronizer.synchronizeActiveJobs();
+        assertEquals("COMPLETED", findJob(jobId).status);
+        assertNull(findJob(jobId).workerOutcome);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-draft-jobs/{jobId}/draft", jobId)
+                .then()
+                .statusCode(200)
+                .body("sourceType", equalTo("BRAVE_ASSISTED"))
+                .body("sources[0].title", equalTo("候选歌词页面"))
+                .body("editableText", equalTo(edited));
+
+        Number trustedLyricsIdValue = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"note\":\"人工确认\", \"confirmedBy\":\"reviewer\"}")
+                .when()
+                .post("/api/admin/lyric-draft-jobs/{jobId}/confirm", jobId)
+                .then()
+                .statusCode(200)
+                .body("draftStatus", equalTo("CONFIRMED"))
+                .extract()
+                .path("trustedLyricsId");
+
+        Lyric confirmed = QuarkusTransaction.requiringNew().call(() -> Lyric.findById(trustedLyricsIdValue.longValue()));
+        assertEquals("DRAFT_CONFIRMED", confirmed.sourceType);
+        assertEquals(jobId, confirmed.sourceTaskId);
+        assertEquals(edited, confirmed.content);
+
+        String alignmentJobId = given()
+                .header("Authorization", AUTHORIZATION)
+                .contentType(ContentType.JSON)
+                .body("{\"songId\": %d}".formatted(songId))
+                .when()
+                .post("/api/lyric-alignment/jobs")
+                .then()
+                .statusCode(200)
+                .body("lyricId", equalTo(trustedLyricsIdValue.intValue()))
                 .body("trustedLyricsHash", equalTo(sha256(edited)))
                 .extract()
                 .path("id");

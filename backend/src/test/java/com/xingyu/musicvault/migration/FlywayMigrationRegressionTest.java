@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(19, first.migrationsExecuted);
+        assertEquals(20, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -86,7 +86,12 @@ class FlywayMigrationRegressionTest {
                     "transcript_raw_hash", "transcript_segments_hash", "report_hash",
                     "confirmed_trusted_lyrics_id", "created_at", "updated_at", "edited_by",
                     "edited_at", "confirmed_by", "confirmed_at", "rejected_by", "rejected_at",
-                    "reject_note", "error_message");
+                    "reject_note", "error_message", "source_type", "source_metadata_json");
+            assertColumns(connection, "app_settings",
+                    "setting_key", "setting_value_encrypted", "enabled", "updated_by", "updated_at",
+                    "last_error", "last_checked_at");
+            assertColumns(connection, "lyric_draft_sources",
+                    "id", "draft_id", "provider", "query", "title", "url", "domain", "selected_by", "selected_at");
             assertColumns(connection, "lyric_alignment_job_events",
                     "id", "task_id", "music_id", "action", "operator", "note", "before_status",
                     "after_status", "error_message", "created_at");
@@ -106,6 +111,8 @@ class FlywayMigrationRegressionTest {
                     "idx_lyric_drafts_music_id",
                     "idx_lyric_drafts_draft_status",
                     "idx_lyric_drafts_created_at",
+                    "idx_lyric_drafts_source_type",
+                    "idx_lyric_draft_sources_draft_id",
                     "idx_lyric_alignment_job_events_task_id",
                     "idx_lyric_alignment_job_events_action",
                     "idx_lyric_alignment_job_events_created_at");
@@ -142,7 +149,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(18, result.migrationsExecuted);
+        assertEquals(19, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -157,7 +164,9 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "lyric_alignment_jobs", "id", "song_id", "lyric_id", "status", "trusted_lyrics_snapshot",
                     "task_type", "worker_outcome", "result_available", "sync_message", "reviewed_by", "imported_lyric_id");
             assertColumns(connection, "lyrics", "source_task_id", "source_draft_id", "source_text_hash", "swlrc_path", "confirmed_at");
-            assertColumns(connection, "lyric_drafts", "job_id", "music_id", "editable_text", "draft_status");
+            assertColumns(connection, "lyric_drafts", "job_id", "music_id", "editable_text", "draft_status", "source_type");
+            assertColumns(connection, "app_settings", "setting_key", "setting_value_encrypted", "enabled");
+            assertColumns(connection, "lyric_draft_sources", "draft_id", "provider", "url", "selected_at");
             assertColumns(connection, "lyric_alignment_job_events", "task_id", "music_id", "action", "operator");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }

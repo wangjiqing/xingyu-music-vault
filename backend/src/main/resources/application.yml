@@ -48,6 +48,9 @@ music-vault:
   api-token: ${MUSIC_VAULT_API_TOKEN:change-me}
   ffprobe-path: ${MUSIC_VAULT_FFPROBE_PATH:/usr/bin/ffprobe}
   ffmpeg-path: ${MUSIC_VAULT_FFMPEG_PATH:/usr/bin/ffmpeg}
+  brave-search-api-key: ${MUSIC_VAULT_BRAVE_SEARCH_API_KEY:}
+  brave-search-api-url: ${MUSIC_VAULT_BRAVE_SEARCH_API_URL:https://api.search.brave.com/res/v1/web/search}
+  settings-encryption-key: ${MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY:}
 
 music:
   scan:
@@ -96,12 +99,12 @@ xingyu:
     data-dir: data
     config-dir: config
     music-dirs: ${MUSIC_VAULT_MUSIC_DIRS:/Users/wangjiqing/Project/Musics/Music}
-    lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:lyrics}
-    alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:/Users/wangjiqing/Project/Musics/alignment-jobs}
+    lyric-dirs: ${MUSIC_VAULT_LYRIC_DIRS:/Users/wangjiqing/Project/Musics/Lyrics}
+    alignment-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_JOBS_DIR:/Users/wangjiqing/Project/Musics/AlignmentJobs}
     alignment-worker-music-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR:/Users/wangjiqing/Project/Musics/Music}
-    alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/Users/wangjiqing/Project/Musics/alignment-jobs}
+    alignment-worker-jobs-dir: ${MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR:/Users/wangjiqing/Project/Musics/AlignmentJobs}
     alignment-assets-dir: ${MUSIC_VAULT_ALIGNMENT_ASSETS_DIR:/Users/wangjiqing/Project/Musics/alignment-assets}
-    alignment-lyrics-root: ${MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT:}
+    alignment-lyrics-root: ${MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT:/Users/wangjiqing/Project/Musics/Lyrics}
     alignment-lyrics-subdir: ${MUSIC_VAULT_ALIGNMENT_LYRICS_SUBDIR:alignment}
     alignment-draft-default-asr-model: ${ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL:medium}
     alignment-draft-default-skip-separation: ${ALIGNMENT_DRAFT_DEFAULT_SKIP_SEPARATION:true}
@@ -110,6 +113,7 @@ xingyu:
     alignment-status-sync-interval-seconds: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}
     alignment-status-sync-interval: ${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:5}s
     db-path: data/music-vault.db
+    settings-encryption-key: ${MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY:local-dev-settings-encryption-key}
   music:
     scan:
       default-path: ${MUSIC_SCAN_DEFAULT_PATH:/Users/wangjiqing/Project/Musics/Music}
@@ -147,6 +151,7 @@ xingyu:
     alignment-status-sync-interval-seconds: 3600
     alignment-status-sync-interval: 3600s
     db-path: target/test-music-vault.db
+    settings-encryption-key: test-settings-encryption-key
   app:
     artwork:
       scan-dir: target/test-music/artworks

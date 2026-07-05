@@ -87,6 +87,11 @@ export interface CreateLyricDraftJobRequest {
   createdBy?: string
 }
 
+export interface CreateManualLyricDraftRequest {
+  text: string
+  createdBy?: string
+}
+
 export interface LyricDraftDefaultOptions {
   language: string
   asrModel: string
@@ -126,6 +131,29 @@ export interface LyricDraft {
   rejectedAt?: string | null
   rejectNote?: string | null
   errorMessage?: string | null
+  sourceType?: string | null
+  sourceMetadata?: Record<string, unknown> | null
+  sources?: LyricDraftSource[]
+}
+
+export interface LyricDraftSource {
+  id: number
+  provider: string
+  query: string
+  title: string
+  url: string
+  domain: string
+  selectedBy: string
+  selectedAt: string
+}
+
+export interface LyricDraftSourceRequest {
+  provider: string
+  query: string
+  title: string
+  url: string
+  domain: string
+  selectedBy?: string
 }
 
 export interface MusicLyricDraftContext {
@@ -249,6 +277,14 @@ export async function createLyricDraftJob(
   return data
 }
 
+export async function createManualLyricDraft(
+  musicId: number,
+  payload: CreateManualLyricDraftRequest,
+): Promise<LyricDraft> {
+  const { data } = await http.post(`/api/admin/music/${musicId}/lyric-drafts/manual`, payload)
+  return data
+}
+
 export async function fetchLyricDraft(jobId: string): Promise<LyricDraft> {
   const { data } = await http.get(`/api/admin/lyric-draft-jobs/${jobId}/draft`)
   return data
@@ -275,6 +311,14 @@ export async function rejectLyricDraft(
   payload: RejectLyricDraftRequest,
 ): Promise<LyricDraft> {
   const { data } = await http.post(`/api/admin/lyric-draft-jobs/${jobId}/reject`, payload)
+  return data
+}
+
+export async function addLyricDraftSource(
+  jobId: string,
+  payload: LyricDraftSourceRequest,
+): Promise<LyricDraftSource> {
+  const { data } = await http.post(`/api/admin/lyric-draft-jobs/${jobId}/sources`, payload)
   return data
 }
 

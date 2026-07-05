@@ -4,6 +4,8 @@ import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ArtifactContent;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ConfirmLyricDraftRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ConfirmLyricDraftResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftSourceRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftSourceResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.RejectLyricDraftRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.UpdateLyricDraftRequest;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -74,6 +76,13 @@ public class AdminLyricDraftResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public LyricDraftResponse rejectDraft(@PathParam("jobId") String jobId, RejectLyricDraftRequest request) {
         return service.rejectDraft(jobId, request);
+    }
+
+    @POST
+    @Path("/{jobId}/sources")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public LyricDraftSourceResponse addSource(@PathParam("jobId") String jobId, LyricDraftSourceRequest request) {
+        return service.addDraftSource(jobId, request);
     }
 
     private Response artifactResponse(ArtifactContent artifact) {

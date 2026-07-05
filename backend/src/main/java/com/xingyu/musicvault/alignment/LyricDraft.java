@@ -86,6 +86,12 @@ public class LyricDraft extends PanacheEntityBase {
     @Column(name = "error_message", columnDefinition = "text")
     public String errorMessage;
 
+    @Column(name = "source_type", nullable = false, length = 32)
+    public String sourceType;
+
+    @Column(name = "source_metadata_json", columnDefinition = "text")
+    public String sourceMetadataJson;
+
     @PrePersist
     void prePersist() {
         LocalDateTime now = LocalDateTime.now();

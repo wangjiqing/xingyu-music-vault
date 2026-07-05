@@ -46,4 +46,10 @@ public interface MusicVaultConfig {
     String ffprobePath();
 
     String ffmpegPath();
+
+    Optional<String> braveSearchApiKey();
+
+    String braveSearchApiUrl();
+
+    Optional<String> settingsEncryptionKey();
 }

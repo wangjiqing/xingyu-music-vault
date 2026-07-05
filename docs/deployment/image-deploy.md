@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v1.3.1
+IMAGE_TAG=v1.3.2
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -64,6 +64,18 @@ v1.3.1 起，image compose 默认将 `/lyrics` 以读写方式挂载，并设置
 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics`。新的审核通过对齐导入会把正式 LRC / SWLRC
 发布到 `/lyrics/alignment/{songId}/{jobId}`，普通歌词扫描会排除该受控子目录。未配置
 `MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT` 时服务可启动并读取历史 `ALIGNMENT` 资产，但新的审核导入会被拒绝。
+
+v1.3.2 起，如需使用 Brave Search 候选来源辅助，可选择两种配置方式：
+
+```dotenv
+# 环境变量模式，优先级最高；不要把真实 Key 提交到 Git
+MUSIC_VAULT_BRAVE_SEARCH_API_KEY=
+
+# 控制台托管模式需要该服务端加密 Key；请替换为部署环境独有的强随机值
+MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY=change-me-settings-encryption-key
+```
+
+环境变量模式会接管实际搜索行为，控制台不会回显完整 Key，也不能通过控制台暂停环境变量 Key。控制台托管模式会把 Brave Key 加密保存到 SQLite；未配置 `MUSIC_VAULT_SETTINGS_ENCRYPTION_KEY` 时保存会被拒绝。Brave Search 只展示候选来源，不抓取、不下载、不缓存第三方歌词网页全文。
 
 ```bash
 cd deploy
@@ -93,7 +105,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.1`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.2`），然后执行：
 
 ```bash
 cd deploy

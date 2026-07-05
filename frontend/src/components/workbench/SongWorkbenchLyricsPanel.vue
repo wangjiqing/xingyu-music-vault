@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import type { MusicItem, WorkbenchArtwork, WorkbenchLyric } from '../../api/music'
+import type { MusicItem, WorkbenchArtwork, WorkbenchLyric, WorkbenchWordLyric } from '../../api/music'
 import { currentThemeAssets } from '../../theme/currentTheme'
 
 interface LyricLine {
@@ -8,8 +8,21 @@ interface LyricLine {
   text: string
 }
 
+interface WordToken {
+  time: number
+  endTime: number
+  text: string
+}
+
+interface WordLyricLine {
+  time: number
+  text: string
+  words: WordToken[]
+}
+
 const props = defineProps<{
   lyrics: WorkbenchLyric
+  wordLyrics: WorkbenchWordLyric
   music: MusicItem
   artwork: WorkbenchArtwork
   currentTime: number
@@ -18,6 +31,7 @@ const props = defineProps<{
 
 const scrollRef = ref<HTMLElement>()
 const lineRefs = ref<HTMLElement[]>([])
+const selectedLyricMode = ref<'word' | 'line'>('word')
 
 const lyricLines = computed<LyricLine[]>(() => {
   if (!props.lyrics.available || !props.lyrics.content) return []
@@ -40,11 +54,29 @@ const lyricLines = computed<LyricLine[]>(() => {
 })
 
 const timedLyricLines = computed(() => lyricLines.value.filter((line) => line.time != null))
+const wordLyricLines = computed<WordLyricLine[]>(() => parseWordLyrics(props.wordLyrics))
+const canUseWordLyrics = computed(() => wordLyricLines.value.length > 0)
+const canUseLineLyrics = computed(() => lyricLines.value.length > 0)
+const useWordLyrics = computed(() => canUseWordLyrics.value && selectedLyricMode.value === 'word')
+const displayMode = computed(() => (useWordLyrics.value ? '逐字歌词' : '行级歌词'))
 const activeIndex = computed(() => {
+  if (useWordLyrics.value) return activeWordLineIndex.value
   if (timedLyricLines.value.length === 0) return -1
   let result = 0
   for (let index = 0; index < timedLyricLines.value.length; index += 1) {
     if ((timedLyricLines.value[index].time ?? 0) <= props.currentTime + 0.15) {
+      result = index
+    } else {
+      break
+    }
+  }
+  return result
+})
+const activeWordLineIndex = computed(() => {
+  if (wordLyricLines.value.length === 0) return -1
+  let result = 0
+  for (let index = 0; index < wordLyricLines.value.length; index += 1) {
+    if (wordLyricLines.value[index].time <= props.currentTime + 0.08) {
       result = index
     } else {
       break
@@ -79,6 +111,25 @@ watch(
   },
 )
 
+watch(
+  () => props.wordLyrics.content,
+  () => {
+    lineRefs.value = []
+    selectedLyricMode.value = canUseWordLyrics.value ? 'word' : 'line'
+    if (scrollRef.value) {
+      scrollRef.value.scrollTop = 0
+    }
+  },
+)
+
+watch(
+  canUseWordLyrics,
+  (available) => {
+    selectedLyricMode.value = available ? 'word' : 'line'
+  },
+  { immediate: true },
+)
+
 function parseTimestamp(match: RegExpMatchArray): number {
   const minutes = Number(match[1] || 0)
   const seconds = Number(match[2] || 0)
@@ -87,17 +138,104 @@ function parseTimestamp(match: RegExpMatchArray): number {
   return minutes * 60 + seconds + fraction
 }
 
+function parseTimeText(value: string): number {
+  const match = value.match(/^(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?$/)
+  if (!match) return Number.NaN
+  return parseTimestamp(match)
+}
+
 function setLineRef(element: unknown, index: number) {
   if (element instanceof HTMLElement) {
     lineRefs.value[index] = element
   }
+}
+
+function parseWordLyrics(wordLyrics: WorkbenchWordLyric): WordLyricLine[] {
+  if (!wordLyrics.available || !wordLyrics.content) return []
+  try {
+    const lines: WordLyricLine[] = []
+    let currentLine: WordLyricLine | null = null
+    const pushCurrentLine = () => {
+      if (!currentLine || currentLine.words.length === 0) return
+      const text = currentLine.words.map((word) => word.text).join('').trim()
+      if (!text) return
+      lines.push({ ...currentLine, text })
+    }
+    const appendWords = (target: WordLyricLine, value: string) => {
+      const wordPattern = /<(\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?)(?:,(\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?))?>([^<\[]*)/g
+      for (const match of value.matchAll(wordPattern)) {
+        const time = parseTimeText(match[1])
+        const parsedEndTime = match[2] ? parseTimeText(match[2]) : Number.NaN
+        const endTime = Number.isFinite(parsedEndTime) && parsedEndTime > time ? parsedEndTime : time + 0.22
+        const text = (match[3] || '').replace(/\[[^\]]+\]/g, '')
+        if (!Number.isFinite(time) || !text) continue
+        target.words.push({ time, endTime, text })
+      }
+    }
+    for (const rawLine of wordLyrics.content.split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line) continue
+      const lineTimeMatch = line.match(/^\[(\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?)(?:,\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?)?\](.*)$/)
+      if (lineTimeMatch) {
+        const time = parseTimeText(lineTimeMatch[1])
+        if (!Number.isFinite(time)) continue
+        pushCurrentLine()
+        currentLine = { time, text: '', words: [] }
+        appendWords(currentLine, lineTimeMatch[2] || '')
+        continue
+      }
+      if (!currentLine) continue
+      appendWords(currentLine, line)
+    }
+    pushCurrentLine()
+    return lines.sort((left, right) => left.time - right.time)
+  } catch {
+    return []
+  }
+}
+
+function wordProgress(word: WordToken): string {
+  const duration = Math.max(word.endTime - word.time, 0.08)
+  const progress = Math.min(Math.max((props.currentTime - word.time) / duration, 0), 1)
+  return `${Math.round(progress * 100)}%`
 }
 </script>
 
 <template>
   <div class="lyrics-panel">
     <div class="lyrics-stage">
-      <div v-if="lyricLines.length > 0" ref="scrollRef" class="lyrics-scroll">
+      <div class="lyrics-mode-control">
+        <el-radio-group
+          v-if="canUseWordLyrics && canUseLineLyrics"
+          v-model="selectedLyricMode"
+          size="small"
+        >
+          <el-radio-button label="word">逐字歌词</el-radio-button>
+          <el-radio-button label="line">行级歌词</el-radio-button>
+        </el-radio-group>
+        <el-tag v-else size="small" :type="useWordLyrics ? 'success' : 'info'">
+          {{ displayMode }}
+        </el-tag>
+      </div>
+      <div v-if="useWordLyrics" ref="scrollRef" class="lyrics-scroll">
+        <div
+          v-for="(line, index) in wordLyricLines"
+          :key="`${index}-${line.time}`"
+          class="lyric-line word-line"
+          :class="{ active: index === activeIndex, passed: activeIndex > index }"
+          :ref="(element) => setLineRef(element, index)"
+        >
+          <span
+            v-for="(word, wordIndex) in line.words"
+            :key="`${wordIndex}-${word.time}`"
+            class="word-token"
+            :style="{ '--word-progress': wordProgress(word) }"
+          >
+            {{ word.text }}
+          </span>
+        </div>
+      </div>
+      <div v-else-if="lyricLines.length > 0" ref="scrollRef" class="lyrics-scroll">
         <div
           v-for="(line, index) in lyricLines"
           :key="`${index}-${line}`"
@@ -149,6 +287,12 @@ function setLineRef(element: unknown, index: number) {
 </template>
 
 <style scoped>
+@property --word-progress {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
 .lyrics-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) calc(280px * var(--workbench-scale, 1));
@@ -157,10 +301,17 @@ function setLineRef(element: unknown, index: number) {
   min-height: 0;
 }
 .lyrics-stage {
+  position: relative;
   min-height: 0;
   overflow: hidden;
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.04));
+}
+.lyrics-mode-control {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
 }
 .lyrics-scroll {
   height: 100%;
@@ -190,6 +341,37 @@ function setLineRef(element: unknown, index: number) {
   font-size: calc(22px * var(--workbench-scale, 1));
   font-weight: 800;
   opacity: 1;
+}
+.word-line {
+  font-variant-east-asian: proportional-width;
+}
+.word-line.active {
+  color: color-mix(in srgb, var(--el-text-color-primary) 58%, transparent);
+}
+.word-line.passed {
+  color: color-mix(in srgb, var(--el-text-color-primary) 58%, transparent);
+}
+.word-token {
+  --word-progress: 0%;
+  --word-rest-color: color-mix(in srgb, var(--el-text-color-primary) 58%, transparent);
+  --word-active-color: var(--xy-lyric-active, var(--xy-primary, var(--el-color-primary)));
+  display: inline;
+  color: var(--word-rest-color);
+  background:
+    linear-gradient(
+      90deg,
+      var(--word-active-color) 0%,
+      var(--word-active-color) var(--word-progress),
+      var(--word-rest-color) var(--word-progress),
+      var(--word-rest-color) 100%
+    );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transition: --word-progress 0.16s linear, text-shadow 0.16s ease;
+}
+.word-line.active .word-token {
+  text-shadow: 0 0 1px color-mix(in srgb, var(--xy-lyric-active, var(--xy-primary, var(--el-color-primary))) 18%, transparent);
 }
 .lyrics-empty {
   height: 100%;

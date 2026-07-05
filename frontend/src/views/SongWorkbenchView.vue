@@ -205,15 +205,9 @@ function handleListScroll(event: Event) {
   }
 }
 
-async function handleTrackEnded() {
-  if (playbackMode.value === 'order' && !canNext.value && hasMoreRows.value) {
-    await appendNextPage()
-  }
-  if (playbackMode.value === 'order' && !canNext.value) {
-    playbackActive.value = false
-    return
-  }
-  await next(true)
+function handleTrackEnded() {
+  playbackActive.value = false
+  autoplayOnSourceChange.value = false
 }
 
 function randomTrack(): MusicItem | null {
@@ -347,6 +341,7 @@ onMounted(() => loadList(false))
           <el-tab-pane label="歌词" name="lyrics">
             <SongWorkbenchLyricsPanel
               :lyrics="workbench.lyrics"
+              :word-lyrics="workbench.wordLyrics"
               :music="workbench.music"
               :artwork="workbench.artwork"
               :current-time="playerCurrentTime"
@@ -504,15 +499,12 @@ onMounted(() => loadList(false))
   min-height: 0;
   padding: var(--workbench-panel-padding);
   overflow: hidden;
-}
-.workbench-main > :not(.workbench-bg) {
-  position: relative;
-  z-index: 1;
+  isolation: isolate;
 }
 .workbench-bg {
   position: absolute;
   inset: calc(-1 * var(--workbench-panel-padding));
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   opacity: 0;
   background:
@@ -526,6 +518,7 @@ onMounted(() => loadList(false))
   opacity: 0.74;
 }
 .workbench-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   gap: calc(12px * var(--workbench-scale));
@@ -544,9 +537,11 @@ onMounted(() => loadList(false))
   font-size: var(--workbench-header-meta-size);
 }
 .workbench-alert {
+  position: relative;
   margin-top: 12px;
 }
 .workbench-tabs {
+  position: relative;
   min-height: 0;
   margin-top: var(--workbench-tab-gap);
   flex: 1;

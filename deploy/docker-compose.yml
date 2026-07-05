@@ -17,18 +17,22 @@ services:
       - ${CONFIG_DIR:-./config}:/app/config
       - ${LOGS_DIR:-./logs}:/app/logs
       - ${MUSIC_DIR:-./music}:/music:ro
+      - ${MUSIC_DIR:-./music}:${MUSIC_DIR:-/music}:ro
       - ${LYRICS_DIR:-./lyrics}:/lyrics:rw
+      - ${LYRICS_DIR:-./lyrics}:${LYRICS_DIR:-/lyrics}:rw
       - ${ALIGNMENT_JOBS_DIR:-./alignment-jobs}:/alignment-jobs
+      - ${ALIGNMENT_JOBS_DIR:-./alignment-jobs}:${ALIGNMENT_JOBS_DIR:-/alignment-jobs}:rw
       - ${ARTWORK_DIR:-./artwork}:${APP_ARTWORK_SCAN_DIR:-/artwork}
+      - ${ARTWORK_DIR:-./artwork}:${ARTWORK_DIR:-/artwork}:rw
     environment:
       - TZ=${TZ:-Asia/Shanghai}
       - QUARKUS_HTTP_HOST=0.0.0.0
       - QUARKUS_HTTP_PORT=8080
       - MUSIC_VAULT_DATA_DIR=/app/data
       - MUSIC_VAULT_CONFIG_DIR=/app/config
-      - MUSIC_VAULT_MUSIC_DIRS=/music
-      - MUSIC_VAULT_LYRIC_DIRS=/lyrics
-      - MUSIC_VAULT_ALIGNMENT_JOBS_DIR=/alignment-jobs
+      - MUSIC_VAULT_MUSIC_DIRS=${MUSIC_DIR:-/music},/music
+      - MUSIC_VAULT_LYRIC_DIRS=${LYRICS_DIR:-/lyrics},/lyrics
+      - MUSIC_VAULT_ALIGNMENT_JOBS_DIR=${ALIGNMENT_JOBS_DIR:-/alignment-jobs}
       - MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR=/music
       - MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR=/jobs
       - MUSIC_VAULT_ALIGNMENT_ASSETS_DIR=/app/data/alignment-lyrics
@@ -40,7 +44,7 @@ services:
       - ALIGNMENT_DRAFT_MAX_TEXT_BYTES=${ALIGNMENT_DRAFT_MAX_TEXT_BYTES:-131072}
       - ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=${ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS:-5}
       - MUSIC_VAULT_DB_PATH=/app/data/music-vault.db
-      - MUSIC_SCAN_DEFAULT_PATH=/music
+      - MUSIC_SCAN_DEFAULT_PATH=${MUSIC_DIR:-/music}
       - APP_ARTWORK_SCAN_DIR=${APP_ARTWORK_SCAN_DIR:-/artwork}
       - MUSIC_VAULT_API_TOKEN=${MUSIC_VAULT_API_TOKEN:-change-me}
       - XINGYU_ADMIN_COOKIE_SECURE=${XINGYU_ADMIN_COOKIE_SECURE:-false}

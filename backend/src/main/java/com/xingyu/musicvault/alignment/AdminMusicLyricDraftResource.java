@@ -2,6 +2,8 @@ package com.xingyu.musicvault.alignment;
 
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateLyricDraftJobRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.CreateManualLyricDraftRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.MusicLyricDraftContextResponse;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -25,6 +27,13 @@ public class AdminMusicLyricDraftResource {
     @Consumes(MediaType.APPLICATION_JSON)
     public AlignmentJobResponse createDraftJob(@PathParam("musicId") Long musicId, CreateLyricDraftJobRequest request) {
         return service.createDraftJob(musicId, request);
+    }
+
+    @POST
+    @Path("/{musicId}/lyric-drafts/manual")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public LyricDraftResponse createManualDraft(@PathParam("musicId") Long musicId, CreateManualLyricDraftRequest request) {
+        return service.createManualDraft(musicId, request);
     }
 
     @GET
