@@ -190,6 +190,66 @@ Cookie: XINGYU_MUSIC_VAULT_SESSION=...
 
 服务端会清理 UTF-8 BOM、统一换行并去除首尾空白；不会改写、翻译、补全或自动修复歌词内容。空文本、超过 `ALIGNMENT_DRAFT_MAX_TEXT_BYTES` 的文本或非法状态会返回 `400 bad_request`。手工草稿不生成 Worker `READY` 文件，也不会被状态同步器当作 Worker 提取任务处理。
 
+### 歌词覆盖率与推荐（v1.3.3）
+
+歌词状态由后端统一计算，前端不自行组合判断。状态值：
+
+| 状态 | 含义 |
+|------|------|
+| `SWLRC_READY` | 已有有效 SWLRC |
+| `LRC_READY` | 仅有有效 LRC |
+| `NO_LYRICS` | 无有效歌词 |
+| `ALIGNMENT_RUNNING` | 当前存在运行中的歌词任务 |
+| `DRAFT_PENDING` | 当前存在待人工确认的歌词草稿 |
+| `FAILED` | 最近歌词制作任务失败，可重新发起 |
+
+优先级：制作中 > 待确认 > 已有 SWLRC > 仅有 LRC > 无歌词 > 制作异常。有效 LRC / SWLRC 会校验当前绑定和文件可读性；历史数据库记录存在但源文件缺失时不作为已有歌词。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/api/admin/lyrics/overview` | 首页歌词资产进度 |
+| GET | `/api/admin/lyrics/recommendations/daily` | 获取当天可见稳定推荐 |
+| POST | `/api/admin/lyrics/recommendations/{id}/start` | 标记开始制作并由前端跳转工作台 |
+| POST | `/api/admin/lyrics/recommendations/{id}/skip` | 今天跳过，不补位 |
+| POST | `/api/admin/lyrics/recommendations/{id}/replace` | 换一首，保留原推荐并持久化补位 |
+| POST | `/api/admin/lyrics/recommendations/random` | 随机挑选待制作歌曲，`count` 为 1-20 |
+
+概览响应：
+
+```json
+{
+  "totalSongs": 1238,
+  "songsWithLyrics": 860,
+  "lyricsCoverageRate": 0.6947,
+  "songsWithSwlrc": 412,
+  "swlrcCoverageRate": 0.3328,
+  "songsWithLrcOnly": 448,
+  "songsWithoutLyrics": 378,
+  "alignmentRunning": 3,
+  "draftPending": 8
+}
+```
+
+随机候选请求：
+
+```json
+{ "count": 5 }
+```
+
+每日推荐和随机候选只面向当前缺少有效 SWLRC、且不处于制作中或待确认的歌曲。它们不会自动创建草稿任务、对齐任务或批量制作歌词。
+
+`GET /api/music` 响应新增字段：
+
+```json
+{
+  "lyricStatus": "LRC_READY",
+  "hasLrc": true,
+  "hasSwlrc": false
+}
+```
+
+`GET /api/music` 新增 `lyricStatus` 筛选参数，支持 `MISSING_SWLRC`、`SWLRC_READY`、`LRC_READY`、`NO_LYRICS`、`ALIGNMENT_RUNNING`、`DRAFT_PENDING`、`FAILED`。其中 `MISSING_SWLRC` 等价于 `LRC_READY + NO_LYRICS`。
+
 #### 关联草稿来源
 
 ```http
@@ -1042,7 +1102,7 @@ Authorization: Bearer change-me
 查询列表：
 
 ```http
-GET /api/music?page=0&size=20&keyword=周杰伦&hasLyrics=true&hasArtwork=true&metadata=incomplete
+GET /api/music?page=0&size=20&keyword=周杰伦&lyricStatus=MISSING_SWLRC&hasArtwork=true&metadata=incomplete
 Authorization: Bearer change-me
 ```
 
@@ -1051,7 +1111,8 @@ Authorization: Bearer change-me
 | `page` | 页码，从 0 开始，默认 0 |
 | `size` | 每页条数，默认 20，最大 100 |
 | `keyword` | 模糊匹配文件名、标题、艺术家、专辑（可选） |
-| `hasLyrics` | 按歌词绑定状态过滤，`true` 为已绑定歌词（可选） |
+| `lyricStatus` | 按统一歌词状态过滤，允许值：`MISSING_SWLRC`、`SWLRC_READY`、`LRC_READY`、`NO_LYRICS`、`ALIGNMENT_RUNNING`、`DRAFT_PENDING`、`FAILED`（可选） |
+| `hasLyrics` | 兼容旧版的歌词绑定过滤参数；管理端 v1.3.3 起优先使用 `lyricStatus` |
 | `hasArtwork` | 按封面绑定状态过滤，`true` 为已有封面（可选） |
 | `metadata` | 按元数据状态过滤，允许值：`complete`、`incomplete`（可选） |
 
@@ -1065,8 +1126,10 @@ Authorization: Bearer change-me
       "album": null,
       "albumArtist": "周杰伦",
       "duration": null,
-      "lyricStatus": "BOUND",
+      "lyricStatus": "LRC_READY",
       "lyricId": 1,
+      "hasLrc": true,
+      "hasSwlrc": false,
       "artworkStatus": "BOUND",
       "artworkId": 1,
       "artworkPreviewUrl": "/api/artworks/1/file",
@@ -1923,7 +1986,7 @@ Content-Type: application/json
 
 1. 先执行 `POST /api/music/scan`，补齐 `track_files.track_id` 和 `tracks` 元数据。
 2. 等扫描任务 `completed` 后，再执行 `POST /api/lyrics/scan`。
-3. 刷新 `GET /api/music`，已绑定歌曲会返回 `lyricStatus = BOUND` 和 `lyricId`。
+3. 刷新 `GET /api/music`，已绑定有效 LRC 的歌曲会返回 `lyricStatus = LRC_READY` 和 `lyricId`；已有可读取 SWLRC 的歌曲会返回 `SWLRC_READY`。
 
 ### 查询歌曲歌词
 
@@ -1955,7 +2018,7 @@ Authorization: Bearer change-me
 }
 ```
 
-当前歌曲歌词状态包括：`BOUND`、`NO_LYRIC`、`PARSE_FAILED`、`MISSING_FILE`。`UNMATCHED` 是歌词扫描统计语义，表示导入了歌词文件但未找到歌曲候选。
+`/api/songs/{id}/lyrics` 是旧版歌词绑定详情接口，仍使用 `BOUND`、`NO_LYRIC`、`PARSE_FAILED`、`MISSING_FILE` 等绑定/解析语义。歌曲列表、首页看板和歌词待办从 v1.3.3 起统一使用歌曲级状态：`SWLRC_READY`、`LRC_READY`、`NO_LYRICS`、`ALIGNMENT_RUNNING`、`DRAFT_PENDING`、`FAILED`。`UNMATCHED` 是歌词扫描统计语义，表示导入了歌词文件但未找到歌曲候选。
 
 ### 错误格式
 
@@ -2066,7 +2129,7 @@ GET /api/open/v1/server/info
 ```json
 {
   "serviceName": "xingyu-music-vault",
-  "serviceVersion": "1.3.1",
+  "serviceVersion": "1.3.3",
   "apiVersion": "v1",
   "readOnly": true,
   "features": {
@@ -2176,7 +2239,7 @@ GET /api/open/v1/tracks?page=0&pageSize=20&keyword=周杰伦&metadataStatus=comp
 | `year` | 按年份精确过滤 |
 | `genre` | 按流派精确过滤 |
 | `metadataStatus` | 按元数据状态过滤，允许值：`pending`、`matched`、`missing`、`ignored` |
-| `lyricsStatus` | 按歌词状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`NO_LYRIC`（含 `MISSING`） |
+| `lyricsStatus` | OpenAPI 客户端过滤语义，允许值：`BOUND`（含 `AVAILABLE`）、`NO_LYRIC`（含 `MISSING`）；管理端 `/api/music` 的歌曲级展示状态见上文 `lyricStatus` |
 | `artworkStatus` | 按封面状态过滤，允许值：`BOUND`（含 `AVAILABLE`）、`MISSING` |
 | `updatedAfter` | ISO-8601 日期时间，返回 `updatedAt` 严格晚于该时间的曲目（`updatedAt > updatedAfter`） |
 | `sort` | 排序字段：`updatedAt`（默认）、`title`、`artist`、`album`、`year`、`durationMs`、`trackNo`、`metadataStatus`、`lyricsStatus`、`artworkStatus`、`fileName`、`createdAt` |

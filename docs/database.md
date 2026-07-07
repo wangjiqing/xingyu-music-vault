@@ -193,6 +193,23 @@ V20 新增字段：
 | `selected_by` | text not null | 关联来源的管理员 |
 | `selected_at` | datetime not null | 关联时间 |
 
+### lyric_daily_recommendation
+
+记录 v1.3.3 首页每日歌词待办推荐。该表只保存推荐结果、用户当天操作和替换关系，用于保证同一天刷新稳定；不负责创建歌词任务，也不是永久忽略列表。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | integer primary key autoincrement | 主键 |
+| `recommendation_date` | text not null | 推荐日期，格式 `YYYY-MM-DD` |
+| `slot_no` | integer not null | 推荐槽位，1 至 5 |
+| `music_id` | integer not null | 关联 `track_files.id` |
+| `recommendation_type` | text not null | `LRC_UPGRADE` 或 `NO_LYRICS` |
+| `action_status` | text not null default `PENDING` | `PENDING`、`STARTED`、`SKIPPED_TODAY`、`REPLACED` |
+| `replaced_by_id` | integer | 被替换后指向新推荐记录 |
+| `created_at` | datetime not null | 创建时间 |
+| `updated_at` | datetime not null | 更新时间 |
+| `acted_at` | datetime | 用户操作时间 |
+
 ### app_settings
 
 记录需要服务端托管的加密设置。v1.3.2 当前用于 Brave Search 控制台托管 API Key。

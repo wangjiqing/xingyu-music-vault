@@ -23,6 +23,8 @@ import com.xingyu.musicvault.library.MusicDtos.MusicScanRequest;
 import com.xingyu.musicvault.library.MusicDtos.MusicStatsResponse;
 import com.xingyu.musicvault.library.MusicDtos.MusicTrashResponse;
 import com.xingyu.musicvault.lyrics.LyricService;
+import com.xingyu.musicvault.lyrics.SongLyricStatusService;
+import com.xingyu.musicvault.lyrics.SongLyricStatusSnapshot;
 import com.xingyu.musicvault.openapi.OpenApiChangeLogService;
 import com.xingyu.musicvault.scan.LibraryScanService;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
@@ -99,6 +101,9 @@ public class MusicResource {
     LyricService lyricService;
 
     @Inject
+    SongLyricStatusService songLyricStatusService;
+
+    @Inject
     ArtworkService artworkService;
 
     @Inject
@@ -149,12 +154,13 @@ public class MusicResource {
             @QueryParam("genre") String genre,
             @QueryParam("metadata") String metadata,
             @QueryParam("hasLyrics") Boolean hasLyrics,
+            @QueryParam("lyricStatus") String lyricStatus,
             @QueryParam("hasArtwork") Boolean hasArtwork
     ) {
         int pageValue = resolvePage(page);
         int sizeValue = resolveSize(size == null ? pageSize : size);
 
-        FilterQuery filter = buildFilterQuery(keyword, artistKey, albumKey, year, genre, metadata, hasLyrics, hasArtwork);
+        FilterQuery filter = buildFilterQuery(keyword, artistKey, albumKey, year, genre, metadata, hasLyrics, lyricStatus, hasArtwork);
         PanacheQuery<TrackFile> query = TrackFile.find(
                 filter.query(),
                 Sort.descending("createdAt"),
@@ -163,7 +169,7 @@ public class MusicResource {
         long total = query.count();
         List<TrackFile> trackFiles = query.page(Page.of(pageValue, sizeValue)).list();
         Map<Long, Track> tracksById = tracksById(trackFiles);
-        Map<Long, LyricService.PrimaryLyricSummary> lyricsBySongId = lyricService.primaryLyricsForSongIds(
+        Map<Long, SongLyricStatusSnapshot> lyricsBySongId = songLyricStatusService.snapshotsForSongs(
                 trackFiles.stream().map(trackFile -> trackFile.id).toList()
         );
         Map<Long, ArtworkService.PrimaryArtworkSummary> artworksByMusicId = artworkService.primaryArtworkForMusicIds(
@@ -192,10 +198,9 @@ public class MusicResource {
                 "(deleteStatus is null or deleteStatus = ?1) and (trackId is null or trackId in (select t.id from Track t where t.title is null or t.artist is null or t.album is null))",
                 DELETE_STATUS_ACTIVE
         );
-        long lyricsReady = TrackFile.count(
-                "(deleteStatus is null or deleteStatus = ?1) and id in (select sl.songId from SongLyric sl where sl.isPrimary = true)",
-                DELETE_STATUS_ACTIVE
-        );
+        List<Long> lyricsReadyIds = new ArrayList<>(songLyricStatusService.activeMusicIdsForFilter("SWLRC_READY"));
+        lyricsReadyIds.addAll(songLyricStatusService.activeMusicIdsForFilter("LRC_READY"));
+        long lyricsReady = lyricsReadyIds.size();
         long artworkReady = TrackFile.count(
                 "(deleteStatus is null or deleteStatus = ?1) and id in (select mab.musicId from MusicArtworkBinding mab where mab.isPrimary = true and mab.relationType = ?2)",
                 DELETE_STATUS_ACTIVE,
@@ -589,12 +594,14 @@ public class MusicResource {
     }
 
     private MusicResponse toMusicResponse(TrackFile trackFile) {
-        LyricService.PrimaryLyricSummary lyric = lyricService.primaryLyricsForSongIds(List.of(trackFile.id)).get(trackFile.id);
+        SongLyricStatusSnapshot lyric = songLyricStatusService.snapshotForSong(trackFile.id);
         ArtworkService.PrimaryArtworkSummary artwork = artworkService.primaryArtworkForMusicIds(List.of(trackFile.id)).get(trackFile.id);
         return MusicResponse.from(
                 trackFile,
-                lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
+                lyric == null ? "NO_LYRICS" : lyric.lyricStatus().name(),
                 lyric == null ? null : lyric.lyricId(),
+                lyric != null && lyric.hasLrc(),
+                lyric != null && lyric.hasSwlrc(),
                 artwork == null ? "MISSING" : "BOUND",
                 artwork == null ? null : artwork.artworkId(),
                 artwork == null ? null : artwork.artworkPreviewUrl(),
@@ -606,14 +613,16 @@ public class MusicResource {
     private MusicResponse toMusicResponse(
             TrackFile trackFile,
             Track track,
-            LyricService.PrimaryLyricSummary lyric,
+            SongLyricStatusSnapshot lyric,
             ArtworkService.PrimaryArtworkSummary artwork
     ) {
         return MusicResponse.from(
                 trackFile,
                 track,
-                lyric == null ? "NO_LYRIC" : lyric.lyricStatus(),
+                lyric == null ? "NO_LYRICS" : lyric.lyricStatus().name(),
                 lyric == null ? null : lyric.lyricId(),
+                lyric != null && lyric.hasLrc(),
+                lyric != null && lyric.hasSwlrc(),
                 artwork == null ? "MISSING" : "BOUND",
                 artwork == null ? null : artwork.artworkId(),
                 artwork == null ? null : artwork.artworkPreviewUrl(),
@@ -887,6 +896,7 @@ public class MusicResource {
             String genre,
             String metadata,
             Boolean hasLyrics,
+            String lyricStatus,
             Boolean hasArtwork
     ) {
         StringBuilder query = new StringBuilder("(deleteStatus is null or deleteStatus = ?1)");
@@ -951,10 +961,27 @@ public class MusicResource {
 
         if (hasLyrics != null) {
             if (hasLyrics) {
-                query.append(" and id in (select sl.songId from SongLyric sl where sl.isPrimary = true)");
+                List<Long> lyricsReadyIds = new ArrayList<>(songLyricStatusService.activeMusicIdsForFilter("SWLRC_READY"));
+                lyricsReadyIds.addAll(songLyricStatusService.activeMusicIdsForFilter("LRC_READY"));
+                int idx = params.size() + 1;
+                query.append(" and id in ?").append(idx);
+                params.add(lyricsReadyIds.isEmpty() ? List.of(-1L) : lyricsReadyIds);
             } else {
-                query.append(" and id not in (select sl.songId from SongLyric sl where sl.isPrimary = true)");
+                List<Long> lyricsReadyIds = new ArrayList<>(songLyricStatusService.activeMusicIdsForFilter("SWLRC_READY"));
+                lyricsReadyIds.addAll(songLyricStatusService.activeMusicIdsForFilter("LRC_READY"));
+                if (!lyricsReadyIds.isEmpty()) {
+                    int idx = params.size() + 1;
+                    query.append(" and id not in ?").append(idx);
+                    params.add(lyricsReadyIds);
+                }
             }
+        }
+
+        if (lyricStatus != null && !lyricStatus.isBlank() && !"ALL".equalsIgnoreCase(lyricStatus)) {
+            List<Long> ids = songLyricStatusService.activeMusicIdsForFilter(lyricStatus);
+            int idx = params.size() + 1;
+            query.append(" and id in ?").append(idx);
+            params.add(ids.isEmpty() ? List.of(-1L) : ids);
         }
 
         if (hasArtwork != null) {

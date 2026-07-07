@@ -14,6 +14,8 @@ export interface MusicItem {
   metadataUpdatedAt: string | null
   lyricStatus: string
   lyricId: number | null
+  hasLrc: boolean
+  hasSwlrc: boolean
   artworkStatus: string
   artworkId: number | null
   artworkPreviewUrl: string | null
@@ -43,6 +45,7 @@ export interface MusicListQuery {
   year?: number
   genre?: string
   hasLyrics?: boolean | null
+  lyricStatus?: string
   hasArtwork?: boolean | null
   metadata?: string
 }

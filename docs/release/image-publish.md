@@ -53,7 +53,7 @@ v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜
 - Docker Hub 使用 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN` 登录。
 - 使用 `docker/build-push-action@v6` 一次构建、多 tag 推送。
 - 不在日志中打印 token，不把凭证写入文件。
-- 不自动创建 GitHub Release；发布完成后可手动创建 Release，并引用 `docs/release/v1.3.2-release-notes.md`。
+- 不自动创建 GitHub Release；发布完成后可手动创建 Release，并引用 `docs/release/v1.3.3-release-notes.md`。
 
 默认发布平台：
 

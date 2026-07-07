@@ -37,7 +37,7 @@
 |------|------|------|
 | Scan Engine | 扫描音乐目录，文件发现与入库 | 已实现基础能力（v0.2，v0.3 兜底元数据） |
 | Metadata Service | 歌手/专辑/曲目元数据的 CRUD，歌手聚合列表与详情，元数据同步与审计回滚 | 已实现（v0.8.7） |
-| Lyrics Service | 本地 LRC 导入、存储、歌曲绑定、歌词状态查询、草稿确认和对齐资产导入 | 已实现基础能力（v0.5），草稿 / 对齐闭环（v1.3.0），工作台体验优化（v1.3.2） |
+| Lyrics Service | 本地 LRC 导入、存储、歌曲绑定、统一歌词状态、覆盖率统计、每日推荐、草稿确认和对齐资产导入 | 已实现基础能力（v0.5），草稿 / 对齐闭环（v1.3.0），工作台体验优化（v1.3.2），歌词待办看板（v1.3.3） |
 | Artwork Service | 本地封面扫描、去重、文件访问与音乐绑定 | 已实现基础能力（v0.6） |
 | Match Engine | 自动匹配音乐指纹与元数据源 | 规划中 |
 | Review Workflow | 人工审核工作流与状态机 | 规划中 |
@@ -50,8 +50,8 @@
 
 | 页面 | 路由 | 状态 |
 |------|------|------|
-| 概览仪表盘 | `/dashboard` | 已实现（统计卡片） |
-| 全部歌曲（表格/卡片视图） | `/music` | 已实现（v0.8.0） |
+| 概览仪表盘 | `/dashboard` | 已实现（统计卡片，v1.3.3 新增歌词覆盖率与每日待办） |
+| 全部歌曲（表格/卡片视图） | `/music` | 已实现（v0.8.0，v1.3.3 新增歌词状态筛选） |
 | 歌曲工作台 | `/music/workbench` | 已实现 MVP（v1.2.1），小屏布局优化（v1.2.2），手工草稿、Brave 候选来源和 SWLRC 逐字试听（v1.3.2） |
 | 歌手浏览 | `/artists` | 已实现（v0.8.1） |
 | 歌手详情 | `/artists/:artistKey` | 已实现（v0.8.2） |
@@ -157,6 +157,20 @@ v1.3.1 起，正式对齐资产发布到歌词目录受控 `alignment` 子目录
 - 文件监听。
 - 音库伪造、估算或模拟 Worker 阶段和百分比进度。
 - 逐字时间轴编辑器。
+
+## 歌词状态与推荐数据流（v1.3.3）
+
+统一歌词状态由 `SongLyricStatusService` 计算，首页、歌曲列表、歌曲工作台和推荐服务不再各自拼装判断。
+
+```text
+track_files + song_lyrics + lyrics + lyric_alignment_jobs + lyric_drafts
+→ SongLyricStatusService
+→ /api/music lyricStatus / hasLrc / hasSwlrc
+→ /api/admin/lyrics/overview
+→ /api/admin/lyrics/recommendations/*
+```
+
+每日推荐首次访问当天会写入 `lyric_daily_recommendation`，后续刷新返回同一批可见记录。跳过只隐藏当天推荐，不补位；换一首会将原记录标记为 `REPLACED`，并为原槽位持久化一条新推荐。推荐与随机候选都只生成候选，不自动创建歌词草稿、对齐任务或批量制作。
 
 ## 存储目录规划
 

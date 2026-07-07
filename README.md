@@ -16,7 +16,7 @@
 
 ## 项目定位
 
-Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.3.2 在 v1.3.0 / v1.3.1 歌词草稿、逐字对齐、审核导入与正式资产目录收口基础上，补齐手工粘贴草稿、Brave Search 候选来源辅助、管理端 SWLRC 逐字试听和歌词工作台布局优化；对齐和 Worker 草稿提取仍由独立 `xingyu-lyrics-aligner:0.4.0` Worker 通过共享目录完成，音库容器不内置 Python、WhisperX 或 PyTorch。
+Xingyu Music Vault 是一个音乐库管理后台和只读 OpenAPI 服务，不是面向终端用户的播放器。它负责扫描本地音乐文件，管理歌曲元数据、歌词和封面，并向播放器客户端或其他工具提供稳定的音乐库数据接口。v1.3.3 在 v1.3.0 / v1.3.1 / v1.3.2 歌词草稿、逐字对齐、审核导入与歌词工作台基础上，新增歌词覆盖率看板、每日稳定歌词待办推荐、随机挑选待处理歌曲和统一歌词状态筛选；对齐和 Worker 草稿提取仍由独立 `xingyu-lyrics-aligner:0.4.0` Worker 通过共享目录完成，音库容器不内置 Python、WhisperX 或 PyTorch。
 
 核心边界：
 
@@ -44,6 +44,9 @@ v1.1.3 已补充 OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证。管理
 - 手工歌词草稿：管理员可跳过 Worker 草稿提取，直接粘贴歌词文本创建草稿，并继续确认可信歌词与创建逐字对齐任务
 - Brave Search 候选来源辅助：仅搜索并记录候选来源标题、URL、域名和查询词，不抓取、不下载、不缓存第三方歌词网页全文
 - 歌词对齐任务创建、Worker 共享目录联调、人工审核与确认导入；导入后的 LRC 兼容现有播放，SWLRC 作为可选逐字歌词附加资产，并正式发布到歌词目录受控 `alignment/{songId}/{jobId}` 子目录
+- 歌词资产进度看板：统计可用歌曲总数、有效 LRC / SWLRC 覆盖率、无歌词、制作中和待确认数量
+- 歌词待办推荐：每天稳定推荐最多 5 首缺少 SWLRC 的歌曲，区分“已有 LRC，建议升级逐字歌词”和“暂无歌词，可开始整理”
+- 随机挑选待制作歌曲：按 5 / 10 / 20 首生成候选列表，不自动批量创建歌词任务
 - 本地封面扫描、导入、绑定与文件访问
 - 音乐元数据编辑、批量整理、音频 Tag 差异比较与受控写回
 - 管理端歌曲工作台：边播放边查看元数据、歌词、封面与 OpenAPI 输出预览；有 SWLRC 时支持逐字歌词试听，无 SWLRC 或解析异常时回退 LRC 行级歌词
@@ -54,7 +57,7 @@ v1.1.3 已补充 OpenAPI AK/SK 凭证管理与 HMAC-SHA256 签名认证。管理
 
 ## 镜像部署
 
-v1.3.2 推荐使用精确版本 tag 部署。`latest` 适合快速体验，不建议作为长期生产固定版本。
+v1.3.3 推荐使用精确版本 tag 部署。`latest` 适合快速体验，不建议作为长期生产固定版本。
 
 镜像地址：
 
@@ -95,7 +98,7 @@ docker compose up -d --build
 - [仲夏星河主题资源试接](docs/themes/midsummer-starlight.md)
 - [秋日唱片主题资源接入](docs/themes/autumn-vinyl.md)
 - [冬夜雪境主题资源接入](docs/themes/winter-moonlight.md)
-- [Release Notes](docs/release/v1.3.2-release-notes.md)
+- [Release Notes](docs/release/v1.3.3-release-notes.md)
 - [更新日志](docs/changelog.md)
 - [贡献说明](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
@@ -113,6 +116,7 @@ docker compose up -d --build
 ## 版本里程碑
 
 ```text
+v1.3.3 [x] 歌词待办与覆盖率看板：统一歌词状态、每日稳定推荐、随机待处理候选与列表状态筛选
 v1.3.2 [x] 歌词工作台体验优化：手工草稿、Brave 候选来源、SWLRC 逐字试听与布局优化
 v1.3.1 [x] 正式对齐歌词资产目录收口到歌词目录受控 alignment 子目录
 v1.3.0 [x] 歌词草稿提取、边听边校对、可信歌词确认、逐字对齐审核与 LRC / SWLRC 导入

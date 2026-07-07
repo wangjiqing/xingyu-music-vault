@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Edit, MoreFilled, PictureFilled, View, Connection } from '@element-plus/icons-vue'
 import type { MusicItem } from '../../api/music'
-import { ARTWORK_STATUS, LYRIC_STATUS } from '../../constants/musicStatus'
+import { ARTWORK_STATUS } from '../../constants/musicStatus'
 import ArtworkImage from './ArtworkImage.vue'
 import StatusBadges from './StatusBadges.vue'
 
@@ -48,7 +48,7 @@ function displayTitle(item: MusicItem) {
         编辑
       </el-button>
       <el-button
-        v-if="item.lyricStatus === LYRIC_STATUS.BOUND"
+        v-if="item.hasLrc || item.hasSwlrc"
         type="primary"
         size="small"
         text
