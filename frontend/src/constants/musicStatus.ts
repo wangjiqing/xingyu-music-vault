@@ -12,11 +12,15 @@ export type MusicListViewMode = (typeof MUSIC_LIST_VIEW_MODE)[keyof typeof MUSIC
 export const DEFAULT_MUSIC_LIST_VIEW_MODE: MusicListViewMode = MUSIC_LIST_VIEW_MODE.CARD
 
 export const LYRIC_STATUS = {
+  SWLRC_READY: 'SWLRC_READY',
+  LRC_READY: 'LRC_READY',
+  NO_LYRICS: 'NO_LYRICS',
+  ALIGNMENT_RUNNING: 'ALIGNMENT_RUNNING',
+  DRAFT_PENDING: 'DRAFT_PENDING',
+  FAILED: 'FAILED',
+  // Backward-compatible values returned by legacy lyric scan APIs. Song lists use the v1.3.3 values above.
   BOUND: 'BOUND',
   NO_LYRIC: 'NO_LYRIC',
-  UNMATCHED: 'UNMATCHED',
-  PARSE_FAILED: 'PARSE_FAILED',
-  MISSING_FILE: 'MISSING_FILE',
 } as const
 
 export const ARTWORK_STATUS = {
@@ -44,22 +48,28 @@ export type StatusTagType = 'success' | 'info' | 'warning' | 'danger'
 
 export function lyricStatusLabel(status: string | null | undefined) {
   const map: Record<string, string> = {
+    [LYRIC_STATUS.SWLRC_READY]: '已有 SWLRC',
+    [LYRIC_STATUS.LRC_READY]: '仅有 LRC',
+    [LYRIC_STATUS.NO_LYRICS]: '无歌词',
+    [LYRIC_STATUS.ALIGNMENT_RUNNING]: '制作中',
+    [LYRIC_STATUS.DRAFT_PENDING]: '待确认',
+    [LYRIC_STATUS.FAILED]: '制作异常',
     [LYRIC_STATUS.BOUND]: '有歌词',
     [LYRIC_STATUS.NO_LYRIC]: '无歌词',
-    [LYRIC_STATUS.UNMATCHED]: '待匹配',
-    [LYRIC_STATUS.PARSE_FAILED]: '解析失败',
-    [LYRIC_STATUS.MISSING_FILE]: '文件缺失',
   }
   return status ? map[status] || status : '无歌词'
 }
 
 export function lyricStatusTagType(status: string | null | undefined): StatusTagType {
   const map: Record<string, StatusTagType> = {
+    [LYRIC_STATUS.SWLRC_READY]: 'success',
+    [LYRIC_STATUS.LRC_READY]: 'warning',
+    [LYRIC_STATUS.NO_LYRICS]: 'info',
+    [LYRIC_STATUS.ALIGNMENT_RUNNING]: 'warning',
+    [LYRIC_STATUS.DRAFT_PENDING]: 'warning',
+    [LYRIC_STATUS.FAILED]: 'danger',
     [LYRIC_STATUS.BOUND]: 'success',
     [LYRIC_STATUS.NO_LYRIC]: 'info',
-    [LYRIC_STATUS.UNMATCHED]: 'warning',
-    [LYRIC_STATUS.PARSE_FAILED]: 'danger',
-    [LYRIC_STATUS.MISSING_FILE]: 'danger',
   }
   return status ? map[status] || 'info' : 'info'
 }

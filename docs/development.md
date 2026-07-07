@@ -73,7 +73,7 @@ curl -i -X POST http://localhost:8080/api/lyrics/scan \
   -d '{"path": "/path/to/lyrics"}'
 ```
 
-歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定的歌曲，`GET /api/music` 才会显示 `lyricStatus = BOUND` 和 `lyricId`。当本次扫描完整成功且 `failed=0` 时，当前扫描歌词目录也是可用性同步来源：目录中已删除的本地 LRC 会触发旧绑定解绑，OpenAPI 随后返回无歌词；扫描失败或目录不可访问时不会做删除清理。
+歌词扫描会返回 `matched`、`unmatched`、`duplicateFiles` 等统计。只有生成了 `song_lyrics` 主绑定且歌词文件仍可用的歌曲，`GET /api/music` 才会显示歌曲级歌词状态，例如 `lyricStatus = LRC_READY`、`lyricId`、`hasLrc=true`。当本次扫描完整成功且 `failed=0` 时，当前扫描歌词目录也是可用性同步来源：目录中已删除的本地 LRC 会触发旧绑定解绑，OpenAPI 随后返回无歌词；扫描失败或目录不可访问时不会做删除清理。
 
 v1.2.4 起，歌词扫描按规范化后的 `source_path` 幂等更新。删除同一路径 `.lrc` 后扫描会解绑旧记录；将 `.lrc` 恢复到同一路径后再次扫描，应复用原 `lyrics.id`，更新正文和 hash，并恢复 `song_lyrics` 绑定，不应新增同路径重复记录。
 
@@ -91,7 +91,7 @@ curl 'http://localhost:8080/api/songs/1/lyrics' \
 - [ ] `GET /api/music/{id}` 返回音乐详情
 - [ ] 重复扫描 `skippedFiles` > 0
 - [ ] `POST /api/lyrics/scan` 返回 200，且 `matched` 反映自动绑定数量
-- [ ] 已绑定歌曲在 `GET /api/music` 中返回 `lyricStatus = BOUND`
+- [ ] 已绑定且文件可用的 LRC 歌曲在 `GET /api/music` 中返回 `lyricStatus = LRC_READY`
 
 ## v0.4 前后端联调验证
 

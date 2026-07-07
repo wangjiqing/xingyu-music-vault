@@ -29,7 +29,7 @@ class FlywayMigrationRegressionTest {
         Flyway flyway = flyway(jdbcUrl);
 
         MigrateResult first = flyway.migrate();
-        assertEquals(20, first.migrationsExecuted);
+        assertEquals(22, first.migrationsExecuted);
 
         MigrateResult second = flyway.migrate();
         assertEquals(0, second.migrationsExecuted);
@@ -95,6 +95,9 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "lyric_alignment_job_events",
                     "id", "task_id", "music_id", "action", "operator", "note", "before_status",
                     "after_status", "error_message", "created_at");
+            assertColumns(connection, "lyric_daily_recommendation",
+                    "id", "recommendation_date", "slot_no", "music_id", "recommendation_type",
+                    "action_status", "replaced_by_id", "created_at", "updated_at", "acted_at");
             assertIndexes(connection,
                     "idx_lyric_alignment_jobs_song_id",
                     "idx_lyric_alignment_jobs_status",
@@ -115,7 +118,11 @@ class FlywayMigrationRegressionTest {
                     "idx_lyric_draft_sources_draft_id",
                     "idx_lyric_alignment_job_events_task_id",
                     "idx_lyric_alignment_job_events_action",
-                    "idx_lyric_alignment_job_events_created_at");
+                    "idx_lyric_alignment_job_events_created_at",
+                    "idx_lyric_daily_recommendation_date",
+                    "idx_lyric_daily_recommendation_music",
+                    "idx_lyric_daily_recommendation_date_music",
+                    "idx_lyric_daily_recommendation_active_slot");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }
@@ -149,7 +156,7 @@ class FlywayMigrationRegressionTest {
         }
 
         MigrateResult result = flyway(jdbcUrl).migrate();
-        assertEquals(19, result.migrationsExecuted);
+        assertEquals(21, result.migrationsExecuted);
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl)) {
             assertEquals("旧歌", querySingle(connection, "select title from tracks where id = 1"));
@@ -168,6 +175,8 @@ class FlywayMigrationRegressionTest {
             assertColumns(connection, "app_settings", "setting_key", "setting_value_encrypted", "enabled");
             assertColumns(connection, "lyric_draft_sources", "draft_id", "provider", "url", "selected_at");
             assertColumns(connection, "lyric_alignment_job_events", "task_id", "music_id", "action", "operator");
+            assertColumns(connection, "lyric_daily_recommendation",
+                    "recommendation_date", "slot_no", "music_id", "recommendation_type", "action_status");
             assertEquals("ok", querySingle(connection, "pragma integrity_check"));
         }
     }

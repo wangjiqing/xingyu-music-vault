@@ -104,7 +104,7 @@ class LyricResourceTest {
                 .then()
                 .statusCode(200)
                 .body("items[0].id", equalTo(songId.intValue()))
-                .body("items[0].lyricStatus", equalTo("BOUND"))
+                .body("items[0].lyricStatus", equalTo("LRC_READY"))
                 .body("items[0].lyricId", notNullValue());
 
         Lyric lyric = Lyric.find("title", "晴天").firstResult();

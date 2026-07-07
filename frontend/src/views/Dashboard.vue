@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowRight, Collection, DataAnalysis, Delete, Headset, MagicStick } from '@element-plus/icons-vue'
+import { fetchLyricOverview, type LyricOverview } from '../api/lyricDashboard'
 import { fetchMusicStats, type MusicStats } from '../api/music'
+import DailyLyricRecommendations from '../components/lyrics/DailyLyricRecommendations.vue'
+import RandomLyricCandidatesDialog from '../components/lyrics/RandomLyricCandidatesDialog.vue'
 import {
   activeThemeId,
   currentThemeAssets,
@@ -9,46 +13,20 @@ import {
   type CurrentThemeConfig,
 } from '../theme/currentTheme'
 
+const router = useRouter()
+const randomDialogRef = ref<InstanceType<typeof RandomLyricCandidatesDialog>>()
+
 const quickEntries = computed(() => [
-  {
-    title: '全部歌曲',
-    description: '浏览、筛选和整理音乐库',
-    path: '/music',
-    image: currentThemeAssets.value.emptyStates.songs,
-  },
-  {
-    title: '歌手',
-    description: '按歌手聚合音乐、专辑和整理状态',
-    path: '/artists',
-    image: currentThemeAssets.value.emptyStates.artists,
-  },
-  {
-    title: '专辑',
-    description: '按专辑查看曲目、封面和歌词覆盖情况',
-    path: '/albums',
-    image: currentThemeAssets.value.emptyStates.albums,
-  },
-  {
-    title: '歌词',
-    description: '扫描和查看歌词绑定状态',
-    path: '/lyrics',
-    image: currentThemeAssets.value.emptyStates.lyrics,
-  },
-  {
-    title: '封面',
-    description: '管理封面素材和绑定关系',
-    path: '/artwork',
-    image: currentThemeAssets.value.emptyStates.cover,
-  },
-  {
-    title: '设置',
-    description: '配置连接和访问令牌',
-    path: '/settings',
-    image: currentThemeAssets.value.emptyStates.metadataPending,
-  },
+  { title: '全部歌曲', description: '浏览、筛选和整理音乐库', path: '/music', image: currentThemeAssets.value.emptyStates.songs },
+  { title: '歌手', description: '按歌手聚合音乐、专辑和整理状态', path: '/artists', image: currentThemeAssets.value.emptyStates.artists },
+  { title: '专辑', description: '按专辑查看曲目、封面和歌词覆盖情况', path: '/albums', image: currentThemeAssets.value.emptyStates.albums },
+  { title: '歌词', description: '扫描和查看歌词绑定状态', path: '/lyrics', image: currentThemeAssets.value.emptyStates.lyrics },
+  { title: '封面', description: '管理封面素材和绑定关系', path: '/artwork', image: currentThemeAssets.value.emptyStates.cover },
+  { title: '设置', description: '配置连接和访问令牌', path: '/settings', image: currentThemeAssets.value.emptyStates.metadataPending },
 ])
 
 const stats = ref<MusicStats | null>(null)
+const lyricOverview = ref<LyricOverview | null>(null)
 const statsLoading = ref(false)
 const statsError = ref(false)
 const currentTheme = ref<CurrentThemeConfig | null>(null)
@@ -58,50 +36,25 @@ const themeStyleVars = computed(() => ({
 
 const heroSubtitle = computed(() => {
   const parts = ['Xingyu Music Vault']
-  if (currentTheme.value?.englishName) {
-    parts.push(currentTheme.value.englishName)
-  }
+  if (currentTheme.value?.englishName) parts.push(currentTheme.value.englishName)
   return parts.join(' · ')
 })
 
 const statCards = computed(() => [
-  {
-    label: '音乐总数',
-    value: stats.value?.total,
-    color: '#26384d',
-    icon: Headset,
-  },
-  {
-    label: '待整理',
-    value: stats.value?.metadataIncomplete,
-    color: '#e6a23c',
-    icon: MagicStick,
-  },
-  {
-    label: '有歌词',
-    value: stats.value?.lyricsReady,
-    color: '#67c23a',
-    icon: DataAnalysis,
-  },
-  {
-    label: '有封面',
-    value: stats.value?.artworkReady,
-    color: '#409eff',
-    icon: Collection,
-  },
-  {
-    label: '回收站',
-    value: stats.value?.trashed,
-    color: '#909399',
-    icon: Delete,
-  },
+  { label: '音乐总数', value: stats.value?.total, color: '#26384d', icon: Headset },
+  { label: '待整理', value: stats.value?.metadataIncomplete, color: '#e6a23c', icon: MagicStick },
+  { label: '有歌词', value: stats.value?.lyricsReady, color: '#67c23a', icon: DataAnalysis },
+  { label: '有封面', value: stats.value?.artworkReady, color: '#409eff', icon: Collection },
+  { label: '回收站', value: stats.value?.trashed, color: '#909399', icon: Delete },
 ])
 
 async function loadStats() {
   statsLoading.value = true
   statsError.value = false
   try {
-    stats.value = await fetchMusicStats()
+    const [musicStats, overview] = await Promise.all([fetchMusicStats(), fetchLyricOverview()])
+    stats.value = musicStats
+    lyricOverview.value = overview
   } catch {
     statsError.value = true
   } finally {
@@ -112,6 +65,19 @@ async function loadStats() {
 function formatStatValue(value: number | undefined): string {
   if (value == null) return '--'
   return new Intl.NumberFormat('zh-CN').format(value)
+}
+
+function formatRate(value: number | undefined): string {
+  if (value == null) return '--'
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function openMissingSwlrc() {
+  router.push({ path: '/music', query: { lyricStatus: 'MISSING_SWLRC' } })
+}
+
+function openWorkbench() {
+  router.push('/music/workbench')
 }
 
 onMounted(() => {
@@ -140,34 +106,19 @@ watch(activeThemeId, (themeId) => {
   <div class="dashboard-page" :style="themeStyleVars">
     <section class="hero-panel">
       <div class="hero-copy">
-        <img
-          :src="currentThemeAssets.logoHorizontal"
-          alt="星语音库"
-          class="hero-logo"
-        />
+        <img :src="currentThemeAssets.logoHorizontal" alt="星语音库" class="hero-logo" />
         <div class="hero-title">星语音库</div>
         <div class="hero-subtitle">{{ heroSubtitle }}</div>
       </div>
-      <img
-        :src="currentThemeAssets.emptyStates.home"
-        alt=""
-        class="hero-illustration"
-        aria-hidden="true"
-      />
+      <img :src="currentThemeAssets.emptyStates.home" alt="" class="hero-illustration" aria-hidden="true" />
     </section>
 
     <section class="stats-grid" v-loading="statsLoading">
-      <div
-        v-for="card in statCards"
-        :key="card.label"
-        class="stat-card"
-      >
+      <div v-for="card in statCards" :key="card.label" class="stat-card">
         <div class="stat-icon" :style="{ color: card.color, backgroundColor: `${card.color}14` }">
           <el-icon><component :is="card.icon" /></el-icon>
         </div>
-        <div class="stat-value" :style="{ color: card.color }">
-          {{ formatStatValue(card.value) }}
-        </div>
+        <div class="stat-value" :style="{ color: card.color }">{{ formatStatValue(card.value) }}</div>
         <div class="stat-label">{{ card.label }}</div>
       </div>
     </section>
@@ -182,13 +133,35 @@ watch(activeThemeId, (themeId) => {
       @close="statsError = false"
     />
 
+    <section class="lyric-progress" v-loading="statsLoading">
+      <div class="progress-header">
+        <div>
+          <h2>歌词资产进度</h2>
+          <p>统计当前可用的本地歌曲，区分 SWLRC、LRC 与待处理状态</p>
+        </div>
+        <div class="progress-actions">
+          <el-button type="primary" size="small" @click="openMissingSwlrc">查看缺少 SWLRC</el-button>
+          <el-button size="small" @click="openWorkbench">进入歌词工作台</el-button>
+          <el-button size="small" @click="randomDialogRef?.open()">随机挑选待制作歌曲</el-button>
+        </div>
+      </div>
+      <div class="lyric-metrics">
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.totalSongs) }}</strong><span>歌曲总数</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.songsWithLyrics) }}</strong><span>有可用歌词</span></div>
+        <div class="metric"><strong>{{ formatRate(lyricOverview?.lyricsCoverageRate) }}</strong><span>歌词覆盖率</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.songsWithSwlrc) }}</strong><span>已有 SWLRC</span></div>
+        <div class="metric"><strong>{{ formatRate(lyricOverview?.swlrcCoverageRate) }}</strong><span>SWLRC 覆盖率</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.songsWithLrcOnly) }}</strong><span>仅有 LRC</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.songsWithoutLyrics) }}</strong><span>无歌词</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.alignmentRunning) }}</strong><span>制作中</span></div>
+        <div class="metric"><strong>{{ formatStatValue(lyricOverview?.draftPending) }}</strong><span>待确认</span></div>
+      </div>
+    </section>
+
+    <DailyLyricRecommendations />
+
     <div class="home-grid">
-      <router-link
-        v-for="entry in quickEntries"
-        :key="entry.path"
-        :to="entry.path"
-        class="home-entry"
-      >
+      <router-link v-for="entry in quickEntries" :key="entry.path" :to="entry.path" class="home-entry">
         <div class="home-entry-art">
           <img :src="entry.image" alt="" aria-hidden="true" />
         </div>
@@ -201,6 +174,8 @@ watch(activeThemeId, (themeId) => {
         </div>
       </router-link>
     </div>
+
+    <RandomLyricCandidatesDialog ref="randomDialogRef" />
   </div>
 </template>
 
@@ -219,9 +194,6 @@ watch(activeThemeId, (themeId) => {
   min-height: 220px;
   padding: 28px 34px;
   overflow: hidden;
-  background:
-    linear-gradient(90deg, rgba(246, 251, 255, 0.95), rgba(246, 251, 255, 0.7)),
-    url('/themes/midsummer-starlight/banner/readme-banner.webp') center / cover;
   background:
     linear-gradient(90deg, rgba(246, 251, 255, 0.95), rgba(246, 251, 255, 0.7)),
     var(--xy-hero-background-image) center / cover;
@@ -261,23 +233,31 @@ watch(activeThemeId, (themeId) => {
   opacity: 0.92;
   filter: drop-shadow(0 16px 24px rgba(38, 56, 77, 0.16));
 }
-.stats-grid {
+.stats-grid,
+.lyric-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+}
+.stats-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.lyric-metrics {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+.stat-card,
+.lyric-progress,
+.home-entry {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(221, 234, 245, 0.92);
+  border-radius: 8px;
 }
 .stat-card {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
-  grid-template-areas:
-    'icon value'
-    'icon label';
+  grid-template-areas: 'icon value' 'icon label';
   align-items: center;
   min-height: 72px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(221, 234, 245, 0.92);
-  border-radius: 8px;
 }
 .stat-icon {
   grid-area: icon;
@@ -302,8 +282,48 @@ watch(activeThemeId, (themeId) => {
   color: var(--xy-text-secondary, #6e8198);
   font-size: 12px;
 }
-.stats-alert {
-  flex: 0 0 auto;
+.lyric-progress {
+  padding: 16px;
+}
+.progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.progress-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.progress-header p {
+  margin: 4px 0 0;
+  color: var(--xy-text-secondary, #6e8198);
+  font-size: 12px;
+}
+.progress-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.metric {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(221, 234, 245, 0.88);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.62);
+}
+.metric strong {
+  display: block;
+  color: var(--xy-text-primary, #26384d);
+  font-size: 18px;
+}
+.metric span {
+  display: block;
+  margin-top: 4px;
+  color: var(--xy-text-secondary, #6e8198);
+  font-size: 12px;
 }
 .home-grid {
   display: grid;
@@ -319,27 +339,8 @@ watch(activeThemeId, (themeId) => {
   padding: 12px 16px 12px 12px;
   color: inherit;
   text-decoration: none;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(221, 234, 245, 0.92);
-  border-radius: 8px;
   overflow: hidden;
-  transition:
-    transform 0.2s,
-    border-color 0.2s,
-    box-shadow 0.2s,
-    background-color 0.2s;
-}
-.home-entry::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(105deg, transparent 0%, rgba(142, 205, 248, 0.14) 42%, transparent 70%);
-  opacity: 0;
-  transform: translateX(-30%);
-  transition:
-    opacity 0.2s,
-    transform 0.3s;
+  transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
 }
 .home-entry:hover {
   transform: translateY(-2px);
@@ -347,20 +348,7 @@ watch(activeThemeId, (themeId) => {
   border-color: var(--xy-primary, #409eff);
   box-shadow: 0 10px 26px rgba(142, 205, 248, 0.28);
 }
-.home-entry:hover::after {
-  opacity: 1;
-  transform: translateX(30%);
-}
-.home-entry:hover .home-entry-art img {
-  transform: scale(1.08) rotate(-2deg);
-}
-.home-entry:hover .home-entry-action {
-  transform: translateX(4px);
-  color: var(--xy-primary, #409eff);
-}
 .home-entry-art {
-  position: relative;
-  z-index: 1;
   width: 58px;
   height: 58px;
   border-radius: 8px;
@@ -374,10 +362,8 @@ watch(activeThemeId, (themeId) => {
   object-fit: cover;
   transition: transform 0.24s;
 }
-.home-entry-copy {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
+.home-entry:hover .home-entry-art img {
+  transform: scale(1.08) rotate(-2deg);
 }
 .home-entry-title {
   font-size: 15px;
@@ -391,19 +377,22 @@ watch(activeThemeId, (themeId) => {
   color: var(--xy-text-secondary, #606266);
 }
 .home-entry-action {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #8a9ab0;
   font-size: 18px;
-  transition:
-    color 0.2s,
-    transform 0.2s;
+  transition: color 0.2s, transform 0.2s;
+}
+.home-entry:hover .home-entry-action {
+  transform: translateX(4px);
+  color: var(--xy-primary, #409eff);
 }
 @media (max-width: 1180px) {
   .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .lyric-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .hero-illustration {
@@ -419,8 +408,13 @@ watch(activeThemeId, (themeId) => {
     padding: 22px;
   }
   .stats-grid,
+  .lyric-metrics,
   .home-grid {
     grid-template-columns: 1fr;
+  }
+  .progress-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .home-entry {
     grid-template-columns: 64px minmax(0, 1fr) 28px;

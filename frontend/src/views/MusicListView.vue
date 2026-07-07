@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { View, PictureFilled, UploadFilled, Edit, Delete, DeleteFilled, RefreshRight, Search, MoreFilled, Grid, List as ListIcon, Connection, Headset } from '@element-plus/icons-vue'
 import {
@@ -27,7 +27,6 @@ import {
 import {
   ARTWORK_STATUS,
   DEFAULT_MUSIC_LIST_VIEW_MODE,
-  LYRIC_STATUS,
   MUSIC_LIST_VIEW_MODE,
   MUSIC_LIST_VIEW_MODE_STORAGE_KEY,
   type MusicListViewMode,
@@ -42,6 +41,7 @@ import { currentThemeAssets } from '../theme/currentTheme'
 
 const list = ref<MusicItem[]>([])
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const scanning = ref(false)
 const scanningLyrics = ref(false)
@@ -58,7 +58,7 @@ const query = reactive({
   page: 1,
   size: 20,
   keyword: '',
-  hasLyrics: null as boolean | null,
+  lyricStatus: typeof route.query.lyricStatus === 'string' ? route.query.lyricStatus : '',
   hasArtwork: null as boolean | null,
   metadata: '',
 })
@@ -181,7 +181,7 @@ function musicListParams(page: number) {
     page: page - 1,
     size: query.size,
     keyword: query.keyword || undefined,
-    hasLyrics: query.hasLyrics ?? undefined,
+    lyricStatus: query.lyricStatus || undefined,
     hasArtwork: query.hasArtwork ?? undefined,
     metadata: query.metadata || undefined,
   }
@@ -606,7 +606,7 @@ function trashDisplayTitle(row: MusicTrashItem): string {
 }
 
 function emptyText(): string {
-  return query.keyword || query.hasLyrics != null || query.hasArtwork != null || query.metadata
+  return query.keyword || query.lyricStatus || query.hasArtwork != null || query.metadata
     ? '没有匹配的结果'
     : '暂无音乐文件，请点击「扫描音乐目录」导入'
 }
@@ -711,17 +711,21 @@ onMounted(() => {
         @clear="handleSearch"
       />
       <el-select
-        v-model="query.hasLyrics"
+        v-model="query.lyricStatus"
         placeholder="歌词"
         clearable
         size="small"
-        style="width: 100px; margin-left: 8px"
+        style="width: 140px; margin-left: 8px"
         @change="handleFilterChange"
-        @clear="query.hasLyrics = null"
       >
-        <el-option label="全部" :value="null" />
-        <el-option label="有歌词" :value="true" />
-        <el-option label="无歌词" :value="false" />
+        <el-option label="全部" value="" />
+        <el-option label="缺少 SWLRC" value="MISSING_SWLRC" />
+        <el-option label="已有 SWLRC" value="SWLRC_READY" />
+        <el-option label="仅有 LRC" value="LRC_READY" />
+        <el-option label="无歌词" value="NO_LYRICS" />
+        <el-option label="制作中" value="ALIGNMENT_RUNNING" />
+        <el-option label="待确认" value="DRAFT_PENDING" />
+        <el-option label="制作异常" value="FAILED" />
       </el-select>
       <el-select
         v-model="query.hasArtwork"
@@ -863,7 +867,7 @@ onMounted(() => {
               封面
             </el-button>
             <el-button
-              v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+              v-if="row.hasLrc || row.hasSwlrc"
               type="primary"
               size="small"
               text

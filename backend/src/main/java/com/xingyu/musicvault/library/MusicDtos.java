@@ -37,6 +37,8 @@ public final class MusicDtos {
             LocalDateTime metadataUpdatedAt,
             String lyricStatus,
             Long lyricId,
+            boolean hasLrc,
+            boolean hasSwlrc,
             String artworkStatus,
             Long artworkId,
             String artworkPreviewUrl,
@@ -68,6 +70,8 @@ public final class MusicDtos {
                 TrackFile trackFile,
                 String lyricStatus,
                 Long lyricId,
+                boolean hasLrc,
+                boolean hasSwlrc,
                 String artworkStatus,
                 Long artworkId,
                 String artworkPreviewUrl,
@@ -75,11 +79,13 @@ public final class MusicDtos {
                 Boolean artworkFileExists
         ) {
             Track track = trackFile.trackId == null ? null : Track.findById(trackFile.trackId);
-            return from(trackFile, track, lyricStatus, lyricId, artworkStatus, artworkId, artworkPreviewUrl, artworkFileName, artworkFileExists);
+            return from(trackFile, track, lyricStatus, lyricId, hasLrc, hasSwlrc, artworkStatus, artworkId, artworkPreviewUrl, artworkFileName, artworkFileExists);
         }
 
         public static MusicResponse from(TrackFile trackFile, Track track, String lyricStatus, Long lyricId) {
-            return from(trackFile, track, lyricStatus, lyricId, null, null, null, null, null);
+            boolean hasSwlrc = "SWLRC_READY".equals(lyricStatus);
+            boolean hasLrc = hasSwlrc || "LRC_READY".equals(lyricStatus);
+            return from(trackFile, track, lyricStatus, lyricId, hasLrc, hasSwlrc, null, null, null, null, null);
         }
 
         public static MusicResponse from(
@@ -87,6 +93,8 @@ public final class MusicDtos {
                 Track track,
                 String lyricStatus,
                 Long lyricId,
+                boolean hasLrc,
+                boolean hasSwlrc,
                 String artworkStatus,
                 Long artworkId,
                 String artworkPreviewUrl,
@@ -106,6 +114,8 @@ public final class MusicDtos {
                     track == null ? null : track.metadataUpdatedAt,
                     lyricStatus,
                     lyricId,
+                    hasLrc,
+                    hasSwlrc,
                     artworkStatus == null ? "MISSING" : artworkStatus,
                     artworkId,
                     artworkPreviewUrl,

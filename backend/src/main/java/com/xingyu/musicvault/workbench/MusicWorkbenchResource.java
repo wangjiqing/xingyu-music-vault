@@ -7,6 +7,8 @@ import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.library.Track;
 import com.xingyu.musicvault.library.TrackFile;
 import com.xingyu.musicvault.lyrics.Lyric;
+import com.xingyu.musicvault.lyrics.SongLyricStatusService;
+import com.xingyu.musicvault.lyrics.SongLyricStatusSnapshot;
 import com.xingyu.musicvault.openapi.OpenApiPreviewService;
 import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.MusicWorkbenchResponse;
 import com.xingyu.musicvault.workbench.MusicWorkbenchDtos.WorkbenchArtworkResponse;
@@ -46,6 +48,9 @@ public class MusicWorkbenchResource {
     @Inject
     OpenApiPreviewService openApiPreviewService;
 
+    @Inject
+    SongLyricStatusService songLyricStatusService;
+
     @GET
     @Path("/{id}/workbench")
     @Produces(MediaType.APPLICATION_JSON)
@@ -53,14 +58,17 @@ public class MusicWorkbenchResource {
         TrackFile trackFile = findActiveTrackFile(id);
         Track track = trackOf(trackFile);
         Lyric lyric = openApiPreviewService.primaryLyric(id);
+        SongLyricStatusSnapshot lyricStatus = songLyricStatusService.snapshotForSong(id);
         Artwork artwork = openApiPreviewService.primaryArtwork(id);
         Artwork availableArtwork = artworkAvailable(artwork) ? artwork : null;
         return new MusicWorkbenchResponse(
                 MusicResponse.from(
                         trackFile,
                         track,
-                        lyric == null ? "NO_LYRIC" : "BOUND",
-                        lyric == null ? null : lyric.id,
+                        lyricStatus.lyricStatus().name(),
+                        lyricStatus.lyricId(),
+                        lyricStatus.hasLrc(),
+                        lyricStatus.hasSwlrc(),
                         availableArtwork == null ? "MISSING" : "BOUND",
                         availableArtwork == null ? null : availableArtwork.id,
                         availableArtwork == null ? null : "/api/artworks/" + availableArtwork.id + "/file",

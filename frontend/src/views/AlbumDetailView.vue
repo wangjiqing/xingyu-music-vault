@@ -15,7 +15,6 @@ import {
 import { fetchSongLyric, type SongLyric } from '../api/lyrics'
 import {
   ARTWORK_STATUS,
-  LYRIC_STATUS,
   lyricStatusLabel,
   lyricStatusTagType,
   artworkStatusLabel,
@@ -434,7 +433,7 @@ onMounted(() => {
                   同步
                 </el-button>
                 <el-button
-                  v-if="row.lyricStatus === LYRIC_STATUS.BOUND"
+                  v-if="row.hasLrc || row.hasSwlrc"
                   type="primary"
                   size="small"
                   text

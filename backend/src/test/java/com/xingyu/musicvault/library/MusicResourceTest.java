@@ -601,7 +601,7 @@ class MusicResourceTest {
                 .body("items", hasSize(1))
                 .body("items[0].title", equalTo("legacy"))
                 .body("items[0].artist", equalTo("Unknown"))
-                .body("items[0].lyricStatus", equalTo("NO_LYRIC"));
+                .body("items[0].lyricStatus", equalTo("NO_LYRICS"));
     }
 
     @Test
@@ -1780,12 +1780,18 @@ class MusicResourceTest {
     }
 
     private void createLyricOnly(Long musicId) {
+        Path lyricPath = musicDir.resolve("test-" + musicId + ".lrc").toAbsolutePath().normalize();
+        try {
+            Files.writeString(lyricPath, "[00:00.00]Test");
+        } catch (IOException exception) {
+            throw new RuntimeException(exception);
+        }
         QuarkusTransaction.requiringNew().run(() -> {
             Lyric lyric = new Lyric();
             lyric.title = "Test Lyric";
             lyric.artist = "Tester";
             lyric.sourceType = "local_file";
-            lyric.sourcePath = musicDir.resolve("test.lrc").toAbsolutePath().normalize().toString();
+            lyric.sourcePath = lyricPath.toString();
             lyric.content = "[00:00.00]Test";
             lyric.contentHash = "lyric-hash-" + musicId;
             lyric.format = "lrc";
@@ -2015,12 +2021,18 @@ class MusicResourceTest {
     }
 
     private BindingIds createPrimaryLyricAndArtwork(Long musicId) {
+        Path lyricPath = musicDir.resolve("preserve-" + musicId + ".lrc").toAbsolutePath().normalize();
+        try {
+            Files.writeString(lyricPath, "[00:00.00]Preserve");
+        } catch (IOException exception) {
+            throw new RuntimeException(exception);
+        }
         return QuarkusTransaction.requiringNew().call(() -> {
             Lyric lyric = new Lyric();
             lyric.title = "Preserve Lyric";
             lyric.artist = "Tester";
             lyric.sourceType = "local_file";
-            lyric.sourcePath = musicDir.resolve("preserve.lrc").toAbsolutePath().normalize().toString();
+            lyric.sourcePath = lyricPath.toString();
             lyric.content = "[00:00.00]Preserve";
             lyric.contentHash = "preserve-lyric-" + musicId;
             lyric.format = "lrc";
