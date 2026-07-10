@@ -7,7 +7,38 @@ cd backend
 mvn quarkus:dev
 ```
 
-服务监听 `http://localhost:8080`。开发环境默认音乐目录为 `/path/to/music`，默认歌词目录为 `/path/to/lyrics`。
+服务监听 `http://localhost:8080`。`%dev` profile 使用宿主机路径，Docker / 默认 profile 使用容器内 `/music`、`/jobs` 路径，两套配置使用不同的环境变量，避免本地 IDE 联调误写容器路径。
+
+当前本地开发默认值为：
+
+```text
+MUSIC_VAULT_DEV_MUSIC_DIRS=/Users/wangjiqing/Project/Musics/Music
+MUSIC_VAULT_DEV_ALIGNMENT_JOBS_DIR=/Users/wangjiqing/Project/Musics/AlignmentJobs
+MUSIC_VAULT_DEV_ALIGNMENT_WORKER_MUSIC_DIR=/Users/wangjiqing/Project/Musics/Music
+MUSIC_VAULT_DEV_ALIGNMENT_WORKER_JOBS_DIR=/Users/wangjiqing/Project/Musics/AlignmentJobs
+```
+
+这些变量仅供 IDE / `mvn quarkus:dev` 使用。Compose 继续使用 `MUSIC_VAULT_MUSIC_DIRS`、`MUSIC_VAULT_ALIGNMENT_JOBS_DIR`、`MUSIC_VAULT_ALIGNMENT_WORKER_MUSIC_DIR=/music` 和 `MUSIC_VAULT_ALIGNMENT_WORKER_JOBS_DIR=/jobs`，不要把容器值复制到 `MUSIC_VAULT_DEV_*`。
+
+本地 Worker 可与 IDE 后端直接共享目录：
+
+```bash
+xingyu-align worker run \
+  --jobs-dir /Users/wangjiqing/Project/Musics/AlignmentJobs \
+  --music-dir /Users/wangjiqing/Project/Musics/Music \
+  --device cpu
+```
+
+同一个 `jobs-dir` 同一时间只能由一套音库后端写入、由一套 Worker 消费。本地 IDE + 本地 Worker 联调期间，应停止挂载同一 `AlignmentJobs` 的 Compose 音库和 Worker：
+
+```bash
+docker stop xingyu-music-vault
+docker stop xingyu-lyrics-aligner-worker
+```
+
+否则容器 Worker 可能先领取宿主机路径任务，或容器音库可能写入 `/music` 路径任务，最终由路径语义不匹配的 Worker 写入 `PATH_OUTSIDE_ALLOWED_ROOT`。需要恢复完整 Compose 环境时，再通过 Compose 启动音库和 Worker，且不要同时运行上述本地进程。
+
+新建任务后，`request.json` 中的 `audioPath` 应以 `/Users/wangjiqing/Project/Musics/Music` 开头，`outputDir` 应以 `/Users/wangjiqing/Project/Musics/AlignmentJobs` 开头。若仍出现 `/music` 或 `/jobs`，应重启 IDE 后端，确认启动的是 `%dev` profile 和最新编译结果。
 
 ## 2. 触发扫描
 

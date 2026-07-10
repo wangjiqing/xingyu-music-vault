@@ -21,9 +21,15 @@ import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftSourceRespon
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftDefaultOptionsResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricDraftTrustedAssetResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.MusicLyricDraftContextResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricTaskObservabilityResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ObservabilitySummaryResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.RejectLyricDraftRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ReviewAlignmentJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.UpdateLyricDraftRequest;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerAttemptResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerErrorResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerMarkersResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerOutputResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.WorkerSignalsResponse;
 import com.xingyu.musicvault.common.PageResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
@@ -53,7 +59,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -116,6 +125,12 @@ public class LyricAlignmentService {
 
     @Inject
     LyricAlignmentJobWriter jobWriter;
+
+    @Inject
+    LyricAlignmentWorkerStatusReader workerStatusReader;
+
+    @Inject
+    LyricWorkerEventsReader workerEventsReader;
 
     @Inject
     OpenApiChangeLogService openApiChangeLogService;
@@ -355,6 +370,79 @@ public class LyricAlignmentService {
             throw new NotFoundException("Alignment job not found");
         }
         return toResponse(job);
+    }
+
+    public LyricTaskObservabilityResponse getObservability(String id) {
+        LyricAlignmentJob job = jobRepository.findById(id);
+        if (job == null) {
+            throw new NotFoundException("Alignment job not found");
+        }
+        String taskType = taskType(job);
+        Path jobDir = job.jobDir == null || job.jobDir.isBlank()
+                ? null
+                : Path.of(job.jobDir).toAbsolutePath().normalize();
+        LyricAlignmentWorkerStatusReader.WorkerStatusSnapshot statusSnapshot = workerStatusReader.read(jobDir);
+        LyricWorkerEventsReader.EventsSnapshot eventsSnapshot = workerEventsReader.read(jobDir);
+        JsonNode requestSnapshot = readJsonOrNull(job.requestSnapshotJson);
+        JsonNode statusJson = statusSnapshot.statusJson();
+        String workerState = normalizeWorkerState(statusSnapshot.status(), job, statusSnapshot);
+        String workerStage = firstText(statusSnapshot.stage(), statusJson, "stage");
+        JsonNode requestedConfig = statusSnapshot.requestedConfig() == null
+                ? requestRequestedConfig(requestSnapshot)
+                : statusSnapshot.requestedConfig();
+        JsonNode resolvedConfig = statusSnapshot.resolvedConfig();
+        JsonNode warnings = statusSnapshot.warnings();
+        WorkerErrorResponse error = workerError(statusSnapshot.error());
+        JsonNode configSummary = configSummary(requestSnapshot, requestedConfig, resolvedConfig);
+        List<String> compatibilityMessages = new ArrayList<>(statusSnapshot.compatibilityMessages());
+        if (statusSnapshot.statusAvailable() && statusSnapshot.statusSchemaVersion() == null && statusSnapshot.schemaVersion() != null) {
+            compatibilityMessages.add("旧 Worker status schemaVersion " + statusSnapshot.schemaVersion());
+        }
+        return new LyricTaskObservabilityResponse(
+                job.id,
+                taskType,
+                statusSnapshot.statusAvailable() && statusSnapshot.statusJson() != null,
+                statusSnapshot.statusAvailable() && statusSnapshot.statusJson() == null ? statusSnapshot.syncMessage() : null,
+                statusSnapshot.directoryAvailable(),
+                statusSnapshot.statusSchemaVersion() == null,
+                compatibilityMessages,
+                workerState,
+                workerStateLabel(workerState),
+                workerStage,
+                stageLabel(workerStage),
+                stageDescription(workerStage),
+                statusSnapshot.statusSchemaVersion() == null ? statusSnapshot.schemaVersion() : statusSnapshot.statusSchemaVersion(),
+                statusSnapshot.requestSchemaVersion() == null ? intValue(requestSnapshot == null ? null : requestSnapshot.get("schemaVersion")) : statusSnapshot.requestSchemaVersion(),
+                statusSnapshot.startedAt(),
+                statusSnapshot.stageStartedAt(),
+                statusSnapshot.updatedAt(),
+                statusSnapshot.heartbeatAt(),
+                heartbeatHealth(workerState, statusSnapshot.heartbeatAt()),
+                durationSeconds(statusSnapshot.startedAt(), terminalState(workerState) ? statusSnapshot.updatedAt() : null),
+                durationSeconds(statusSnapshot.stageStartedAt(), terminalState(workerState) ? statusSnapshot.updatedAt() : null),
+                statusSnapshot.progress(),
+                workerAttempt(statusSnapshot.attempt()),
+                requestedConfig,
+                resolvedConfig,
+                configSummary,
+                warnings,
+                error,
+                statusSnapshot.result(),
+                outputs(job, taskType, jobDir),
+                new WorkerMarkersResponse(
+                        statusSnapshot.ready(),
+                        statusSnapshot.running(),
+                        statusSnapshot.succeeded(),
+                        statusSnapshot.needsReview(),
+                        statusSnapshot.failed(),
+                        statusSnapshot.abandoned()
+                ),
+                eventsSnapshot.events(),
+                eventsSnapshot.available(),
+                eventsSnapshot.truncated(),
+                eventsSnapshot.readError(),
+                statusSnapshot.statusJsonRaw() != null && !statusSnapshot.statusJsonRaw().isBlank()
+        );
     }
 
     public ArtifactContent getArtifact(String id, AlignmentArtifact artifact) {
@@ -1234,28 +1322,50 @@ public class LyricAlignmentService {
 
     private ObjectNode draftRequestSnapshot(String jobId, AudioMapping audioMapping, CreateLyricDraftJobRequest request) {
         ObjectNode node = objectMapper.createObjectNode();
-        node.put("schemaVersion", 2);
-        node.put("jobId", jobId);
-        node.put("taskType", TASK_DRAFT);
-        node.put("audioPath", audioMapping.workerPath());
-        node.put("outputDir", workerJobPath(jobId, "result"));
-        node.put("language", nonBlankOrDefault(request == null ? null : request.language(), "zh"));
-        node.put("device", "cpu");
-        node.put("asrModel", nonBlankOrDefault(
+        String preset = normalizeDraftPreset(request == null ? null : request.preset());
+        String language = nonBlankOrDefault(request == null ? null : request.language(), "zh");
+        String asrModel = nonBlankOrDefault(
                 request == null ? null : request.asrModel(),
                 nonBlankOrDefault(config.alignmentDraftDefaultAsrModel(), "medium")
-        ));
-        node.put("skipSeparation", request == null || request.skipSeparation() == null
+        );
+        boolean skipSeparation = request == null || request.skipSeparation() == null
                 ? config.alignmentDraftDefaultSkipSeparation()
-                : Boolean.TRUE.equals(request.skipSeparation()));
-        node.put("vadFilter", request == null || request.vadFilter() == null
+                : Boolean.TRUE.equals(request.skipSeparation());
+        boolean vadFilter = request == null || request.vadFilter() == null
                 ? config.alignmentDraftDefaultVadFilter()
-                : Boolean.TRUE.equals(request.vadFilter()));
-        node.put("conditionOnPreviousText", request != null && Boolean.TRUE.equals(request.conditionOnPreviousText()));
-        node.put("keepSuspectedMetadata", request != null && Boolean.TRUE.equals(request.keepSuspectedMetadata()));
-        node.put("retainIntermediate", request != null && Boolean.TRUE.equals(request.retainIntermediate()));
+                : Boolean.TRUE.equals(request.vadFilter());
+        boolean conditionOnPreviousText = request != null && Boolean.TRUE.equals(request.conditionOnPreviousText());
+        boolean keepSuspectedMetadata = request != null && Boolean.TRUE.equals(request.keepSuspectedMetadata());
+        boolean retainIntermediate = request != null && Boolean.TRUE.equals(request.retainIntermediate());
+
+        node.put("schemaVersion", 3);
+        node.put("jobId", jobId);
+        node.put("taskType", TASK_DRAFT);
+        node.put("preset", preset);
+        node.put("audioPath", audioMapping.workerPath());
+        node.put("outputDir", workerJobPath(jobId, "result"));
+        node.put("language", language);
+        node.put("device", "cpu");
+        ObjectNode overrides = node.putObject("overrides");
+        overrides.put("asrModel", asrModel);
+        overrides.put("skipSeparation", skipSeparation);
+        overrides.put("vadFilter", vadFilter);
+        overrides.put("conditionOnPreviousText", conditionOnPreviousText);
+        overrides.put("keepSuspectedMetadata", keepSuspectedMetadata);
+        overrides.put("retainIntermediate", retainIntermediate);
         node.put("createdAt", LocalDateTime.now().toString());
         return node;
+    }
+
+    private String normalizeDraftPreset(String value) {
+        if (value == null || value.isBlank()) {
+            return "RECOMMENDED";
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if (!List.of("FAST", "RECOMMENDED", "HIGH_QUALITY", "FULL_RECOGNITION").contains(normalized)) {
+            throw new BadRequestException("Unsupported lyric draft preset");
+        }
+        return normalized;
     }
 
     private ObjectNode manualDraftRequestSnapshot(String jobId) {
@@ -1331,7 +1441,8 @@ public class LyricAlignmentService {
                 job.importErrorMessage,
                 job.importedLyricId,
                 draftStatus(job),
-                confirmedTrustedLyricsId(job)
+                confirmedTrustedLyricsId(job),
+                observabilitySummary(job)
         );
     }
 
@@ -1370,7 +1481,8 @@ public class LyricAlignmentService {
                 job.importErrorMessage,
                 job.importedLyricId,
                 draftStatus(job),
-                confirmedTrustedLyricsId(job)
+                confirmedTrustedLyricsId(job),
+                observabilitySummary(job)
         );
     }
 
@@ -1487,6 +1599,289 @@ public class LyricAlignmentService {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to deserialize alignment job JSON", exception);
         }
+    }
+
+    private JsonNode readJsonOrNull(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(json);
+        } catch (JsonProcessingException exception) {
+            LOG.warnf(exception, "Failed to deserialize optional alignment JSON");
+            return null;
+        }
+    }
+
+    private ObservabilitySummaryResponse observabilitySummary(LyricAlignmentJob job) {
+        JsonNode statusJson = readJsonOrNull(job.workerStatusJson);
+        JsonNode requestJson = readJsonOrNull(job.requestSnapshotJson);
+        String workerState = normalizeWorkerState(firstText(statusJson, "state", "status"), job, null);
+        String workerStage = firstText(statusJson, "stage");
+        JsonNode error = statusJson == null ? null : statusJson.get("error");
+        JsonNode warnings = statusJson == null ? null : statusJson.get("warnings");
+        String errorCode = textValue(error == null ? null : error.get("code"));
+        return new ObservabilitySummaryResponse(
+                workerStage,
+                stageLabel(workerStage),
+                firstText(statusJson, "heartbeatAt"),
+                heartbeatHealth(workerState, firstText(statusJson, "heartbeatAt")),
+                durationSeconds(firstText(statusJson, "startedAt"), terminalState(workerState) ? firstText(statusJson, "updatedAt") : null),
+                durationSeconds(firstText(statusJson, "stageStartedAt"), terminalState(workerState) ? firstText(statusJson, "updatedAt") : null),
+                presetFrom(requestJson, statusJson),
+                warnings != null && warnings.isArray() ? warnings.size() : null,
+                errorCode,
+                textValue(error == null ? null : error.get("message")),
+                statusProtocolLabel(statusJson)
+        );
+    }
+
+    private String normalizeWorkerState(
+            String status,
+            LyricAlignmentJob job,
+            LyricAlignmentWorkerStatusReader.WorkerStatusSnapshot snapshot
+    ) {
+        if (status != null && !status.isBlank()) {
+            return status.trim().toUpperCase(Locale.ROOT);
+        }
+        if (snapshot != null) {
+            if (snapshot.failed()) return "FAILED";
+            if (snapshot.abandoned()) return "ABANDONED";
+            if (snapshot.needsReview()) return "NEEDS_REVIEW";
+            if (snapshot.succeeded()) return "SUCCEEDED";
+            if (snapshot.running()) return "RUNNING";
+            if (snapshot.ready()) return "QUEUED";
+        }
+        if (job.workerOutcome != null && !job.workerOutcome.isBlank()) {
+            return job.workerOutcome.trim().toUpperCase(Locale.ROOT);
+        }
+        return job.status == null ? null : job.status.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String statusProtocolLabel(JsonNode statusJson) {
+        if (statusJson == null || statusJson.isNull()) {
+            return "无 status.json";
+        }
+        Integer statusSchema = intValue(statusJson.get("statusSchemaVersion"));
+        if (statusSchema != null) {
+            return "statusSchemaVersion " + statusSchema;
+        }
+        Integer legacy = intValue(statusJson.get("schemaVersion"));
+        return legacy == null ? "未知 status 协议" : "legacy schemaVersion " + legacy;
+    }
+
+    private String presetFrom(JsonNode requestJson, JsonNode statusJson) {
+        String value = firstText(requestJson, "preset");
+        if (value != null) {
+            return value;
+        }
+        JsonNode requestedConfig = statusJson == null ? null : statusJson.get("requestedConfig");
+        value = firstText(requestedConfig, "preset");
+        return value == null ? firstText(requestJson == null ? null : requestJson.get("requestedConfig"), "preset") : value;
+    }
+
+    private JsonNode requestRequestedConfig(JsonNode requestSnapshot) {
+        JsonNode configNode = requestSnapshot == null ? null : requestSnapshot.get("requestedConfig");
+        if (configNode != null && configNode.isObject()) {
+            return configNode;
+        }
+        return null;
+    }
+
+    private JsonNode configSummary(JsonNode requestSnapshot, JsonNode requestedConfig, JsonNode resolvedConfig) {
+        ObjectNode summary = objectMapper.createObjectNode();
+        JsonNode requestOverrides = requestSnapshot == null ? null : requestSnapshot.get("overrides");
+        copyConfigValue(summary, requestSnapshot, "preset");
+        copyConfigValue(summary, requestedConfig, "preset");
+        copyConfigValue(summary, resolvedConfig, "preset");
+        for (String key : List.of("language", "asrModel", "vadFilter", "skipSeparation", "retainIntermediate",
+                "conditionOnPreviousText", "keepSuspectedMetadata")) {
+            copyConfigValue(summary, requestSnapshot, key);
+            copyConfigValue(summary, requestOverrides, key);
+            copyConfigValue(summary, requestedConfig, key);
+            copyConfigValue(summary, resolvedConfig, key);
+        }
+        return summary;
+    }
+
+    private void copyConfigValue(ObjectNode target, JsonNode source, String key) {
+        JsonNode value = source == null ? null : source.get(key);
+        if (value != null && !value.isNull()) {
+            target.set(key, value);
+        }
+    }
+
+    private WorkerAttemptResponse workerAttempt(JsonNode attempt) {
+        if (attempt == null || !attempt.isObject()) {
+            return null;
+        }
+        return new WorkerAttemptResponse(
+                textValue(attempt.get("id")),
+                intValue(attempt.get("number")),
+                textValue(attempt.get("stderrPath"))
+        );
+    }
+
+    private WorkerErrorResponse workerError(JsonNode error) {
+        if (error == null || error.isNull() || !error.isObject()) {
+            return null;
+        }
+        String code = textValue(error.get("code"));
+        return new WorkerErrorResponse(
+                code,
+                errorLabel(code),
+                textValue(error.get("message")),
+                error.get("details") != null && (error.get("details").isObject() || error.get("details").isArray())
+                        ? error.get("details")
+                        : null
+        );
+    }
+
+    private List<WorkerOutputResponse> outputs(LyricAlignmentJob job, String taskType, Path jobDir) {
+        List<WorkerOutputResponse> outputs = new ArrayList<>();
+        boolean isDraft = TASK_DRAFT.equals(taskType);
+        if (isDraft) {
+            addOutput(outputs, jobDir, "cleanedTranscript", "result/transcript.cleaned.txt");
+            addOutput(outputs, jobDir, "rawTranscript", "result/transcript.raw.txt");
+            addOutput(outputs, jobDir, "segments", "result/transcript.segments.json");
+            addOutput(outputs, jobDir, "report", "result/report.json");
+        } else {
+            addOutput(outputs, jobDir, "lrc", "result/lyrics.lrc");
+            addOutput(outputs, jobDir, "swlrc", "result/lyrics.swlrc");
+            addOutput(outputs, jobDir, "alignment", "result/alignment.json");
+            addOutput(outputs, jobDir, "report", "result/report.json");
+        }
+        addOutput(outputs, jobDir, "stderrLog", "stderr.log");
+        return outputs;
+    }
+
+    private void addOutput(List<WorkerOutputResponse> outputs, Path jobDir, String type, String relativePath) {
+        boolean available = false;
+        if (jobDir != null && Files.isDirectory(jobDir)) {
+            Path candidate = jobDir.resolve(relativePath).normalize();
+            available = candidate.startsWith(jobDir) && Files.isRegularFile(candidate);
+        }
+        outputs.add(new WorkerOutputResponse(type, available, relativePath));
+    }
+
+    private String workerStateLabel(String state) {
+        if (state == null) return null;
+        return switch (state.toUpperCase(Locale.ROOT)) {
+            case "QUEUED" -> "排队中";
+            case "RUNNING" -> "执行中";
+            case "SUCCEEDED" -> "已完成";
+            case "NEEDS_REVIEW" -> "需要复核";
+            case "FAILED" -> "执行失败";
+            case "ABANDONED" -> "已放弃";
+            default -> state;
+        };
+    }
+
+    private String stageLabel(String stage) {
+        if (stage == null) return null;
+        return switch (stage.toUpperCase(Locale.ROOT)) {
+            case "QUEUED" -> "排队中";
+            case "PREPARING" -> "准备任务";
+            case "LOADING_MODEL" -> "加载模型";
+            case "VOCAL_SEPARATION" -> "人声分离";
+            case "VAD" -> "检测人声片段";
+            case "TRANSCRIBING" -> "语音识别中";
+            case "ALIGNING" -> "歌词对齐中";
+            case "WRITING_OUTPUTS" -> "写入结果文件";
+            case "IMPORT_READY" -> "等待导入";
+            case "COMPLETED" -> "已完成";
+            case "FAILED" -> "执行失败";
+            default -> stage;
+        };
+    }
+
+    private String stageDescription(String stage) {
+        if (stage == null) return null;
+        return stageLabel(stage);
+    }
+
+    private String errorLabel(String code) {
+        if (code == null) return null;
+        return switch (code.toUpperCase(Locale.ROOT)) {
+            case "MODEL_LOAD_FAILED" -> "模型加载失败";
+            case "AUDIO_READ_FAILED" -> "音频读取失败";
+            case "ASR_FAILED" -> "语音识别失败";
+            case "ALIGNMENT_FAILED" -> "歌词对齐失败";
+            case "OUTPUT_WRITE_FAILED" -> "输出文件写入失败";
+            case "CONFIG_INVALID" -> "任务配置无效";
+            default -> code;
+        };
+    }
+
+    private String heartbeatHealth(String workerState, String heartbeatAt) {
+        if (terminalState(workerState)) {
+            return "FINISHED";
+        }
+        if (!"RUNNING".equals(workerState)) {
+            return "QUEUED".equals(workerState) || workerState == null ? "NOT_RUNNING" : "UNKNOWN";
+        }
+        Instant heartbeat = parseInstant(heartbeatAt);
+        if (heartbeat == null) {
+            return "UNKNOWN";
+        }
+        return Duration.between(heartbeat, Instant.now()).compareTo(Duration.ofMinutes(5)) <= 0 ? "HEALTHY" : "STALE";
+    }
+
+    private boolean terminalState(String workerState) {
+        return workerState != null && List.of("SUCCEEDED", "FAILED", "NEEDS_REVIEW", "ABANDONED", "COMPLETED")
+                .contains(workerState.toUpperCase(Locale.ROOT));
+    }
+
+    private Long durationSeconds(String startedAt, String endedAt) {
+        Instant start = parseInstant(startedAt);
+        if (start == null) {
+            return null;
+        }
+        Instant end = endedAt == null || endedAt.isBlank() ? Instant.now() : parseInstant(endedAt);
+        if (end == null || end.isBefore(start)) {
+            return null;
+        }
+        return Duration.between(start, end).getSeconds();
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (RuntimeException ignored) {
+            try {
+                return LocalDateTime.parse(value).atZone(java.time.ZoneId.systemDefault()).toInstant();
+            } catch (RuntimeException ignoredAgain) {
+                return null;
+            }
+        }
+    }
+
+    private Integer intValue(JsonNode node) {
+        return node != null && node.canConvertToInt() ? node.asInt() : null;
+    }
+
+    private String firstText(String direct, JsonNode node, String field) {
+        return direct == null ? firstText(node, field) : direct;
+    }
+
+    private String firstText(JsonNode node, String... fields) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        for (String field : fields) {
+            String value = textValue(node.get(field));
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String textValue(JsonNode node) {
+        return node != null && node.isTextual() && !node.asText().isBlank() ? node.asText() : null;
     }
 
     private LyricDraftResponse toDraftResponse(LyricAlignmentJob job, LyricDraft draft) {

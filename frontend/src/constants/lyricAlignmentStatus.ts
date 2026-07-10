@@ -40,6 +40,28 @@ export const LYRIC_DRAFT_STATUS: Record<string, string> = {
   REJECTED: '已驳回',
 }
 
+export const WORKER_HEARTBEAT_HEALTH: Record<string, string> = {
+  HEALTHY: '心跳正常',
+  STALE: '心跳较久未更新',
+  UNKNOWN: '心跳未知',
+  FINISHED: '已结束',
+  NOT_RUNNING: '未运行',
+}
+
+export const LYRIC_DRAFT_PRESET: Record<string, string> = {
+  FAST: '快速试跑',
+  RECOMMENDED: '推荐模式',
+  HIGH_QUALITY: '高质量模式',
+  FULL_RECOGNITION: '完整识别模式',
+}
+
+export const LYRIC_DRAFT_PRESET_OPTIONS = [
+  { value: 'FAST', label: '快速试跑', description: '适合先看大致效果' },
+  { value: 'RECOMMENDED', label: '推荐模式', description: '速度和准确率较均衡' },
+  { value: 'HIGH_QUALITY', label: '高质量模式', description: '耗时更长，优先准确率' },
+  { value: 'FULL_RECOGNITION', label: '完整识别模式', description: '尽量完整转写，耗时最长' },
+] as const
+
 export function alignmentExecutionStatusLabel(status?: string | null): string {
   if (!status) return '-'
   return ALIGNMENT_EXECUTION_STATUS[status] || status
@@ -68,6 +90,16 @@ export function lyricTaskTypeLabel(taskType?: string | null): string {
 export function lyricDraftStatusLabel(status?: string | null): string {
   if (!status) return '-'
   return LYRIC_DRAFT_STATUS[status] || status
+}
+
+export function workerHeartbeatHealthLabel(health?: string | null): string {
+  if (!health) return '-'
+  return WORKER_HEARTBEAT_HEALTH[health] || health
+}
+
+export function lyricDraftPresetLabel(preset?: string | null): string {
+  if (!preset) return '-'
+  return LYRIC_DRAFT_PRESET[preset] || preset
 }
 
 export function alignmentExecutionStatusTagType(status?: string | null): string {
@@ -123,6 +155,12 @@ export function lyricDraftStatusTagType(status?: string | null): string {
     REJECTED: 'danger',
   }
   return status ? map[status] || 'info' : 'info'
+}
+
+export function workerHeartbeatHealthTagType(health?: string | null): 'success' | 'warning' | 'info' {
+  if (health === 'HEALTHY') return 'success'
+  if (health === 'STALE' || health === 'UNKNOWN') return 'warning'
+  return 'info'
 }
 
 export function shortAlignmentJobId(id: string): string {

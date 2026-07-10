@@ -1,6 +1,6 @@
 # Docker 一键部署
 
-本文档面向 v1.3.2 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐；v1.3.2 新增手工草稿和 Brave Search 候选来源辅助，不改变 Worker 主任务协议。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
+本文档面向 v1.3.4 Docker / Docker Compose 本机、NAS、家庭服务器部署。源码构建模式会同时启动音库容器和独立歌词 Worker 容器，用于候选歌词草稿提取与逐字歌词对齐；v1.3.4 推荐配合 `xingyu-lyrics-aligner:0.6.0`，音库后端可读取 Worker 可观测与歌词头部展示协议。若希望直接拉取已发布镜像部署，请使用 [镜像拉取部署](image-deploy.md)。
 
 ## 部署安全边界
 
@@ -83,7 +83,7 @@ MUSIC_VAULT_ALIGNMENT_LYRICS_ROOT=/lyrics
 ARTWORK_DIR=./artwork
 ALIGNMENT_JOBS_DIR=./alignment-jobs
 ALIGNMENT_MODELS_DIR=./alignment-models
-ALIGNMENT_WORKER_IMAGE=wangjiqing/xingyu-lyrics-aligner:0.4.0
+ALIGNMENT_WORKER_IMAGE=wangjiqing/xingyu-lyrics-aligner:0.6.0
 ALIGNMENT_STATUS_SYNC_INTERVAL_SECONDS=5
 ALIGNMENT_DRAFT_DEFAULT_ASR_MODEL=medium
 ALIGNMENT_DRAFT_MAX_TEXT_BYTES=131072

@@ -370,6 +370,25 @@ class LyricAlignmentResourceTest {
                       "estimated_token_count": 0,
                       "skipped_line_count": 0
                     },
+                    "firstAlignedLyricStartMs": 5000,
+                    "preservedHeaderLines": [{
+                      "text": "作词：牛哥",
+                      "kind": "CREDIT",
+                      "lineClassification": "NON_LYRIC_HEADER",
+                      "sourceLineIndex": 1,
+                      "participatedInAlignment": false,
+                      "nonAlignmentReason": "non_singing_header",
+                      "presentationHints": {
+                        "displayOnly": true,
+                        "suggestedStartMs": 0,
+                        "suggestedEndMs": 5000
+                      }
+                    }],
+                    "presentationHints": [{
+                      "displayOnly": true,
+                      "suggestedStartMs": 0,
+                      "suggestedEndMs": 5000
+                    }],
                     "warnings": []
                   }
                 }
@@ -408,7 +427,134 @@ class LyricAlignmentResourceTest {
                 .body("resultSummary.lrcAvailable", equalTo(true))
                 .body("resultSummary.workerStatus", equalTo("SUCCEEDED"))
                 .body("resultSummary.lineCount", equalTo(1))
+                .body("resultSummary.firstAlignedLyricStartMs", equalTo(5000))
+                .body("resultSummary.preservedHeaderLines[0].text", equalTo("作词：牛哥"))
+                .body("resultSummary.preservedHeaderLines[0].participatedInAlignment", equalTo(false))
+                .body("resultSummary.presentationHints[0].suggestedEndMs", equalTo(5000))
                 .body("resultSummary.alignedLineCount", equalTo(1));
+    }
+
+    @Test
+    void readsV05StatusAndObservabilityEventsWithoutBreakingSynchronization() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("v05-status.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeResultFiles(jobId);
+        writeMarker(jobId, "SUCCEEDED");
+        writeStatusJson(jobId, """
+                {
+                  "statusSchemaVersion": 1,
+                  "requestSchemaVersion": 3,
+                  "jobId": "%s",
+                  "taskType": "LYRICS_ALIGNMENT",
+                  "state": "RUNNING",
+                  "stage": "ALIGNING",
+                  "startedAt": "2026-07-08T10:00:00Z",
+                  "stageStartedAt": "2026-07-08T10:03:10Z",
+                  "updatedAt": "2026-07-08T10:04:25Z",
+                  "heartbeatAt": "2026-07-08T10:04:25Z",
+                  "progress": {"kind": "INDETERMINATE"},
+                  "attempt": {
+                    "id": "attempt-id",
+                    "number": 1,
+                    "stderrPath": "attempts/attempt-id.stderr.log"
+                  },
+                  "requestedConfig": {"preset": "RECOMMENDED", "language": "zh"},
+                  "resolvedConfig": {"preset": "RECOMMENDED", "asrModel": "medium"},
+                  "warnings": [{"code": "LOW_CONFIDENCE", "message": "need check"}],
+                  "error": {"code": "ALIGNMENT_FAILED", "message": "alignment failed once"},
+                  "result": {"summary": {"line_count": 1}}
+                }
+                """.formatted(jobId));
+        Files.writeString(JOBS_ROOT.resolve(jobId).resolve("events.jsonl"), """
+                {"eventId":"old","timestamp":"2026-07-08T10:00:01Z","level":"INFO","type":"STARTED","stage":"PREPARING","message":"old"}
+                {bad json
+                {"eventId":"recent","timestamp":"2026-07-08T10:04:25Z","level":"WARN","type":"STAGE","stage":"ALIGNING","message":"recent","details":{"line":1}}
+                """, StandardCharsets.UTF_8);
+
+        statusSynchronizer.synchronize(jobId);
+
+        LyricAlignmentJob job = findJob(jobId);
+        assertEquals("COMPLETED", job.status);
+        assertEquals("SUCCEEDED", job.workerOutcome);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-alignment/jobs/{id}", jobId)
+                .then()
+                .statusCode(200)
+                .body("observabilitySummary.workerStage", equalTo("ALIGNING"))
+                .body("observabilitySummary.workerStageLabel", equalTo("歌词对齐中"))
+                .body("observabilitySummary.heartbeatAt", equalTo("2026-07-08T10:04:25Z"))
+                .body("observabilitySummary.heartbeatHealth", equalTo("STALE"))
+                .body("observabilitySummary.preset", equalTo("RECOMMENDED"))
+                .body("observabilitySummary.warningCount", equalTo(1))
+                .body("observabilitySummary.errorCode", equalTo("ALIGNMENT_FAILED"))
+                .body("observabilitySummary.errorSummary", equalTo("alignment failed once"))
+                .body("observabilitySummary.statusProtocolLabel", equalTo("statusSchemaVersion 1"));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-alignment/jobs/{id}/observability", jobId)
+                .then()
+                .statusCode(200)
+                .body("jobId", equalTo(jobId))
+                .body("statusAvailable", equalTo(true))
+                .body("statusParseError", nullValue())
+                .body("directoryAvailable", equalTo(true))
+                .body("legacy", equalTo(false))
+                .body("workerState", equalTo("RUNNING"))
+                .body("workerStateLabel", equalTo("执行中"))
+                .body("workerStage", equalTo("ALIGNING"))
+                .body("workerStageLabel", equalTo("歌词对齐中"))
+                .body("statusSchemaVersion", equalTo(1))
+                .body("requestSchemaVersion", equalTo(3))
+                .body("attempt.id", equalTo("attempt-id"))
+                .body("attempt.number", equalTo(1))
+                .body("attempt.stderrPath", equalTo("attempts/attempt-id.stderr.log"))
+                .body("requestedConfig.language", equalTo("zh"))
+                .body("resolvedConfig.asrModel", equalTo("medium"))
+                .body("warnings.size()", equalTo(1))
+                .body("error.code", equalTo("ALIGNMENT_FAILED"))
+                .body("error.label", equalTo("歌词对齐失败"))
+                .body("outputs.find { it.type == 'stderrLog' }.relativePath", equalTo("stderr.log"))
+                .body("eventsAvailable", equalTo(true))
+                .body("eventsReadError", equalTo("Some worker event lines are not readable"))
+                .body("events.size()", equalTo(2))
+                .body("events[1].eventId", equalTo("recent"))
+                .body("rawStatusAvailable", equalTo(true));
+    }
+
+    @Test
+    void runningStatusWithoutHeartbeatReturnsUnknownHeartbeatHealth() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("running-no-heartbeat.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        writeStatusJson(jobId, """
+                {
+                  "statusSchemaVersion": 1,
+                  "requestSchemaVersion": 3,
+                  "jobId": "%s",
+                  "taskType": "LYRICS_ALIGNMENT",
+                  "state": "RUNNING",
+                  "stage": "TRANSCRIBING",
+                  "error": {"code": "ASR_FAILED", "message": ""}
+                }
+                """.formatted(jobId));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-alignment/jobs/{id}/observability", jobId)
+                .then()
+                .statusCode(200)
+                .body("workerState", equalTo("RUNNING"))
+                .body("workerStage", equalTo("TRANSCRIBING"))
+                .body("heartbeatAt", nullValue())
+                .body("heartbeatHealth", equalTo("UNKNOWN"))
+                .body("error.code", equalTo("ASR_FAILED"))
+                .body("error.message", nullValue())
+                .body("error.label", equalTo("语音识别失败"));
     }
 
     @Test
@@ -470,12 +616,43 @@ class LyricAlignmentResourceTest {
         assertEquals("Worker status JSON is not readable yet", corruptJob.syncMessage);
         LyricAlignmentJob runningJob = findJob(runningJobId);
         assertEquals("RUNNING", runningJob.status);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-alignment/jobs/{id}/observability", corruptJobId)
+                .then()
+                .statusCode(200)
+                .body("statusAvailable", equalTo(false))
+                .body("statusParseError", equalTo("Worker status JSON is not readable yet"))
+                .body("eventsAvailable", equalTo(false))
+                .body("events.size()", equalTo(0));
+    }
+
+    @Test
+    void observabilityDegradesWhenJobDirectoryIsMissing() throws IOException {
+        Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("missing-job-dir.flac"), TRUSTED_LYRICS);
+        String jobId = createAlignmentJob(songId);
+        deleteRecursively(JOBS_ROOT.resolve(jobId));
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/lyric-alignment/jobs/{id}/observability", jobId)
+                .then()
+                .statusCode(200)
+                .body("directoryAvailable", equalTo(false))
+                .body("statusAvailable", equalTo(false))
+                .body("markers.ready", equalTo(false))
+                .body("eventsAvailable", equalTo(false));
     }
 
     @Test
     void unsupportedFutureStatusJsonSchemaVersionIsDiagnosticOnly() throws IOException {
         Long songId = createSongWithPrimaryLyric(MUSIC_ROOT.resolve("future-status.flac"), TRUSTED_LYRICS);
         String jobId = createAlignmentJob(songId);
+        writeResultFiles(jobId);
+        writeMarker(jobId, "SUCCEEDED");
         Files.writeString(
                 JOBS_ROOT.resolve(jobId).resolve("status.json"),
                 """
@@ -490,8 +667,8 @@ class LyricAlignmentResourceTest {
         statusSynchronizer.synchronize(jobId);
 
         LyricAlignmentJob job = findJob(jobId);
-        assertEquals("QUEUED", job.status);
-        assertEquals("Unsupported worker status schemaVersion: 3", job.syncMessage);
+        assertEquals("COMPLETED", job.status);
+        assertEquals("SUCCEEDED", job.workerOutcome);
     }
 
     @Test

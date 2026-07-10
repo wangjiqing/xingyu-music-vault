@@ -6,6 +6,30 @@
 
 暂无。
 
+## v1.3.4 — 歌词任务可观测性接入
+
+### 新增 / 优化
+
+- **Worker v0.5.0 status 兼容**：后端兼容新版 `status.json` 的 `statusSchemaVersion`、`requestSchemaVersion`、`state`、`stage`、`heartbeatAt`、`attempt`、`requestedConfig`、`resolvedConfig`、`warnings`、`error` 和 `result` 字段，同时保留旧 `schemaVersion` 1 / 2 与 marker-only 任务降级。
+- **任务可观测接口**：新增 `GET /api/admin/lyric-alignment/jobs/{id}/observability`，统一返回草稿提取和逐字对齐任务的 Worker 阶段、心跳健康、配置摘要、输出文件存在性、marker 状态和最近 `events.jsonl` 事件。
+- **轻量摘要**：任务列表和详情响应新增 `observabilitySummary`，只返回阶段、心跳、preset、警告数、错误摘要和协议标签，不在列表接口读取完整事件或原始状态 JSON。
+- **管理端可观测展示**：歌词任务列表展示当前阶段、心跳、运行耗时、preset、警告与错误摘要；任务详情新增 Worker 可观测性 tab，展示状态、配置、输出文件、最近事件和兼容性提示。
+- **工作台轻量状态**：歌曲工作台的草稿任务和对齐任务展示阶段、心跳和失败摘要；旧任务或缺失 status / events 时保持降级展示。
+- **草稿 request v3**：新建 Worker 草稿提取任务写入 `schemaVersion: 3` request，并支持 `FAST`、`RECOMMENDED`、`HIGH_QUALITY`、`FULL_RECOGNITION` preset；旧前端未传 preset 时默认 `RECOMMENDED`。
+- **草稿提取表单**：歌曲工作台的自动草稿提取表单新增识别模式 preset，普通用户默认使用 `RECOMMENDED`；ASR 模型、VAD、人声分离和中间文件等高级参数默认折叠。
+- **对齐结果试听匹配**：已完成的逐字对齐任务可直接在歌曲工作台临时加载任务 LRC / SWLRC，复用现有播放器检查行级滚动和逐字高亮；退出试听即可恢复当前已导入歌词。
+- **Worker v0.6.0 歌词头部协议**：保存 `firstAlignedLyricStartMs`、`preservedHeaderLines` 和 `presentationHints` 摘要；试听和导入后的工作台均按 Worker 的 display-only 时间提示，在前奏期间展示非演唱头部，不在音库侧重新分类或伪造逐字时间。
+- **部署模板同步**：Docker Compose 与环境变量示例中的 Worker 镜像更新为 `wangjiqing/xingyu-lyrics-aligner:0.6.0`。
+
+### 兼容性
+
+- status 解析失败、未知 schema、缺失 `events.jsonl` 或任务目录缺失不会导致列表、详情或同步接口 500。
+- Worker 终态 marker 仍可推进任务状态；不会因心跳超时在音库侧自动置失败。
+
+### 不包含
+
+- 不引入 WebSocket / SSE，不做 events 入库、搜索或分页，不读取 stdout / stderr 内容，不实现任务重试或多 Worker 调度。
+
 ## v1.3.3 — 歌词待办与覆盖率看板
 
 ### 新增 / 优化

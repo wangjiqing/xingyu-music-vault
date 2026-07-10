@@ -87,7 +87,7 @@ class LyricDraftResourceTest {
     }
 
     @Test
-    void createsV2DraftJobRequestWithoutTrustedLyricsAndReadyLast() throws Exception {
+    void createsV3DraftJobRequestWithoutTrustedLyricsAndReadyLast() throws Exception {
         Long songId = createSong(MUSIC_ROOT.resolve("draft.flac"));
 
         String jobId = createDraftJob(songId);
@@ -102,13 +102,17 @@ class LyricDraftResourceTest {
                 .body("lyricId", nullValue())
                 .body("trustedLyricsHash", nullValue())
                 .body("trustedLyricsSnapshot", nullValue())
-                .body("requestSnapshot.schemaVersion", equalTo(2))
+                .body("requestSnapshot.schemaVersion", equalTo(3))
                 .body("requestSnapshot.taskType", equalTo("LYRIC_DRAFT_EXTRACTION"))
+                .body("requestSnapshot.preset", equalTo("RECOMMENDED"))
                 .body("requestSnapshot.audioPath", equalTo("/worker/music/draft.flac"))
                 .body("requestSnapshot.outputDir", matchesPattern("/jobs/[0-9a-f\\-]{36}/result"))
-                .body("requestSnapshot.asrModel", equalTo("small"))
-                .body("requestSnapshot.skipSeparation", equalTo(false))
-                .body("requestSnapshot.vadFilter", equalTo(true));
+                .body("requestSnapshot.language", equalTo("zh"))
+                .body("requestSnapshot.asrModel", nullValue())
+                .body("requestSnapshot.requestedConfig", nullValue())
+                .body("requestSnapshot.overrides.asrModel", equalTo("small"))
+                .body("requestSnapshot.overrides.skipSeparation", equalTo(false))
+                .body("requestSnapshot.overrides.vadFilter", equalTo(true));
 
         Path jobDir = JOBS_ROOT.resolve(jobId);
         assertTrue(Files.exists(jobDir.resolve("request.json")));
@@ -116,11 +120,48 @@ class LyricDraftResourceTest {
         assertFalse(Files.exists(jobDir.resolve("sections.json")));
         assertTrue(Files.exists(jobDir.resolve("READY")));
         JsonNode requestJson = objectMapper.readTree(jobDir.resolve("request.json").toFile());
-        assertEquals(2, requestJson.path("schemaVersion").asInt());
+        assertEquals(3, requestJson.path("schemaVersion").asInt());
         assertEquals("LYRIC_DRAFT_EXTRACTION", requestJson.path("taskType").asText());
+        assertEquals("RECOMMENDED", requestJson.path("preset").asText());
         assertEquals("/jobs/" + jobId + "/result", requestJson.path("outputDir").asText());
+        assertFalse(requestJson.has("requestedConfig"));
+        assertFalse(requestJson.has("asrModel"));
+        assertEquals("small", requestJson.path("overrides").path("asrModel").asText());
+        assertFalse(requestJson.path("overrides").path("skipSeparation").asBoolean());
         FileTime readyTime = Files.getLastModifiedTime(jobDir.resolve("READY"));
         assertFalse(Files.getLastModifiedTime(jobDir.resolve("request.json")).compareTo(readyTime) > 0);
+    }
+
+    @Test
+    void createsDraftJobWithSupportedPresets() throws Exception {
+        for (String preset : new String[]{"FAST", "HIGH_QUALITY", "FULL_RECOGNITION"}) {
+            Long songId = createSong(MUSIC_ROOT.resolve("draft-" + preset + ".flac"));
+
+            String jobId = createDraftJob(songId, """
+                    {
+                      "preset": "%s",
+                      "language": "zh"
+                    }
+                    """.formatted(preset));
+
+            JsonNode requestJson = objectMapper.readTree(JOBS_ROOT.resolve(jobId).resolve("request.json").toFile());
+            assertEquals(3, requestJson.path("schemaVersion").asInt());
+            assertEquals(preset, requestJson.path("preset").asText());
+            assertFalse(requestJson.has("requestedConfig"));
+        }
+    }
+
+    @Test
+    void createsDraftJobWithDefaultPresetForLegacyRequestBody() throws Exception {
+        Long songId = createSong(MUSIC_ROOT.resolve("legacy-default-preset.flac"));
+
+        String jobId = createDraftJob(songId, "{}");
+
+        JsonNode requestJson = objectMapper.readTree(JOBS_ROOT.resolve(jobId).resolve("request.json").toFile());
+        assertEquals(3, requestJson.path("schemaVersion").asInt());
+        assertEquals("RECOMMENDED", requestJson.path("preset").asText());
+        assertEquals("zh", requestJson.path("language").asText());
+        assertFalse(requestJson.has("requestedConfig"));
     }
 
     @Test
@@ -544,20 +585,24 @@ class LyricDraftResourceTest {
     }
 
     private String createDraftJob(Long songId) {
+        return createDraftJob(songId, """
+                {
+                  "language": "zh",
+                  "asrModel": "small",
+                  "skipSeparation": false,
+                  "vadFilter": true,
+                  "conditionOnPreviousText": false,
+                  "keepSuspectedMetadata": false,
+                  "createdBy": "tester"
+                }
+                """);
+    }
+
+    private String createDraftJob(Long songId, String requestBody) {
         return given()
                 .header("Authorization", AUTHORIZATION)
                 .contentType(ContentType.JSON)
-                .body("""
-                        {
-                          "language": "zh",
-                          "asrModel": "small",
-                          "skipSeparation": false,
-                          "vadFilter": true,
-                          "conditionOnPreviousText": false,
-                          "keepSuspectedMetadata": false,
-                          "createdBy": "tester"
-                        }
-                        """)
+                .body(requestBody)
                 .when()
                 .post("/api/admin/music/{musicId}/lyric-draft-jobs", songId)
                 .then()

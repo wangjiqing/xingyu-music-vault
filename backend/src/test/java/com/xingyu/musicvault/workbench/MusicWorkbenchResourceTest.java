@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.workbench;
 
+import com.xingyu.musicvault.alignment.LyricAlignmentJob;
 import com.xingyu.musicvault.artwork.Artwork;
 import com.xingyu.musicvault.artwork.ArtworkService;
 import com.xingyu.musicvault.artwork.MusicArtworkBinding;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsString;
@@ -40,6 +42,7 @@ class MusicWorkbenchResourceTest {
         MusicArtworkBinding.deleteAll();
         Artwork.deleteAll();
         SongLyric.deleteAll();
+        LyricAlignmentJob.deleteAll();
         Lyric.deleteAll();
         TrackFile.deleteAll();
         Track.deleteAll();
@@ -97,6 +100,23 @@ class MusicWorkbenchResourceTest {
                 .body("artwork.previewUrl", nullValue())
                 .body("openApiPreview.track.lyricsAvailable", equalTo(false))
                 .body("openApiPreview.track.artworkAvailable", equalTo(false));
+    }
+
+    @Test
+    void workbenchReturnsImportedAlignmentPresentationHints() throws IOException {
+        Long musicId = createMusicWithFile("alignment-presentation.flac", "Intro", "Tester", "audio");
+        bindAlignmentLyric(musicId);
+
+        given()
+                .header("Authorization", AUTHORIZATION)
+                .when()
+                .get("/api/admin/music/{id}/workbench", musicId)
+                .then()
+                .statusCode(200)
+                .body("lyrics.alignmentPresentation.firstAlignedLyricStartMs", equalTo(5000))
+                .body("lyrics.alignmentPresentation.preservedHeaderLines[0].text", equalTo("作词：牛哥"))
+                .body("lyrics.alignmentPresentation.preservedHeaderLines[0].presentationHints.displayOnly", equalTo(true))
+                .body("lyrics.alignmentPresentation.presentationHints[0].suggestedEndMs", equalTo(5000));
     }
 
     @Test
@@ -265,6 +285,63 @@ class MusicWorkbenchResourceTest {
             binding.isPrimary = true;
             binding.persist();
             return lyric.id;
+        });
+    }
+
+    private void bindAlignmentLyric(Long musicId) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            String taskId = UUID.randomUUID().toString();
+            LyricAlignmentJob job = new LyricAlignmentJob();
+            job.id = taskId;
+            job.taskType = "LYRICS_ALIGNMENT";
+            job.songId = musicId;
+            job.status = "COMPLETED";
+            job.reviewStatus = "APPROVED";
+            job.importStatus = "IMPORTED";
+            job.audioRelativePath = "alignment-presentation.flac";
+            job.workerAudioPath = "/music/alignment-presentation.flac";
+            job.requestSnapshotJson = "{}";
+            job.jobDir = "/jobs/" + taskId;
+            job.resultSummaryJson = """
+                    {
+                      "firstAlignedLyricStartMs": 5000,
+                      "preservedHeaderLines": [{
+                        "text": "作词：牛哥",
+                        "kind": "CREDIT",
+                        "presentationHints": {
+                          "displayOnly": true,
+                          "suggestedStartMs": 0,
+                          "suggestedEndMs": 5000
+                        }
+                      }],
+                      "presentationHints": [{
+                        "displayOnly": true,
+                        "suggestedStartMs": 0,
+                        "suggestedEndMs": 5000
+                      }]
+                    }
+                    """;
+            job.createdBy = "test";
+            job.persist();
+
+            Lyric lyric = new Lyric();
+            lyric.title = "Intro";
+            lyric.artist = "Tester";
+            lyric.sourceType = "ALIGNMENT";
+            lyric.sourceTaskId = taskId;
+            lyric.content = "作词：牛哥\n[00:05.00]第一句\n";
+            lyric.contentHash = "lyrics-hash";
+            lyric.format = "LRC";
+            lyric.parseStatus = "PARSED";
+            lyric.persist();
+
+            SongLyric binding = new SongLyric();
+            binding.songId = musicId;
+            binding.lyricId = lyric.id;
+            binding.matchType = "manual";
+            binding.matchScore = 100;
+            binding.isPrimary = true;
+            binding.persist();
         });
     }
 

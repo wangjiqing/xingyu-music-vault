@@ -5,6 +5,7 @@ import com.xingyu.musicvault.alignment.LyricAlignmentDtos.AlignmentJobResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ArtifactContent;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobRequest;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ImportAlignmentJobResponse;
+import com.xingyu.musicvault.alignment.LyricAlignmentDtos.LyricTaskObservabilityResponse;
 import com.xingyu.musicvault.alignment.LyricAlignmentDtos.ReviewAlignmentJobRequest;
 import com.xingyu.musicvault.common.PageResponse;
 import jakarta.inject.Inject;
@@ -37,6 +38,12 @@ public class AdminLyricAlignmentResource {
     @Path("/{id}")
     public AlignmentJobResponse get(@PathParam("id") String id) {
         return service.get(id);
+    }
+
+    @GET
+    @Path("/{id}/observability")
+    public LyricTaskObservabilityResponse getObservability(@PathParam("id") String id) {
+        return service.getObservability(id);
     }
 
     @POST

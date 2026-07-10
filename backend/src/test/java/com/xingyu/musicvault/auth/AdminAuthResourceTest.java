@@ -241,7 +241,7 @@ class AdminAuthResourceTest {
                 .then()
                 .statusCode(200)
                 .body("serviceName", equalTo("xingyu-music-vault"))
-                .body("serviceVersion", equalTo("1.3.3"));
+                .body("serviceVersion", equalTo("1.3.4"));
     }
 
     @Test

@@ -20,6 +20,12 @@ interface WordLyricLine {
   words: WordToken[]
 }
 
+interface DisplayHeaderLine {
+  text: string
+  startMs: number
+  endMs: number
+}
+
 const props = defineProps<{
   lyrics: WorkbenchLyric
   wordLyrics: WorkbenchWordLyric
@@ -31,6 +37,7 @@ const props = defineProps<{
 
 const scrollRef = ref<HTMLElement>()
 const lineRefs = ref<HTMLElement[]>([])
+const headerLineRefs = ref<HTMLElement[]>([])
 const selectedLyricMode = ref<'word' | 'line'>('word')
 
 const lyricLines = computed<LyricLine[]>(() => {
@@ -55,14 +62,34 @@ const lyricLines = computed<LyricLine[]>(() => {
 
 const timedLyricLines = computed(() => lyricLines.value.filter((line) => line.time != null))
 const wordLyricLines = computed<WordLyricLine[]>(() => parseWordLyrics(props.wordLyrics))
+const presentationHeaderLines = computed<DisplayHeaderLine[]>(() => {
+  const presentation = props.lyrics.alignmentPresentation
+  const lines = presentation?.preservedHeaderLines
+  if (!Array.isArray(lines)) return []
+  const globalHints = Array.isArray(presentation?.presentationHints) ? presentation.presentationHints : []
+  return lines.flatMap((line, index) => {
+    const text = typeof line?.text === 'string' ? line.text.trim() : ''
+    const kind = typeof line?.kind === 'string' ? line.kind.toUpperCase() : ''
+    const hint = line?.presentationHints || globalHints[index]
+    const startMs = Number(hint?.suggestedStartMs)
+    const endMs = Number(hint?.suggestedEndMs)
+    if (!text || kind === 'LRC_METADATA' || hint?.displayOnly === false) return []
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return []
+    return [{ text, startMs: Math.max(0, startMs), endMs }]
+  })
+})
 const canUseWordLyrics = computed(() => wordLyricLines.value.length > 0)
 const canUseLineLyrics = computed(() => lyricLines.value.length > 0)
 const useWordLyrics = computed(() => canUseWordLyrics.value && selectedLyricMode.value === 'word')
 const displayMode = computed(() => (useWordLyrics.value ? '逐字歌词' : '行级歌词'))
+const activeHeaderIndex = computed(() => {
+  const currentMs = props.currentTime * 1000
+  return presentationHeaderLines.value.findIndex((line) => currentMs >= line.startMs && currentMs < line.endMs)
+})
 const activeIndex = computed(() => {
   if (useWordLyrics.value) return activeWordLineIndex.value
   if (timedLyricLines.value.length === 0) return -1
-  let result = 0
+  let result = -1
   for (let index = 0; index < timedLyricLines.value.length; index += 1) {
     if ((timedLyricLines.value[index].time ?? 0) <= props.currentTime + 0.15) {
       result = index
@@ -74,7 +101,7 @@ const activeIndex = computed(() => {
 })
 const activeWordLineIndex = computed(() => {
   if (wordLyricLines.value.length === 0) return -1
-  let result = 0
+  let result = -1
   for (let index = 0; index < wordLyricLines.value.length; index += 1) {
     if (wordLyricLines.value[index].time <= props.currentTime + 0.08) {
       result = index
@@ -102,9 +129,19 @@ watch(
 )
 
 watch(
+  activeHeaderIndex,
+  async (index) => {
+    if (index < 0) return
+    await nextTick()
+    scrollToLine(headerLineRefs.value[index])
+  },
+)
+
+watch(
   () => props.lyrics.content,
   () => {
     lineRefs.value = []
+    headerLineRefs.value = []
     if (scrollRef.value) {
       scrollRef.value.scrollTop = 0
     }
@@ -148,6 +185,23 @@ function setLineRef(element: unknown, index: number) {
   if (element instanceof HTMLElement) {
     lineRefs.value[index] = element
   }
+}
+
+function setHeaderLineRef(element: unknown, index: number) {
+  if (element instanceof HTMLElement) {
+    headerLineRefs.value[index] = element
+  }
+}
+
+function scrollToLine(line?: HTMLElement) {
+  const container = scrollRef.value
+  if (!container || !line) return
+  const targetTop = line.offsetTop - container.clientHeight / 2 + line.clientHeight / 2
+  container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' })
+}
+
+function headerPassed(line: DisplayHeaderLine): boolean {
+  return props.currentTime * 1000 >= line.endMs
 }
 
 function parseWordLyrics(wordLyrics: WorkbenchWordLyric): WordLyricLine[] {
@@ -219,6 +273,15 @@ function wordProgress(word: WordToken): string {
       </div>
       <div v-if="useWordLyrics" ref="scrollRef" class="lyrics-scroll">
         <div
+          v-for="(line, index) in presentationHeaderLines"
+          :key="`header-word-${index}-${line.startMs}`"
+          class="lyric-line header-line"
+          :class="{ active: index === activeHeaderIndex, passed: headerPassed(line) }"
+          :ref="(element) => setHeaderLineRef(element, index)"
+        >
+          {{ line.text }}
+        </div>
+        <div
           v-for="(line, index) in wordLyricLines"
           :key="`${index}-${line.time}`"
           class="lyric-line word-line"
@@ -236,6 +299,15 @@ function wordProgress(word: WordToken): string {
         </div>
       </div>
       <div v-else-if="lyricLines.length > 0" ref="scrollRef" class="lyrics-scroll">
+        <div
+          v-for="(line, index) in presentationHeaderLines"
+          :key="`header-line-${index}-${line.startMs}`"
+          class="lyric-line header-line"
+          :class="{ active: index === activeHeaderIndex, passed: headerPassed(line) }"
+          :ref="(element) => setHeaderLineRef(element, index)"
+        >
+          {{ line.text }}
+        </div>
         <div
           v-for="(line, index) in lyricLines"
           :key="`${index}-${line}`"
@@ -322,6 +394,11 @@ function wordProgress(word: WordToken): string {
     calc(24px * var(--workbench-scale, 1))
     calc(42px * var(--workbench-scale, 1));
   scrollbar-width: thin;
+}
+.header-line {
+  color: var(--el-text-color-secondary);
+  font-size: calc(16px * var(--workbench-scale, 1));
+  font-weight: 500;
 }
 .lyric-line {
   max-width: calc(720px * var(--workbench-scale, 1));

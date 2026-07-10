@@ -22,7 +22,9 @@ import {
   rejectLyricDraft,
   updateLyricDraft,
   type CreateLyricDraftJobRequest,
+  type LyricDraftPreset,
   type MusicLyricDraftContext,
+  type ObservabilitySummary,
 } from '../../api/lyricAlignment'
 import {
   fetchBraveSearchStatus,
@@ -32,12 +34,15 @@ import {
 } from '../../api/braveSearch'
 import { useAuth } from '../../composables/useAuth'
 import {
+  LYRIC_DRAFT_PRESET_OPTIONS,
   alignmentExecutionStatusTagType,
   alignmentWorkerOutcomeLabel,
   alignmentWorkerOutcomeTagType,
+  lyricDraftPresetLabel,
   lyricDraftStatusLabel,
   lyricDraftStatusTagType,
   shortAlignmentJobId,
+  workerHeartbeatHealthLabel,
 } from '../../constants/lyricAlignmentStatus'
 
 const props = defineProps<{
@@ -64,13 +69,30 @@ const pollTimer = ref<number | null>(null)
 const braveStatus = ref<BraveSearchStatus | null>(null)
 const braveResults = ref<BraveSearchResult[]>([])
 const braveLoading = ref(false)
+const draftAdvancedOpen = ref<string[]>([])
 
 const createForm = reactive<CreateLyricDraftJobRequest>({
+  preset: 'RECOMMENDED',
   language: '',
   asrModel: '',
   skipSeparation: false,
   vadFilter: true,
+  conditionOnPreviousText: false,
+  keepSuspectedMetadata: false,
+  retainIntermediate: false,
 })
+
+const presetOptions = LYRIC_DRAFT_PRESET_OPTIONS as ReadonlyArray<{
+  value: LyricDraftPreset
+  label: string
+  description: string
+}>
+
+const languageOptions = [
+  { value: 'zh', label: '中文 zh' },
+  { value: 'en', label: '英文 en' },
+  { value: 'ja', label: '日文 ja' },
+]
 
 const latestJob = computed(() => context.value?.latestJob || null)
 const draft = computed(() => context.value?.draft || null)
@@ -116,6 +138,7 @@ const signalItems = computed(() => {
     ['result', signals.resultDirectoryAvailable],
   ] as Array<[string, boolean]>
 })
+const activeJobObservability = computed(() => latestJob.value?.observabilitySummary || null)
 
 watch(
   () => props.music.id,
@@ -153,6 +176,31 @@ function errorText(error: any, fallback: string): string {
 function formatTime(value?: string | null): string {
   if (!value) return '-'
   return value.replace('T', ' ').substring(0, 19)
+}
+
+function formatDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '-'
+  const total = Math.max(0, Math.floor(seconds))
+  const minutes = Math.floor(total / 60)
+  const secs = total % 60
+  return minutes > 0 ? `${minutes} 分 ${secs} 秒` : `${secs} 秒`
+}
+
+function observabilityLines(summary?: ObservabilitySummary | null): string[] {
+  if (!summary) return []
+  const lines: string[] = []
+  const stage = summary.workerStageLabel || summary.workerStage
+  if (stage) lines.push(`阶段：${stage}`)
+  const heartbeat = summary.heartbeatHealth ? workerHeartbeatHealthLabel(summary.heartbeatHealth) : ''
+  if (heartbeat) lines.push(`心跳：${heartbeat}${summary.heartbeatAt ? ` · ${formatTime(summary.heartbeatAt)}` : ''}`)
+  const running = formatDuration(summary.runningDurationSeconds)
+  if (running !== '-') lines.push(`已运行：${running}`)
+  const preset = summary.preset ? lyricDraftPresetLabel(summary.preset) : ''
+  if (preset && preset !== '-') lines.push(`模式：${preset}`)
+  if (summary.errorCode || summary.errorSummary) {
+    lines.push(`错误：${[summary.errorCode, summary.errorSummary].filter(Boolean).join(' · ')}`)
+  }
+  return lines
 }
 
 function draftExecutionLabel(status?: string | null): string {
@@ -229,10 +277,15 @@ function stopPolling() {
 
 function openCreateDialog() {
   if (!defaultOptions.value) return
+  createForm.preset = 'RECOMMENDED'
   createForm.language = defaultOptions.value.language
   createForm.asrModel = defaultOptions.value.asrModel
   createForm.skipSeparation = defaultOptions.value.skipSeparation
   createForm.vadFilter = defaultOptions.value.vadFilter
+  createForm.conditionOnPreviousText = defaultOptions.value.conditionOnPreviousText
+  createForm.keepSuspectedMetadata = defaultOptions.value.keepSuspectedMetadata
+  createForm.retainIntermediate = defaultOptions.value.retainIntermediate
+  draftAdvancedOpen.value = []
   createDialogVisible.value = true
 }
 
@@ -318,13 +371,14 @@ async function handleCreateDraftJob() {
   actionLoading.value = true
   try {
     await createLyricDraftJob(props.music.id, {
+      preset: createForm.preset,
       language: createForm.language,
       asrModel: createForm.asrModel,
       skipSeparation: createForm.skipSeparation,
       vadFilter: createForm.vadFilter,
-      conditionOnPreviousText: defaultOptions.value.conditionOnPreviousText,
-      keepSuspectedMetadata: defaultOptions.value.keepSuspectedMetadata,
-      retainIntermediate: defaultOptions.value.retainIntermediate,
+      conditionOnPreviousText: createForm.conditionOnPreviousText,
+      keepSuspectedMetadata: createForm.keepSuspectedMetadata,
+      retainIntermediate: createForm.retainIntermediate,
       createdBy: operator(),
     })
     createDialogVisible.value = false
@@ -500,17 +554,35 @@ function handleCreateAlignmentFromDraft() {
       type="info"
       show-icon
       :closable="false"
-      :title="latestJob?.workerSignals?.stageMessage || '草稿任务正在等待或执行，页面会自动刷新状态。'"
+      :title="observabilityLines(activeJobObservability)[0] || latestJob?.workerSignals?.stageMessage || '草稿任务正在等待或执行，页面会自动刷新状态。'"
       class="draft-alert"
-    />
+    >
+      <template v-if="observabilityLines(activeJobObservability).length > 1" #default>
+        <div class="observability-inline">
+          <span
+            v-for="line in observabilityLines(activeJobObservability).slice(1)"
+            :key="line"
+          >
+            {{ line }}
+          </span>
+        </div>
+      </template>
+    </el-alert>
     <el-alert
       v-else-if="latestJob?.status === 'FAILED' || latestJob?.status === 'ABANDONED'"
       type="error"
       show-icon
       :closable="false"
-      :title="latestJob.errorMessage || '歌词草稿提取未成功完成'"
+      :title="activeJobObservability?.errorSummary || latestJob.errorMessage || '歌词草稿提取未成功完成'"
       class="draft-alert"
-    />
+    >
+      <template v-if="activeJobObservability?.errorCode || activeJobObservability?.workerStageLabel" #default>
+        <div class="observability-inline">
+          <span v-if="activeJobObservability.workerStageLabel">失败阶段：{{ activeJobObservability.workerStageLabel }}</span>
+          <span v-if="activeJobObservability.errorCode">错误码：{{ activeJobObservability.errorCode }}</span>
+        </div>
+      </template>
+    </el-alert>
 
     <template v-if="latestJob">
       <div class="task-strip">
@@ -693,18 +765,51 @@ function handleCreateAlignmentFromDraft() {
         class="dialog-alert"
       />
       <el-form label-position="top" class="draft-create-form">
+        <el-form-item label="识别模式">
+          <el-radio-group v-model="createForm.preset" class="preset-group">
+            <el-radio
+              v-for="option in presetOptions"
+              :key="option.value"
+              :value="option.value"
+              border
+            >
+              <span class="preset-label">{{ option.label }}</span>
+              <span class="preset-description">{{ option.description }}</span>
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="语言">
-          <el-input v-model="createForm.language" />
+          <el-select v-model="createForm.language" filterable allow-create default-first-option>
+            <el-option
+              v-for="option in languageOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
         </el-form-item>
-        <el-form-item label="ASR 模型">
-          <el-input v-model="createForm.asrModel" />
-        </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="createForm.skipSeparation">跳过人声分离</el-checkbox>
-        </el-form-item>
-        <el-form-item>
-          <el-checkbox v-model="createForm.vadFilter">启用 VAD</el-checkbox>
-        </el-form-item>
+        <el-collapse v-model="draftAdvancedOpen" class="advanced-collapse">
+          <el-collapse-item title="高级配置" name="advanced">
+            <el-form-item label="ASR 模型">
+              <el-input v-model="createForm.asrModel" />
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="createForm.skipSeparation">跳过人声分离</el-checkbox>
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="createForm.vadFilter">启用 VAD</el-checkbox>
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="createForm.conditionOnPreviousText">关联前文识别</el-checkbox>
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="createForm.keepSuspectedMetadata">保留疑似元信息</el-checkbox>
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="createForm.retainIntermediate">保留中间文件</el-checkbox>
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -864,6 +969,13 @@ function handleCreateAlignmentFromDraft() {
   gap: 8px;
   margin: -4px 0 12px;
 }
+.observability-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 4px;
+  font-size: 12px;
+}
 .draft-layout {
   display: grid;
   grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
@@ -969,6 +1081,34 @@ function handleCreateAlignmentFromDraft() {
 .draft-create-form {
   margin-top: 12px;
 }
+.preset-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.preset-group :deep(.el-radio) {
+  height: auto;
+  margin: 0;
+  padding: 10px 12px;
+  white-space: normal;
+}
+.preset-group :deep(.el-radio__label) {
+  display: grid;
+  gap: 3px;
+  line-height: 1.35;
+}
+.preset-label {
+  color: var(--el-text-color-primary);
+  font-weight: 700;
+}
+.preset-description {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.advanced-collapse {
+  margin-top: 4px;
+}
 .manual-textarea :deep(.el-textarea__inner) {
   min-height: 360px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1018,6 +1158,9 @@ function handleCreateAlignmentFromDraft() {
     flex-direction: column;
   }
   .draft-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .preset-group {
     grid-template-columns: 1fr;
   }
   .toolbar-actions,

@@ -18,6 +18,7 @@ public final class LyricAlignmentDtos {
     }
 
     public record CreateLyricDraftJobRequest(
+            String preset,
             String language,
             String asrModel,
             Boolean skipSeparation,
@@ -74,7 +75,8 @@ public final class LyricAlignmentDtos {
             String importErrorMessage,
             Long importedLyricId,
             String draftStatus,
-            Long confirmedTrustedLyricsId
+            Long confirmedTrustedLyricsId,
+            ObservabilitySummaryResponse observabilitySummary
     ) {
     }
 
@@ -112,7 +114,106 @@ public final class LyricAlignmentDtos {
             String importErrorMessage,
             Long importedLyricId,
             String draftStatus,
-            Long confirmedTrustedLyricsId
+            Long confirmedTrustedLyricsId,
+            ObservabilitySummaryResponse observabilitySummary
+    ) {
+    }
+
+    public record ObservabilitySummaryResponse(
+            String workerStage,
+            String workerStageLabel,
+            String heartbeatAt,
+            String heartbeatHealth,
+            Long runningDurationSeconds,
+            Long stageDurationSeconds,
+            String preset,
+            Integer warningCount,
+            String errorCode,
+            String errorSummary,
+            String statusProtocolLabel
+    ) {
+    }
+
+    public record LyricTaskObservabilityResponse(
+            String jobId,
+            String taskType,
+            boolean statusAvailable,
+            String statusParseError,
+            boolean directoryAvailable,
+            boolean legacy,
+            java.util.List<String> compatibilityMessages,
+            String workerState,
+            String workerStateLabel,
+            String workerStage,
+            String workerStageLabel,
+            String workerStageDescription,
+            Integer statusSchemaVersion,
+            Integer requestSchemaVersion,
+            String startedAt,
+            String stageStartedAt,
+            String updatedAt,
+            String heartbeatAt,
+            String heartbeatHealth,
+            Long runningDurationSeconds,
+            Long stageDurationSeconds,
+            JsonNode progress,
+            WorkerAttemptResponse attempt,
+            JsonNode requestedConfig,
+            JsonNode resolvedConfig,
+            JsonNode configSummary,
+            JsonNode warnings,
+            WorkerErrorResponse error,
+            JsonNode result,
+            java.util.List<WorkerOutputResponse> outputs,
+            WorkerMarkersResponse markers,
+            java.util.List<WorkerEventResponse> events,
+            boolean eventsAvailable,
+            boolean eventsTruncated,
+            String eventsReadError,
+            boolean rawStatusAvailable
+    ) {
+    }
+
+    public record WorkerAttemptResponse(
+            String id,
+            Integer number,
+            String stderrPath
+    ) {
+    }
+
+    public record WorkerErrorResponse(
+            String code,
+            String label,
+            String message,
+            JsonNode details
+    ) {
+    }
+
+    public record WorkerOutputResponse(
+            String type,
+            boolean available,
+            String relativePath
+    ) {
+    }
+
+    public record WorkerMarkersResponse(
+            boolean ready,
+            boolean running,
+            boolean succeeded,
+            boolean needsReview,
+            boolean failed,
+            boolean abandoned
+    ) {
+    }
+
+    public record WorkerEventResponse(
+            String eventId,
+            String timestamp,
+            String level,
+            String type,
+            String stage,
+            String message,
+            JsonNode details
     ) {
     }
 
