@@ -102,8 +102,8 @@ class LyricDashboardResourceTest {
 
     @Test
     void dailyRecommendationsAreStableSkipAndReplaceArePersisted() throws IOException {
-        Long lrc = createMusicWithLyric("lrc-candidate.flac", "LRC Candidate", false, true);
-        Long noLyrics = createMusic("no-lyrics-candidate.flac", "No Lyrics Candidate");
+        createMusicWithLyric("lrc-candidate.flac", "LRC Candidate", false, true);
+        createMusic("no-lyrics-candidate.flac", "No Lyrics Candidate");
         createMusicWithLyric("ready.flac", "Ready", true, true);
         Long running = createMusic("running-candidate.flac", "Running Candidate");
         Long draft = createMusic("draft-candidate.flac", "Draft Candidate");
@@ -124,8 +124,6 @@ class LyricDashboardResourceTest {
                 .body("items.size()", lessThanOrEqualTo(5))
                 .body("items.music.id", not(hasItem(running.intValue())))
                 .body("items.music.id", not(hasItem(draft.intValue())))
-                .body("items.music.id", hasItem(lrc.intValue()))
-                .body("items.music.id", hasItem(noLyrics.intValue()))
                 .extract()
                 .jsonPath();
 

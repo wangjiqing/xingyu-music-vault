@@ -2,8 +2,8 @@ services:
   xingyu-music-vault:
     # Default registry: GHCR.
     # Docker Hub alternative:
-    # image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
-    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
+    # image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.4}
+    image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.4}
     container_name: xingyu-music-vault
     ports:
       # 安全提示：当前端口映射适合本机 / 局域网调试，不建议直接映射公网。
@@ -73,7 +73,7 @@ services:
       retries: 3
 
   xingyu-lyrics-aligner-worker:
-    image: ${ALIGNMENT_WORKER_IMAGE:-wangjiqing/xingyu-lyrics-aligner:0.4.0}
+    image: ${ALIGNMENT_WORKER_IMAGE:-wangjiqing/xingyu-lyrics-aligner:0.6.0}
     container_name: xingyu-lyrics-aligner-worker
     command: xingyu-align worker run --jobs-dir /jobs --music-dir /music --device cpu
     user: "10001:10001"

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { RefreshRight, View } from '@element-plus/icons-vue'
+import { Headset, RefreshRight, View } from '@element-plus/icons-vue'
 import {
   approveLyricAlignmentJob,
   fetchLyricAlignmentArtifact,
   fetchLyricAlignmentJob,
+  getLyricTaskObservability,
   importLyricAlignmentJob,
   rejectLyricAlignmentJob,
   type AlignmentArtifactType,
   type LyricAlignmentJob,
+  type LyricTaskObservabilityResponse,
 } from '../../api/lyricAlignment'
 import { useAuth } from '../../composables/useAuth'
 import {
@@ -21,6 +23,7 @@ import {
 } from '../../constants/lyricAlignmentStatus'
 import LyricAlignmentArtifactPreview from './LyricAlignmentArtifactPreview.vue'
 import LyricAlignmentStatusTags from './LyricAlignmentStatusTags.vue'
+import WorkerObservabilityPanel from './WorkerObservabilityPanel.vue'
 
 interface ArtifactState {
   loading: boolean
@@ -37,13 +40,17 @@ const emit = defineEmits<{
   (event: 'updated', job: LyricAlignmentJob): void
   (event: 'imported', job: LyricAlignmentJob): void
   (event: 'viewLyrics', songId: number): void
+  (event: 'previewLyrics', songId: number, jobId: string): void
 }>()
 
 const { user } = useAuth()
 const loading = ref(false)
 const actionLoading = ref(false)
+const observabilityLoading = ref(false)
+const observabilityError = ref('')
 const activeTab = ref('overview')
 const job = ref<LyricAlignmentJob | null>(null)
+const observability = ref<LyricTaskObservabilityResponse | null>(null)
 
 const artifactStates = reactive<Record<AlignmentArtifactType, ArtifactState>>({
   lrc: createArtifactState(),
@@ -59,6 +66,7 @@ const canImport = computed(
     job.value?.reviewStatus === 'APPROVED' &&
     job.value?.importStatus === 'NOT_IMPORTED',
 )
+const canPreview = computed(() => job.value?.taskType === 'LYRICS_ALIGNMENT' && job.value?.status === 'COMPLETED')
 const resultSummaryEntries = computed(() => objectEntries(job.value?.resultSummary))
 const workerStatusEntries = computed(() => objectEntries(job.value?.workerStatus))
 const hasResultSummary = computed(() => resultSummaryEntries.value.length > 0)
@@ -148,6 +156,7 @@ function tabArtifact(tab: string): AlignmentArtifactType | null {
 async function loadJob() {
   if (!props.jobId) return
   loading.value = true
+  loadObservability()
   try {
     job.value = await fetchLyricAlignmentJob(props.jobId)
     emit('updated', job.value)
@@ -161,6 +170,25 @@ async function loadJob() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadObservability() {
+  if (!props.jobId) return
+  observabilityLoading.value = true
+  observabilityError.value = ''
+  try {
+    observability.value = await getLyricTaskObservability(props.jobId)
+  } catch (error: any) {
+    observability.value = null
+    observabilityError.value = errorText(error, 'Worker 可观测信息读取失败')
+  } finally {
+    observabilityLoading.value = false
+  }
+}
+
+function openArtifactTab(artifact: AlignmentArtifactType) {
+  activeTab.value = artifact
+  loadArtifact(artifact)
 }
 
 async function loadArtifact(artifact: AlignmentArtifactType, force = false) {
@@ -274,6 +302,15 @@ async function handleImport() {
         </div>
         <div class="detail-actions">
           <el-button :icon="RefreshRight" :loading="loading" @click="loadJob">刷新</el-button>
+          <el-button
+            v-if="canPreview"
+            type="primary"
+            plain
+            :icon="Headset"
+            @click="emit('previewLyrics', job.songId, job.id)"
+          >
+            试听匹配
+          </el-button>
           <el-button v-if="canReview" type="success" :loading="actionLoading" @click="handleApprove">
             审核通过
           </el-button>
@@ -382,6 +419,16 @@ async function handleImport() {
               </el-descriptions>
             </el-card>
           </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="Worker 可观测性" name="observability">
+          <WorkerObservabilityPanel
+            :observability="observability"
+            :loading="observabilityLoading"
+            :error="observabilityError"
+            @refresh="loadObservability"
+            @view-artifact="openArtifactTab"
+          />
         </el-tab-pane>
 
         <el-tab-pane label="LRC" name="lrc">

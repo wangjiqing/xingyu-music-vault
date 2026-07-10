@@ -124,6 +124,7 @@ public class LyricAlignmentResultReader {
             if (warnings != null && warnings.isArray()) {
                 summary.put("warningCount", warnings.size());
             }
+            copyHeaderProtocol(summary, result);
         } catch (IOException | RuntimeException exception) {
             LOG.warnf(exception, "Failed to summarize worker status result: jobDir=%s", jobDir);
         }
@@ -153,6 +154,7 @@ public class LyricAlignmentResultReader {
             if (statusCounts != null && statusCounts.isObject()) {
                 summary.set("statusCounts", statusCounts);
             }
+            copyHeaderProtocol(summary, report);
         } catch (IOException | RuntimeException exception) {
             LOG.warnf(exception, "Failed to summarize alignment report JSON: path=%s", reportPath);
         }
@@ -164,6 +166,24 @@ public class LyricAlignmentResultReader {
             return;
         }
         target.set(targetName, value);
+    }
+
+    private void copyHeaderProtocol(ObjectNode target, JsonNode source) {
+        if (source == null || !source.isObject()) {
+            return;
+        }
+        JsonNode firstAligned = source.get("firstAlignedLyricStartMs");
+        if (firstAligned != null && firstAligned.isNumber()) {
+            target.set("firstAlignedLyricStartMs", firstAligned);
+        }
+        JsonNode headerLines = source.get("preservedHeaderLines");
+        if (headerLines != null && headerLines.isArray()) {
+            target.set("preservedHeaderLines", headerLines.deepCopy());
+        }
+        JsonNode presentationHints = source.get("presentationHints");
+        if (presentationHints != null && presentationHints.isArray()) {
+            target.set("presentationHints", presentationHints.deepCopy());
+        }
     }
 
     private String hashIfPresent(Path path) throws IOException {

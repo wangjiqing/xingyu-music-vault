@@ -1,6 +1,6 @@
-# 镜像发布说明（v1.3.2）
+# 镜像发布说明（v1.3.4）
 
-v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜像。发布 workflow 不自动创建 GitHub Release；如需正式 Release 页面，请在 tag 发布和镜像验证完成后手动创建。
+v1.3.4 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜像。发布 workflow 不自动创建 GitHub Release；如需正式 Release 页面，请在 tag 发布和镜像验证完成后手动创建。
 
 构建源策略：
 
@@ -17,16 +17,16 @@ v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜
 
 ## tag 规则
 
-推送 `v1.3.2` tag 后，自动发布：
+推送 `v1.3.4` tag 后，自动发布：
 
-- `ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2`
+- `ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4`
 - `ghcr.io/wangjiqing/xingyu-music-vault:v1.3`
 - `ghcr.io/wangjiqing/xingyu-music-vault:latest`
-- `wangjiqing/xingyu-music-vault:v1.3.2`
+- `wangjiqing/xingyu-music-vault:v1.3.4`
 - `wangjiqing/xingyu-music-vault:v1.3`
 - `wangjiqing/xingyu-music-vault:latest`
 
-生产部署推荐使用精确版本 tag，例如 `v1.3.2`。`latest` 适合快速体验，不建议作为长期生产固定版本。
+生产部署推荐使用精确版本 tag，例如 `v1.3.4`。`latest` 适合快速体验，不建议作为长期生产固定版本。
 
 ## 自动发布（GitHub Actions）
 
@@ -34,7 +34,7 @@ v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜
 
 触发方式：
 
-- push tag `v*`（例如 `v1.3.2`）
+- push tag `v*`（例如 `v1.3.4`）
 - `workflow_dispatch` 手动触发（输入 `release_tag`）
 
 工作流权限：
@@ -53,7 +53,7 @@ v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜
 - Docker Hub 使用 `DOCKERHUB_USERNAME` 与 `DOCKERHUB_TOKEN` 登录。
 - 使用 `docker/build-push-action@v6` 一次构建、多 tag 推送。
 - 不在日志中打印 token，不把凭证写入文件。
-- 不自动创建 GitHub Release；发布完成后可手动创建 Release，并引用 `docs/release/v1.3.3-release-notes.md`。
+- 不自动创建 GitHub Release；发布完成后可手动创建 Release，并引用 `docs/release/v1.3.4-release-notes.md`。
 
 默认发布平台：
 
@@ -65,22 +65,22 @@ v1.3.2 继续使用 GitHub Actions 自动发布 GHCR 与 Docker Hub 双仓库镜
 确认两个仓库镜像均已发布：
 
 ```bash
-docker pull ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2
-docker pull wangjiqing/xingyu-music-vault:v1.3.2
+docker pull ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4
+docker pull wangjiqing/xingyu-music-vault:v1.3.4
 ```
 
 检查多架构 manifest：
 
 ```bash
-docker buildx imagetools inspect ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2
-docker buildx imagetools inspect wangjiqing/xingyu-music-vault:v1.3.2
+docker buildx imagetools inspect ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4
+docker buildx imagetools inspect wangjiqing/xingyu-music-vault:v1.3.4
 ```
 
 Apple Silicon 可直接拉取 `linux/arm64` 镜像。如需临时验证 `amd64`：
 
 ```bash
-docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2
-docker pull --platform linux/amd64 wangjiqing/xingyu-music-vault:v1.3.2
+docker pull --platform linux/amd64 ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4
+docker pull --platform linux/amd64 wangjiqing/xingyu-music-vault:v1.3.4
 ```
 
 ## 本地构建
@@ -89,7 +89,7 @@ docker pull --platform linux/amd64 wangjiqing/xingyu-music-vault:v1.3.2
 docker build \
   --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
   --build-arg MAVEN_MIRROR_URL=https://maven.aliyun.com/repository/public \
-  -t xingyu-music-vault:v1.3.2 \
+  -t xingyu-music-vault:v1.3.4 \
   .
 ```
 
@@ -99,10 +99,10 @@ GHCR：
 
 ```bash
 echo "<GITHUB_TOKEN>" | docker login ghcr.io -u wangjiqing --password-stdin
-docker tag xingyu-music-vault:v1.3.2 ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2
-docker tag xingyu-music-vault:v1.3.2 ghcr.io/wangjiqing/xingyu-music-vault:v1.3
-docker tag xingyu-music-vault:v1.3.2 ghcr.io/wangjiqing/xingyu-music-vault:latest
-docker push ghcr.io/wangjiqing/xingyu-music-vault:v1.3.2
+docker tag xingyu-music-vault:v1.3.4 ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4
+docker tag xingyu-music-vault:v1.3.4 ghcr.io/wangjiqing/xingyu-music-vault:v1.3
+docker tag xingyu-music-vault:v1.3.4 ghcr.io/wangjiqing/xingyu-music-vault:latest
+docker push ghcr.io/wangjiqing/xingyu-music-vault:v1.3.4
 docker push ghcr.io/wangjiqing/xingyu-music-vault:v1.3
 docker push ghcr.io/wangjiqing/xingyu-music-vault:latest
 ```
@@ -111,10 +111,10 @@ Docker Hub：
 
 ```bash
 docker login
-docker tag xingyu-music-vault:v1.3.2 wangjiqing/xingyu-music-vault:v1.3.2
-docker tag xingyu-music-vault:v1.3.2 wangjiqing/xingyu-music-vault:v1.3
-docker tag xingyu-music-vault:v1.3.2 wangjiqing/xingyu-music-vault:latest
-docker push wangjiqing/xingyu-music-vault:v1.3.2
+docker tag xingyu-music-vault:v1.3.4 wangjiqing/xingyu-music-vault:v1.3.4
+docker tag xingyu-music-vault:v1.3.4 wangjiqing/xingyu-music-vault:v1.3
+docker tag xingyu-music-vault:v1.3.4 wangjiqing/xingyu-music-vault:latest
+docker push wangjiqing/xingyu-music-vault:v1.3.4
 docker push wangjiqing/xingyu-music-vault:v1.3
 docker push wangjiqing/xingyu-music-vault:latest
 ```

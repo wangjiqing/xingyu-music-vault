@@ -7,6 +7,7 @@ import {
   fetchLyricAlignmentJobs,
   type LyricAlignmentJob,
   type LyricAlignmentJobListItem,
+  type ObservabilitySummary,
 } from '../api/lyricAlignment'
 import {
   alignmentExecutionStatusLabel,
@@ -17,11 +18,13 @@ import {
   alignmentReviewStatusTagType,
   alignmentWorkerOutcomeLabel,
   alignmentWorkerOutcomeTagType,
+  lyricDraftPresetLabel,
   lyricDraftStatusLabel,
   lyricDraftStatusTagType,
   lyricTaskTypeLabel,
   lyricTaskTypeTagType,
   shortAlignmentJobId,
+  workerHeartbeatHealthLabel,
 } from '../constants/lyricAlignmentStatus'
 import LyricAlignmentTaskDetail from '../components/alignment/LyricAlignmentTaskDetail.vue'
 
@@ -79,6 +82,57 @@ function formatTime(value?: string | null): string {
   return value.replace('T', ' ').substring(0, 19)
 }
 
+function formatDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '-'
+  const total = Math.max(0, Math.floor(seconds))
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  if (hours > 0) return `${hours} 小时 ${minutes} 分`
+  if (minutes > 0) return `${minutes} 分 ${secs} 秒`
+  return `${secs} 秒`
+}
+
+function protocolText(summary?: ObservabilitySummary | null): string {
+  if (!summary) return '暂无阶段信息'
+  return summary.statusProtocolLabel || '旧版任务'
+}
+
+function stageText(job: LyricAlignmentJobListItem): string {
+  const summary = job.observabilitySummary
+  const stage = summary?.workerStageLabel || summary?.workerStage
+  if (stage) return `${alignmentExecutionStatusLabel(job.status)} · ${stage}`
+  return protocolText(summary)
+}
+
+function summaryLines(summary?: ObservabilitySummary | null): string[] {
+  if (!summary) return ['暂无阶段信息']
+  const lines: string[] = []
+  const heartbeat = summary.heartbeatHealth ? workerHeartbeatHealthLabel(summary.heartbeatHealth) : ''
+  if (heartbeat && heartbeat !== '-') {
+    lines.push(summary.heartbeatAt ? `${heartbeat} · ${formatTime(summary.heartbeatAt)}` : heartbeat)
+  }
+  const running = formatDuration(summary.runningDurationSeconds)
+  const stage = formatDuration(summary.stageDurationSeconds)
+  if (running !== '-' || stage !== '-') {
+    lines.push(`已运行 ${running} · 当前阶段 ${stage}`)
+  }
+  const preset = summary.preset ? lyricDraftPresetLabel(summary.preset) : ''
+  if (preset && preset !== '-') lines.push(`模式：${preset}`)
+  if (summary.warningCount && summary.warningCount > 0) lines.push(`警告：${summary.warningCount} 条`)
+  if (summary.errorCode || summary.errorSummary) {
+    lines.push(`错误：${[summary.errorCode, summary.errorSummary].filter(Boolean).join(' · ')}`)
+  }
+  if (lines.length === 0) lines.push(protocolText(summary))
+  return lines
+}
+
+function summaryTone(summary?: ObservabilitySummary | null): 'warning' | 'danger' | 'info' {
+  if (summary?.errorCode || summary?.errorSummary) return 'danger'
+  if (summary?.heartbeatHealth === 'STALE' || summary?.heartbeatHealth === 'UNKNOWN') return 'warning'
+  return 'info'
+}
+
 function errorText(error: any, fallback: string): string {
   const message = error?.response?.data?.message
   return typeof message === 'string' && message.trim() ? message : fallback
@@ -126,6 +180,14 @@ function handleJobUpdated(updated: LyricAlignmentJob) {
 
 function openWorkbench(songId: number) {
   router.push({ path: '/music/workbench', query: { id: String(songId) } })
+}
+
+function previewInWorkbench(songId: number, jobId: string) {
+  drawerVisible.value = false
+  router.push({
+    path: '/music/workbench',
+    query: { id: String(songId), tab: 'lyrics', previewJobId: jobId },
+  })
 }
 
 function openDraftWorkbench(songId: number) {
@@ -203,6 +265,20 @@ function clearSongFilter() {
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="Worker 摘要" min-width="260">
+          <template #default="{ row }">
+            <div class="worker-summary" :class="`summary-${summaryTone(row.observabilitySummary)}`">
+              <div class="worker-summary-title">{{ stageText(row) }}</div>
+              <div
+                v-for="line in summaryLines(row.observabilitySummary)"
+                :key="line"
+                class="worker-summary-line"
+              >
+                {{ line }}
+              </div>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="Worker 结果" width="126">
           <template #default="{ row }">
             <el-tag :type="alignmentWorkerOutcomeTagType(row.workerOutcome)" size="small">
@@ -264,6 +340,7 @@ function clearSongFilter() {
         @updated="handleJobUpdated"
         @imported="handleJobUpdated"
         @view-lyrics="openWorkbench"
+        @preview-lyrics="previewInWorkbench"
       />
     </el-drawer>
   </div>
@@ -315,6 +392,30 @@ function clearSongFilter() {
 }
 .muted {
   color: var(--el-text-color-secondary);
+}
+.worker-summary {
+  display: grid;
+  gap: 3px;
+  padding-left: 8px;
+  border-left: 3px solid var(--el-border-color);
+}
+.worker-summary.summary-warning {
+  border-left-color: var(--el-color-warning);
+}
+.worker-summary.summary-danger {
+  border-left-color: var(--el-color-danger);
+}
+.worker-summary-title {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.worker-summary-line {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 900px) {
   .card-header {

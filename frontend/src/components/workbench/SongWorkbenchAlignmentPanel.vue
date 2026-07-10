@@ -9,9 +9,10 @@ import {
   fetchLyricAlignmentJobs,
   type LyricAlignmentJob,
   type LyricAlignmentJobListItem,
+  type ObservabilitySummary,
 } from '../../api/lyricAlignment'
 import { useAuth } from '../../composables/useAuth'
-import { shortAlignmentJobId } from '../../constants/lyricAlignmentStatus'
+import { shortAlignmentJobId, workerHeartbeatHealthLabel } from '../../constants/lyricAlignmentStatus'
 import LyricAlignmentStatusTags from '../alignment/LyricAlignmentStatusTags.vue'
 import LyricAlignmentTaskDetail from '../alignment/LyricAlignmentTaskDetail.vue'
 
@@ -23,6 +24,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'imported'): void
   (event: 'viewLyrics'): void
+  (event: 'previewLyrics', jobId: string): void
 }>()
 
 const router = useRouter()
@@ -54,6 +56,29 @@ function timeValue(value?: string | null): number {
 function formatTime(value?: string | null): string {
   if (!value) return '-'
   return value.replace('T', ' ').substring(0, 19)
+}
+
+function formatDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '-'
+  const total = Math.max(0, Math.floor(seconds))
+  const minutes = Math.floor(total / 60)
+  const secs = total % 60
+  return minutes > 0 ? `${minutes} 分 ${secs} 秒` : `${secs} 秒`
+}
+
+function observabilityLines(summary?: ObservabilitySummary | null): string[] {
+  if (!summary) return []
+  const lines: string[] = []
+  const stage = summary.workerStageLabel || summary.workerStage
+  if (stage) lines.push(`阶段：${stage}`)
+  const heartbeat = summary.heartbeatHealth ? workerHeartbeatHealthLabel(summary.heartbeatHealth) : ''
+  if (heartbeat) lines.push(`心跳：${heartbeat}${summary.heartbeatAt ? ` · ${formatTime(summary.heartbeatAt)}` : ''}`)
+  const running = formatDuration(summary.runningDurationSeconds)
+  if (running !== '-') lines.push(`已运行：${running}`)
+  if (summary.errorCode || summary.errorSummary) {
+    lines.push(`错误：${[summary.errorCode, summary.errorSummary].filter(Boolean).join(' · ')}`)
+  }
+  return lines
 }
 
 function errorText(error: any, fallback: string): string {
@@ -146,6 +171,13 @@ function openTaskList() {
         <LyricAlignmentStatusTags :job="latestJob" />
         <span>创建：{{ formatTime(latestJob.createdAt) }}</span>
         <span>完成：{{ formatTime(latestJob.completedAt) }}</span>
+        <span
+          v-for="line in observabilityLines(latestJob.observabilitySummary)"
+          :key="line"
+          class="observability-line"
+        >
+          {{ line }}
+        </span>
       </div>
 
       <div v-if="sortedJobs.length > 1" class="job-switcher">
@@ -166,6 +198,7 @@ function openTaskList() {
         @updated="handleJobUpdated"
         @imported="handleImported"
         @view-lyrics="emit('viewLyrics')"
+        @preview-lyrics="(_songId, jobId) => emit('previewLyrics', jobId)"
       />
     </template>
 
@@ -229,6 +262,9 @@ function openTaskList() {
   background: color-mix(in srgb, var(--el-fill-color-lighter) 70%, transparent);
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.observability-line {
+  color: var(--el-text-color-primary);
 }
 .source-alert {
   margin-bottom: 12px;

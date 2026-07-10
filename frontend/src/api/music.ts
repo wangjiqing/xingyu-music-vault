@@ -1,4 +1,5 @@
 import http from './http'
+import type { LyricAlignmentPresentation } from '../types/lyricPresentation'
 import type { PageResponse } from './types'
 
 export interface MusicItem {
@@ -197,6 +198,7 @@ export interface WorkbenchLyric {
   lyricId: number | null
   format: string | null
   content: string | null
+  alignmentPresentation?: LyricAlignmentPresentation | null
   updatedAt: string | null
 }
 

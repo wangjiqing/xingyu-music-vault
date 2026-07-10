@@ -1,5 +1,11 @@
 package com.xingyu.musicvault.workbench;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.xingyu.musicvault.alignment.LyricAlignmentJob;
+import com.xingyu.musicvault.alignment.LyricAlignmentJobRepository;
 import com.xingyu.musicvault.artwork.Artwork;
 import com.xingyu.musicvault.common.ErrorResponse;
 import com.xingyu.musicvault.config.MusicVaultConfig;
@@ -26,6 +32,7 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.StreamingOutput;
+import org.jboss.logging.Logger;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -37,6 +44,7 @@ import java.util.Objects;
 
 @Path("/api/admin/music")
 public class MusicWorkbenchResource {
+    private static final Logger LOG = Logger.getLogger(MusicWorkbenchResource.class);
     private static final String ACTIVE = "active";
     private static final String RANGE = "Range";
     private static final String ACCEPT_RANGES = "Accept-Ranges";
@@ -50,6 +58,12 @@ public class MusicWorkbenchResource {
 
     @Inject
     SongLyricStatusService songLyricStatusService;
+
+    @Inject
+    LyricAlignmentJobRepository alignmentJobRepository;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @GET
     @Path("/{id}/workbench")
@@ -127,9 +141,50 @@ public class MusicWorkbenchResource {
 
     private WorkbenchLyricResponse lyricResponse(Lyric lyric) {
         if (lyric == null) {
-            return new WorkbenchLyricResponse(false, null, null, null, null);
+            return new WorkbenchLyricResponse(false, null, null, null, null, null);
         }
-        return new WorkbenchLyricResponse(true, lyric.id, lyric.format, lyric.content, lyric.updatedAt);
+        return new WorkbenchLyricResponse(
+                true,
+                lyric.id,
+                lyric.format,
+                lyric.content,
+                alignmentPresentation(lyric),
+                lyric.updatedAt
+        );
+    }
+
+    private JsonNode alignmentPresentation(Lyric lyric) {
+        if (!hasText(lyric.sourceTaskId)) {
+            return null;
+        }
+        LyricAlignmentJob job = alignmentJobRepository.findById(lyric.sourceTaskId);
+        if (job == null || !hasText(job.resultSummaryJson)) {
+            return null;
+        }
+        try {
+            JsonNode summary = objectMapper.readTree(job.resultSummaryJson);
+            if (summary == null || !summary.isObject()) {
+                return null;
+            }
+            ObjectNode presentation = objectMapper.createObjectNode();
+            copyPresentationField(presentation, summary, "firstAlignedLyricStartMs", true);
+            copyPresentationField(presentation, summary, "preservedHeaderLines", false);
+            copyPresentationField(presentation, summary, "presentationHints", false);
+            return presentation.isEmpty() ? null : presentation;
+        } catch (JsonProcessingException exception) {
+            LOG.warnf(exception, "Failed to parse alignment presentation summary: taskId=%s", lyric.sourceTaskId);
+            return null;
+        }
+    }
+
+    private void copyPresentationField(ObjectNode target, JsonNode source, String field, boolean number) {
+        JsonNode value = source.get(field);
+        if (value == null || value.isNull()) {
+            return;
+        }
+        if ((number && value.isNumber()) || (!number && value.isArray())) {
+            target.set(field, value.deepCopy());
+        }
     }
 
     private WorkbenchWordLyricResponse wordLyricResponse(Lyric lyric) {

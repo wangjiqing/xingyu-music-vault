@@ -22,13 +22,13 @@ cp deploy/docker-compose.image.example.yml deploy/docker-compose.yml
 默认 `deploy/docker-compose.yml` 使用 GHCR：
 
 ```yaml
-image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
+image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.4}
 ```
 
 如需改用 Docker Hub，可改为：
 
 ```yaml
-image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
+image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.4}
 ```
 
 两个 registry 均发布以下平台镜像：
@@ -41,7 +41,7 @@ image: wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.2}
 编辑 `deploy/.env`，推荐固定精确版本：
 
 ```dotenv
-IMAGE_TAG=v1.3.2
+IMAGE_TAG=v1.3.4
 ```
 
 `latest` 适合快速体验，不建议作为长期生产固定版本。
@@ -56,8 +56,8 @@ mkdir -p alignment-jobs alignment-models
 
 音库容器将 `ALIGNMENT_JOBS_DIR` 挂载为 `/alignment-jobs`，Worker 将同一宿主机目录挂载为
 `/jobs`；`request.json` 中的输入和输出路径使用 Worker 视角的 `/jobs/...`。Compose 默认使用
-`wangjiqing/xingyu-lyrics-aligner:0.4.0`，同一 Worker 支持 `LYRIC_DRAFT_EXTRACTION` 和
-`LYRICS_ALIGNMENT`。如果本机已经有 HuggingFace 模型缓存，可将 `ALIGNMENT_MODELS_DIR` 指向
+`wangjiqing/xingyu-lyrics-aligner:0.6.0`，同一 Worker 支持 `LYRIC_DRAFT_EXTRACTION` 和
+`LYRICS_ALIGNMENT`，v1.3.4 推荐配合该 Worker 版本读取可观测与歌词头部展示协议。如果本机已经有 HuggingFace 模型缓存，可将 `ALIGNMENT_MODELS_DIR` 指向
 `~/.cache/huggingface`，Compose 会把它挂载到 Worker 的 `/models`。
 
 v1.3.1 起，image compose 默认将 `/lyrics` 以读写方式挂载，并设置
@@ -105,7 +105,7 @@ curl -i http://localhost:8080/api/open/v1/sync/state
 
 ## 升级镜像
 
-将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.2`），然后执行：
+将 `IMAGE_TAG` 更新为新版本（例如 `v1.3.4`），然后执行：
 
 ```bash
 cd deploy

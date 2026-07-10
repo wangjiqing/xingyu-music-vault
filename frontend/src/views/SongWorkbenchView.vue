@@ -11,7 +11,13 @@ import {
   type MusicItem,
   type MusicWorkbench,
   type OpenApiPreview,
+  type WorkbenchLyric,
+  type WorkbenchWordLyric,
 } from '../api/music'
+import {
+  fetchLyricAlignmentArtifact,
+  fetchLyricAlignmentJob,
+} from '../api/lyricAlignment'
 import SongWorkbenchPlayer from '../components/workbench/SongWorkbenchPlayer.vue'
 import type { PlaybackMode } from '../components/workbench/SongWorkbenchPlayer.vue'
 import SongWorkbenchMetadataPanel from '../components/workbench/SongWorkbenchMetadataPanel.vue'
@@ -42,6 +48,10 @@ const playerCurrentTime = ref(0)
 const playerDuration = ref(0)
 const playbackActive = ref(false)
 const autoplayOnSourceChange = ref(false)
+const previewJobId = ref(typeof route.query.previewJobId === 'string' ? route.query.previewJobId : '')
+const previewLoading = ref(false)
+const previewLyrics = ref<WorkbenchLyric | null>(null)
+const previewWordLyrics = ref<WorkbenchWordLyric | null>(null)
 
 const query = reactive({
   page: 0,
@@ -74,6 +84,9 @@ function workbenchQuery(id: number) {
   }
   if (preselectedSourceLyricsId.value && activeTab.value === 'alignment') {
     query.sourceLyricsAssetId = String(preselectedSourceLyricsId.value)
+  }
+  if (previewJobId.value && activeTab.value === 'lyrics') {
+    query.previewJobId = previewJobId.value
   }
   return query
 }
@@ -130,6 +143,9 @@ async function appendNextPage(): Promise<boolean> {
 }
 
 async function loadWorkbench(id: number, autoplay = false) {
+  if (selectedId.value && selectedId.value !== id) {
+    resetAlignmentPreview()
+  }
   detailLoading.value = true
   playbackError.value = ''
   openApiError.value = ''
@@ -140,12 +156,74 @@ async function loadWorkbench(id: number, autoplay = false) {
     openApiPreview.value = data.openApiPreview
     selectedId.value = id
     router.replace({ path: '/music/workbench', query: workbenchQuery(id) })
+    const requestedPreview = typeof route.query.previewJobId === 'string' ? route.query.previewJobId : previewJobId.value
+    if (requestedPreview) {
+      await loadAlignmentPreview(requestedPreview, false)
+    }
   } catch {
     workbench.value = null
     openApiPreview.value = null
     ElMessage.error('加载歌曲工作台数据失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+function resetAlignmentPreview() {
+  previewJobId.value = ''
+  previewLyrics.value = null
+  previewWordLyrics.value = null
+}
+
+async function loadAlignmentPreview(jobId: string, updateRoute = true) {
+  if (!jobId || !selectedId.value) return
+  previewLoading.value = true
+  try {
+    const [job, lrc, swlrc] = await Promise.all([
+      fetchLyricAlignmentJob(jobId),
+      fetchLyricAlignmentArtifact(jobId, 'lrc'),
+      fetchLyricAlignmentArtifact(jobId, 'swlrc'),
+    ])
+    if (job.songId !== selectedId.value) {
+      throw new Error('对齐任务与当前歌曲不匹配')
+    }
+    previewJobId.value = jobId
+    previewLyrics.value = {
+      available: true,
+      lyricId: job.lyricId ?? null,
+      format: 'LRC',
+      content: lrc,
+      alignmentPresentation: job.resultSummary || null,
+      updatedAt: job.updatedAt ?? null,
+    }
+    previewWordLyrics.value = {
+      available: true,
+      format: 'SWLRC',
+      content: swlrc,
+      contentHash: job.swlrcHash ?? null,
+      updatedAt: job.updatedAt ?? null,
+    }
+    activeTab.value = 'lyrics'
+    if (updateRoute) {
+      await router.replace({ path: '/music/workbench', query: workbenchQuery(selectedId.value) })
+    }
+    ElMessage.success('已加载对齐结果，可播放歌曲检查歌词匹配')
+  } catch (error: any) {
+    resetAlignmentPreview()
+    if (selectedId.value) {
+      await router.replace({ path: '/music/workbench', query: workbenchQuery(selectedId.value) })
+    }
+    const message = error?.response?.data?.message || error?.message
+    ElMessage.error(typeof message === 'string' && message.trim() ? message : '加载对齐试听结果失败')
+  } finally {
+    previewLoading.value = false
+  }
+}
+
+async function clearAlignmentPreview() {
+  resetAlignmentPreview()
+  if (selectedId.value) {
+    await router.replace({ path: '/music/workbench', query: workbenchQuery(selectedId.value) })
   }
 }
 
@@ -263,6 +341,20 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => route.query.previewJobId,
+  (value) => {
+    const jobId = typeof value === 'string' ? value : ''
+    if (!jobId) {
+      if (previewJobId.value) resetAlignmentPreview()
+      return
+    }
+    if (workbench.value && selectedId.value && jobId !== previewJobId.value) {
+      loadAlignmentPreview(jobId, false)
+    }
+  },
+)
+
 watch(activeTab, () => {
   if (selectedId.value) {
     router.replace({ path: '/music/workbench', query: workbenchQuery(selectedId.value) })
@@ -337,11 +429,26 @@ onMounted(() => loadList(false))
           :title="playbackError"
         />
 
+        <el-alert
+          v-if="previewJobId"
+          class="workbench-alert"
+          type="success"
+          show-icon
+          :closable="false"
+          title="正在试听对齐任务结果"
+          :description="`任务 ${previewJobId.slice(0, 8)} 的 LRC / SWLRC 已临时加载，播放歌曲即可检查滚动与逐字匹配；尚未覆盖当前歌词。`"
+        >
+          <template #default>
+            <el-button size="small" plain @click="clearAlignmentPreview">退出试听</el-button>
+          </template>
+        </el-alert>
+
         <el-tabs v-model="activeTab" class="workbench-tabs">
           <el-tab-pane label="歌词" name="lyrics">
             <SongWorkbenchLyricsPanel
-              :lyrics="workbench.lyrics"
-              :word-lyrics="workbench.wordLyrics"
+              v-loading="previewLoading"
+              :lyrics="previewLyrics || workbench.lyrics"
+              :word-lyrics="previewWordLyrics || workbench.wordLyrics"
               :music="workbench.music"
               :artwork="workbench.artwork"
               :current-time="playerCurrentTime"
@@ -361,6 +468,7 @@ onMounted(() => loadList(false))
               :preselected-source-lyrics-id="preselectedSourceLyricsId"
               @imported="handleAlignmentImported"
               @view-lyrics="activeTab = 'lyrics'"
+              @preview-lyrics="loadAlignmentPreview"
             />
           </el-tab-pane>
           <el-tab-pane label="封面" name="artwork">

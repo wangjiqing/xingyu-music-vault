@@ -1,6 +1,6 @@
 services:
   xingyu-music-vault:
-    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.1}
+    image: ghcr.io/wangjiqing/xingyu-music-vault:${IMAGE_TAG:-v1.3.4}
     build:
       context: ..
       dockerfile: Dockerfile
@@ -70,7 +70,7 @@ services:
       retries: 3
 
   xingyu-lyrics-aligner-worker:
-    image: ${ALIGNMENT_WORKER_IMAGE:-wangjiqing/xingyu-lyrics-aligner:0.4.0}
+    image: ${ALIGNMENT_WORKER_IMAGE:-wangjiqing/xingyu-lyrics-aligner:0.6.0}
     container_name: xingyu-lyrics-aligner-worker
     command: xingyu-align worker run --jobs-dir /jobs --music-dir /music --device cpu
     user: "10001:10001"

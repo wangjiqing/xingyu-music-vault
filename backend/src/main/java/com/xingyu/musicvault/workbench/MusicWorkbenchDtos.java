@@ -1,5 +1,6 @@
 package com.xingyu.musicvault.workbench;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.xingyu.musicvault.library.MusicDtos.MusicResponse;
 import com.xingyu.musicvault.openapi.OpenApiPreviewService.OpenApiPreview;
 
@@ -23,6 +24,7 @@ public final class MusicWorkbenchDtos {
             Long lyricId,
             String format,
             String content,
+            JsonNode alignmentPresentation,
             LocalDateTime updatedAt
     ) {
     }

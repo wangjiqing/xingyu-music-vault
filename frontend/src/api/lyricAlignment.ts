@@ -1,8 +1,10 @@
 import http from './http'
 import type { PageResponse } from './types'
+import type { LyricAlignmentPresentation } from '../types/lyricPresentation'
 
 export type AlignmentArtifactType = 'lrc' | 'swlrc' | 'report' | 'alignment'
 export type DraftArtifactType = 'cleaned' | 'raw' | 'segments' | 'report'
+export type LyricDraftPreset = 'FAST' | 'RECOMMENDED' | 'HIGH_QUALITY' | 'FULL_RECOGNITION'
 
 export interface LyricAlignmentJob {
   id: string
@@ -19,7 +21,7 @@ export interface LyricAlignmentJob {
   trustedLyricsSnapshot?: string | null
   requestSnapshot?: Record<string, unknown> | null
   errorMessage?: string | null
-  resultSummary?: Record<string, unknown> | null
+  resultSummary?: AlignmentResultSummary | null
   workerStatus?: Record<string, unknown> | null
   workerSignals?: WorkerSignals | null
   alignmentJsonHash?: string | null
@@ -44,7 +46,10 @@ export interface LyricAlignmentJob {
   importedLyricId?: number | null
   draftStatus?: string | null
   confirmedTrustedLyricsId?: number | null
+  observabilitySummary?: ObservabilitySummary | null
 }
+
+export interface AlignmentResultSummary extends LyricAlignmentPresentation, Record<string, unknown> {}
 
 export interface WorkerSignals {
   jobDirectoryAvailable: boolean
@@ -77,6 +82,7 @@ export interface CreateAlignmentJobRequest {
 }
 
 export interface CreateLyricDraftJobRequest {
+  preset?: LyricDraftPreset | string
   language?: string
   asrModel?: string
   skipSeparation?: boolean
@@ -85,6 +91,97 @@ export interface CreateLyricDraftJobRequest {
   keepSuspectedMetadata?: boolean
   retainIntermediate?: boolean
   createdBy?: string
+}
+
+export interface ObservabilitySummary {
+  workerStage?: string | null
+  workerStageLabel?: string | null
+  heartbeatAt?: string | null
+  heartbeatHealth?: string | null
+  runningDurationSeconds?: number | null
+  stageDurationSeconds?: number | null
+  preset?: string | null
+  warningCount?: number | null
+  errorCode?: string | null
+  errorSummary?: string | null
+  statusProtocolLabel?: string | null
+}
+
+export interface LyricTaskObservabilityResponse {
+  jobId: string
+  taskType?: string | null
+  statusAvailable: boolean
+  statusParseError?: string | null
+  directoryAvailable: boolean
+  legacy: boolean
+  compatibilityMessages?: string[] | null
+  workerState?: string | null
+  workerStateLabel?: string | null
+  workerStage?: string | null
+  workerStageLabel?: string | null
+  workerStageDescription?: string | null
+  statusSchemaVersion?: number | null
+  requestSchemaVersion?: number | null
+  startedAt?: string | null
+  stageStartedAt?: string | null
+  updatedAt?: string | null
+  heartbeatAt?: string | null
+  heartbeatHealth?: string | null
+  runningDurationSeconds?: number | null
+  stageDurationSeconds?: number | null
+  progress?: Record<string, unknown> | unknown[] | null
+  attempt?: WorkerAttempt | null
+  requestedConfig?: Record<string, unknown> | unknown[] | null
+  resolvedConfig?: Record<string, unknown> | unknown[] | null
+  configSummary?: Record<string, unknown> | null
+  warnings?: Record<string, unknown> | unknown[] | null
+  error?: WorkerError | null
+  result?: Record<string, unknown> | unknown[] | null
+  outputs?: WorkerOutput[] | null
+  markers?: WorkerMarkers | null
+  events?: WorkerEvent[] | null
+  eventsAvailable: boolean
+  eventsTruncated: boolean
+  eventsReadError?: string | null
+  rawStatusAvailable: boolean
+}
+
+export interface WorkerAttempt {
+  id?: string | null
+  number?: number | null
+  stderrPath?: string | null
+}
+
+export interface WorkerError {
+  code?: string | null
+  label?: string | null
+  message?: string | null
+  details?: Record<string, unknown> | unknown[] | null
+}
+
+export interface WorkerOutput {
+  type?: string | null
+  available: boolean
+  relativePath?: string | null
+}
+
+export interface WorkerMarkers {
+  ready: boolean
+  running: boolean
+  succeeded: boolean
+  needsReview: boolean
+  failed: boolean
+  abandoned: boolean
+}
+
+export interface WorkerEvent {
+  eventId?: string | null
+  timestamp?: string | null
+  level?: string | null
+  type?: string | null
+  stage?: string | null
+  message?: string | null
+  details?: Record<string, unknown> | unknown[] | null
 }
 
 export interface CreateManualLyricDraftRequest {
@@ -226,6 +323,11 @@ export async function fetchLyricAlignmentJobs(
 
 export async function fetchLyricAlignmentJob(id: string): Promise<LyricAlignmentJob> {
   const { data } = await http.get(`/api/admin/lyric-alignment/jobs/${id}`)
+  return data
+}
+
+export async function getLyricTaskObservability(id: string): Promise<LyricTaskObservabilityResponse> {
+  const { data } = await http.get(`/api/admin/lyric-alignment/jobs/${id}/observability`)
   return data
 }
 
